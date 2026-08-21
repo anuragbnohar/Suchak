@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from .auth import hash_password
-from .db import one, x
+from .db import get_setting, one, set_setting, x
 
 _now = datetime.now(timezone.utc)
 
@@ -194,6 +194,9 @@ DEMO_ITEMS = [
 def seed_if_empty(db) -> bool:
     if one(db, "SELECT 1 FROM entities LIMIT 1"):
         return False
+    # a database emptied on purpose (scripts/reset_data.py) must stay empty
+    if get_setting(db, "seeded", "") == "1":
+        return False
 
     entity_ids = {}
     for i, (name, kind, aliases) in enumerate(ENTITIES, start=1):
@@ -255,6 +258,8 @@ def seed_if_empty(db) -> bool:
         cols = ", ".join(fields)
         marks = ", ".join("?" for _ in fields)
         x(db, f"INSERT INTO items ({cols}) VALUES ({marks})", tuple(fields.values()))
+
+    set_setting(db, "seeded", "1", user_ids["admin"])
 
     # tag the demo items that report customer grievances with their topics
     topic_updates = [

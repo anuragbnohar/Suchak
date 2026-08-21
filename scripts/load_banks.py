@@ -63,7 +63,7 @@ EXCLUDE_TERMS = {
 KIND = "Scheduled Commercial Bank"
 
 
-def main(dry_run: bool = False) -> None:
+def main(dry_run: bool = False, team: str | None = None) -> None:
     init_db()
     db = connect()
     try:
@@ -93,9 +93,24 @@ def main(dry_run: bool = False) -> None:
                   "(rivals excluded from each query automatically):")
             for name, rivals in sorted(ambiguous):
                 print(f"  {name:<28} excludes {', '.join(rivals)}")
+
+        if team:
+            target = one(db, "SELECT id, name FROM entities WHERE name = ?", (team,))
+            if not target:
+                print(f"\nNo entity named {team!r} -- team accounts unchanged.")
+            else:
+                x(db, "UPDATE users SET entity_id = ? WHERE role IN ('lead','member')"
+                      " AND entity_id IS NULL", (target["id"],))
+                print(f"\nTeam accounts (lead/member) without an entity now "
+                      f"supervise {target['name']}.")
     finally:
         db.close()
 
 
 if __name__ == "__main__":
-    main(dry_run="--dry-run" in sys.argv)
+    args = sys.argv[1:]
+    team_name = None
+    if "--team" in args:
+        i = args.index("--team")
+        team_name = args[i + 1] if i + 1 < len(args) else None
+    main(dry_run="--dry-run" in args, team=team_name)

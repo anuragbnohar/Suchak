@@ -225,6 +225,25 @@ python -m scripts.x_trial "HDFC Bank Ltd." --handle HDFCBank_Cares --max 100
 Verify a bank's grievance handle on X before using `care_handle`; a wrong
 handle silently returns nothing.
 
+## Clearing the demo data
+
+```bash
+python -m scripts.reset_data      # shows what will go, asks for confirmation
+```
+
+Permanently deletes every entity and every collected item (including
+reviews on them) and the fetch log. Keeps user accounts (their team-entity
+link is cleared), global factors, and all settings; the database will not
+re-seed demo data afterwards. Typical sequence for going live:
+
+```bash
+python -m scripts.reset_data --yes
+python -m scripts.load_banks --team "HDFC Bank Ltd."
+```
+
+`--team` points the lead/member demo accounts (priya, rahul) at the named
+bank so they have a queue to work; the super admin sees everything anyway.
+
 ## Loading India's scheduled commercial banks
 
 ```bash
