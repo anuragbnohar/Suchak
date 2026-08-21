@@ -7,7 +7,10 @@
   <div class="detail-main">
     <h1 class="detail-title">{{ item.title }}</h1>
     <p class="item-meta">
-      <span class="sev-chip sev-chip-{{ item.severity or 'low' }}">{{ item.severity or 'low' }}</span>
+      <span class="sev-chip sev-chip-{{ item.severity_shown }}">{{ item.severity_shown }}</span>
+      {% if item.review_severity and item.review_severity != item.severity %}
+      <span class="meta-dim small">reviewer set severity (classifier said {{ item.severity }})</span>
+      {% endif %}
       {% if item.source_type_label %}<span class="type-chip">{{ item.source_type_label }}</span>{% endif %}
       <span class="meta-action">{{ item.actionability_label }}</span>
       {% if item.geography %}<span class="meta-dim">📍 {{ item.geography }}</span>{% endif %}
@@ -60,7 +63,8 @@
       <h2>Review on record</h2>
       <p><strong>{{ item.reviewer_name }}</strong> · {{ item.reviewed_at | timeago }}</p>
       <p>{{ 'Relevant' if item.review_relevant else 'Not relevant' }} ·
-         {{ 'Actionable' if item.review_actionable else 'Not actionable' }}</p>
+         {{ 'Actionable' if item.review_actionable else 'Not actionable' }}
+         {% if item.review_severity %} · severity: {{ item.review_severity }}{% endif %}</p>
       {% if item.review_risk_areas %}
       <div class="chip-row">{% for a in item.review_risk_areas %}<span class="area-chip">{{ a }}</span>{% endfor %}</div>
       {% endif %}
@@ -106,6 +110,13 @@
             {% if (item.review_risk_areas and area in item.review_risk_areas)
                   or (not item.review_risk_areas and area in item.risk_areas) %}checked{% endif %}>
             {{ area }}</label>
+          {% endfor %}
+        </fieldset>
+        <fieldset>
+          <legend>Severity</legend>
+          {% for sev in taxonomy.SEVERITIES %}
+          <label><input type="radio" name="severity" value="{{ sev }}"
+            {% if item.severity_shown == sev %}checked{% endif %}> {{ sev | capitalize }}</label>
           {% endfor %}
         </fieldset>
         <fieldset>

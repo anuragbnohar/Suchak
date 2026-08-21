@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS items (
     reviewed_by       INTEGER REFERENCES users(id),
     reviewed_at       TEXT,
     review_relevant   INTEGER,
+    review_severity   TEXT,
     review_risk_areas TEXT,
     review_actionable INTEGER,
     review_action     TEXT,
@@ -93,6 +94,14 @@ CREATE TABLE IF NOT EXISTS factors (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- small key/value store for policy text editable in the admin UI
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by INTEGER REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS fetch_log (
     id        INTEGER PRIMARY KEY,
     ran_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -121,6 +130,7 @@ MIGRATIONS = [
     ("items", "gate_reason", "TEXT"),
     ("items", "source_type", "TEXT NOT NULL DEFAULT 'news'"),
     ("entities", "x_handle", "TEXT"),
+    ("items", "review_severity", "TEXT"),
 ]
 
 
@@ -140,6 +150,21 @@ def init_db() -> None:
         con.commit()
     finally:
         con.close()
+
+
+def get_setting(db: sqlite3.Connection, key: str, default: str) -> str:
+    row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(db: sqlite3.Connection, key: str, value: str, user_id: int) -> None:
+    db.execute(
+        "INSERT INTO settings (key, value, updated_by) VALUES (?,?,?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value,"
+        " updated_at=datetime('now'), updated_by=excluded.updated_by",
+        (key, value, user_id),
+    )
+    db.commit()
 
 
 def q(db: sqlite3.Connection, sql: str, params=()) -> list[sqlite3.Row]:

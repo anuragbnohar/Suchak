@@ -17,8 +17,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import taxonomy
 from .auth import get_user, require_login, require_role, verify_password
-from .classify import similar_reviewed, suggest_action
-from .db import connect, init_db, one, q, x
+from .classify import (DEFAULT_SEVERITY_DEFS, SEVERITY_DEFS_KEY,
+                       similar_reviewed, suggest_action)
+from .db import connect, get_setting, init_db, one, q, set_setting, x
 from .ingest import run_cycle
 from .seed import seed_if_empty
 
@@ -115,6 +116,8 @@ def prep_item(row) -> dict:
     d["actionability_label"] = taxonomy.ACTIONABILITY_LABELS.get(
         d.get("actionability") or "", d.get("actionability") or "")
     d["source_type_label"] = taxonomy.SOURCE_TYPE_LABELS.get(d.get("source_type") or "news")
+    # a reviewer's severity correction wins over the classifier's verdict
+    d["severity_shown"] = d.get("review_severity") or d.get("severity") or "low"
     return d
 
 
@@ -205,7 +208,8 @@ def queue(request: Request):
             " (SELECT COUNT(*) FROM item_sources s WHERE s.item_id = i.id) AS extra_sources"
             " FROM items i LEFT JOIN users u ON u.id = i.reviewed_by"
             f" WHERE {' AND '.join(where)}"
-            " ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
+            " ORDER BY CASE COALESCE(i.review_severity, i.severity)"
+            "   WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
             " CASE i.actionability WHEN 'action_recommended' THEN 0"
             "   WHEN 'review_recommended' THEN 1 ELSE 2 END,"
             " i.relevance DESC, i.published_at DESC LIMIT 200",
@@ -266,6 +270,9 @@ async def item_review(request: Request, item_id: int):
 
         relevant = 1 if form.get("relevant") == "yes" else 0
         actionable = 1 if form.get("actionable") == "yes" else 0
+        severity = form.get("severity")
+        if severity not in taxonomy.SEVERITIES:
+            severity = None
         risk_areas = [a for a in form.getlist("risk_areas") if a in taxonomy.RISK_AREAS]
         action = form.get("action") or None
         if action not in taxonomy.ACTIONS:
@@ -273,10 +280,10 @@ async def item_review(request: Request, item_id: int):
         status = "reviewed" if relevant else "dismissed"
 
         x(db, "UPDATE items SET status=?, reviewed_by=?, reviewed_at=?, review_relevant=?,"
-              " review_risk_areas=?, review_actionable=?, review_action=?, review_notes=?"
-              " WHERE id=?",
+              " review_severity=?, review_risk_areas=?, review_actionable=?, review_action=?,"
+              " review_notes=? WHERE id=?",
           (status, user["id"], datetime.now(timezone.utc).isoformat(timespec="seconds"),
-           relevant, json.dumps(risk_areas), actionable, action,
+           relevant, severity, json.dumps(risk_areas), actionable, action,
            (form.get("notes") or "").strip() or None, item_id))
     finally:
         db.close()
@@ -296,7 +303,7 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     for it in rows:
         for a in it["risk_areas"]:
             by_risk[a] += 1
-        by_sev[it["severity"] or "low"] += 1
+        by_sev[it["severity_shown"]] += 1
         for f in it["factor_matches"]:
             by_factor[f] += 1
         for rel in it["relationships"]:
@@ -316,7 +323,8 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
                          " status IN ('new','classified') AND gated_out = 0",
                      (entity_id,))["n"]
     high_recent = [prep_item(r) for r in q(
-        db, "SELECT * FROM items WHERE entity_id=? AND severity='high' AND published_at >= ?"
+        db, "SELECT * FROM items WHERE entity_id=?"
+            " AND COALESCE(review_severity, severity)='high' AND published_at >= ?"
             " AND gated_out = 0 ORDER BY published_at DESC LIMIT 6", (entity_id, since))]
 
     return {
@@ -372,7 +380,7 @@ def overview(request: Request):
             rows.append({
                 "entity": e,
                 "total7": len(items),
-                "high7": sum(1 for it in items if it["severity"] == "high"),
+                "high7": sum(1 for it in items if it["severity_shown"] == "high"),
                 "open": open_count,
                 "top_risk": top_risk[0][0] if top_risk else "—",
                 "last": last,
@@ -400,7 +408,9 @@ def factors_page(request: Request):
                          " LEFT JOIN users u ON u.id = f.created_by"
                          " WHERE f.entity_id IS NULL OR f.entity_id = ?"
                          " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
-        return render(request, "factors.html", user=user, factors=rows)
+        severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
+        return render(request, "factors.html", user=user, factors=rows,
+                      severity_defs=severity_defs)
     finally:
         db.close()
 
@@ -426,6 +436,24 @@ async def factors_add(request: Request):
     finally:
         db.close()
     return RedirectResponse("/factors?msg=Factor+added", status_code=303)
+
+
+@app.post("/settings/severity")
+async def settings_severity(request: Request):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        text = " ".join((form.get("severity_defs") or "").split()).rstrip(".")
+        if not text:
+            raise HTTPException(400, "Severity definitions cannot be empty")
+        set_setting(db, SEVERITY_DEFS_KEY, text, user["id"])
+    finally:
+        db.close()
+    return RedirectResponse(
+        "/factors?msg=Severity+criteria+updated+—+applies+to+new+classifications",
+        status_code=303)
 
 
 @app.post("/factors/{factor_id}/toggle")

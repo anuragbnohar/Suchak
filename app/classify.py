@@ -15,13 +15,25 @@ import os
 from datetime import datetime, timezone
 
 from . import taxonomy
-from .db import one, q, x
+from .db import get_setting, one, q, x
 from .matching import Registry
 from .similarity import rank_similar
 
 log = logging.getLogger("suchak.classify")
 
 MODEL = os.environ.get("SUCHAK_MODEL", "claude-opus-5")
+
+# Severity criteria live in the settings table so the team can tune them in
+# the admin UI without touching code; this is the default until edited.
+# NOTE: the keyword fallback classifier has its own hardcoded trigger list
+# and does not read this text.
+SEVERITY_DEFS_KEY = "severity_definitions"
+DEFAULT_SEVERITY_DEFS = (
+    "high = potential supervisory concern needing prompt attention "
+    "(fraud, default, run on deposits, regulatory breach, cyber incident); "
+    "medium = notable negative development worth review; "
+    "low = routine or positive coverage"
+)
 # A small, cheap model screens each item for relevance before the full
 # classification runs, so noise costs a fraction of a full verdict.
 # Set SUCHAK_GATE_MODEL="" to disable the screen.
@@ -136,7 +148,7 @@ def similar_reviewed(db, entity_id: int, text: str, top_k: int = 3) -> list:
     rows = q(
         db,
         "SELECT id, entity_id, title, summary, review_relevant, review_risk_areas,"
-        "       review_actionable, review_action, review_notes"
+        "       review_severity, review_actionable, review_action, review_notes"
         " FROM items WHERE status IN ('reviewed','dismissed') AND reviewed_at IS NOT NULL"
         " ORDER BY (entity_id = ?) DESC, reviewed_at DESC LIMIT 400",
         (entity_id,),
@@ -160,7 +172,8 @@ def suggest_action(similar: list) -> str | None:
     return max(set(actions), key=actions.count)
 
 
-def _build_system(entity, factors, examples) -> str:
+def _build_system(entity, factors, examples,
+                  severity_defs: str = DEFAULT_SEVERITY_DEFS) -> str:
     lines = [
         "You are a supervisory triage assistant for the Banking Supervisor of India.",
         "You classify public news items about a regulated entity so a small "
@@ -172,10 +185,7 @@ def _build_system(entity, factors, examples) -> str:
         "",
         "Risk areas (choose zero or more that genuinely apply): "
         + "; ".join(taxonomy.RISK_AREAS) + ".",
-        "Severity: high = potential supervisory concern needing prompt attention "
-        "(fraud, default, run on deposits, regulatory breach, cyber incident); "
-        "medium = notable negative development worth review; low = routine or "
-        "positive coverage.",
+        f"Severity: {severity_defs}.",
         "Actionability: action_recommended = the team likely must act; "
         "review_recommended = a person should read this soon; monitor = ambient awareness only.",
         "Relevance: the item must actually concern this entity (not merely a "
@@ -198,11 +208,18 @@ def _build_system(entity, factors, examples) -> str:
             areas = ", ".join(json.loads(r["review_risk_areas"] or "[]")) or "none"
             act = "actionable" if r["review_actionable"] else "not actionable"
             action = f"; action taken: {r['review_action']}" if r["review_action"] else ""
-            lines.append(f'- "{r["title"]}" -> {label}; risk areas: {areas}; {act}{action}')
+            sev = ""
+            try:
+                if r["review_severity"]:
+                    sev = f"; severity: {r['review_severity']}"
+            except (KeyError, IndexError):
+                pass
+            lines.append(f'- "{r["title"]}" -> {label}; risk areas: {areas}; {act}{sev}{action}')
     return "\n".join(lines)
 
 
-def _llm_classify(entity, factors, examples, title, snippet, source, published):
+def _llm_classify(entity, factors, examples, title, snippet, source, published,
+                  severity_defs: str = DEFAULT_SEVERITY_DEFS):
     client = _get_client()
     user_msg = (
         f"Classify this item.\n"
@@ -214,7 +231,7 @@ def _llm_classify(entity, factors, examples, title, snippet, source, published):
     resp = client.messages.create(
         model=MODEL,
         max_tokens=2048,
-        system=_build_system(entity, factors, examples),
+        system=_build_system(entity, factors, examples, severity_defs),
         messages=[{"role": "user", "content": user_msg}],
         output_config={"format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
     )
@@ -336,10 +353,12 @@ def classify_item(db, item) -> None:
 
     factors = active_factors(db, item["entity_id"])
     examples = similar_reviewed(db, item["entity_id"], f"{item['title']} {item['snippet'] or ''}")
+    severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
     try:
         verdict, classifier, model = _llm_classify(
             entity, factors, examples,
             item["title"], item["snippet"], item["source_name"], item["published_at"],
+            severity_defs,
         )
     except Exception as exc:  # missing key, network, rate limit, refusal, bad JSON
         log.warning("LLM classification failed (%s: %s); using heuristic", type(exc).__name__, exc)

@@ -93,13 +93,19 @@ in that entity's queue. A background cycle also runs every 30 minutes.
   entity. Falls back to a keyword classifier if the API is unavailable, and
   every verdict records which classifier/model produced it.
 - **Review** — a ranked queue (severity × actionability × relevance) where
-  team members confirm or correct the category, mark actionability, and
-  record the action taken.
+  team members confirm or correct the category **and the severity**, mark
+  actionability, and record the action taken. A reviewer's severity
+  correction wins everywhere — queue order, chips, dashboards — and the
+  classifier's original verdict stays on the audit line.
 - **Learn** — reviewed items become retrieval-based few-shot examples for
   future classification, and power "suggested action" on similar new items.
   No fine-tuning needed.
 - **Factors** — team leads define named plain-language rules ("Sales
   malpractice: flag if…") that the classifier evaluates on every item.
+- **Tunable severity criteria** — the high/medium/low definitions the
+  classifier applies are plain-language text edited by the super admin on
+  the Factors page (stored in the DB, applied to new classifications). The
+  no-API-key keyword fallback keeps its own fixed trigger words.
 - **Dashboards** — per-entity risk-area breakdown, severity tiles, daily
   volume trend, factor hits, and extracted organization linkages; a
   cross-entity overview for the super admin.

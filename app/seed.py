@@ -72,10 +72,11 @@ DEMO_ITEMS = [
      "Borrowers allege branch staff made purchase of a linked insurance policy a "
      "condition for home-loan disbursal in several districts.",
      "medium", ["Conduct & Consumer Protection"], "review_recommended", "Uttar Pradesh",
-     [], {"user": "rahul", "days_ago": 1.8, "relevant": 1,
+     [], {"user": "rahul", "days_ago": 1.8, "relevant": 1, "severity": "high",
           "risk_areas": ["Conduct & Consumer Protection"], "actionable": 1,
           "action": "Flagged for next inspection",
-          "notes": "Matches Sales malpractice factor; recurring pattern."}),
+          "notes": "Matches Sales malpractice factor; recurring pattern. "
+                   "Raised severity: forced bundling is systemic, not incidental."}),
     (1, 3.0,
      "Bharat National Bank posts steady quarterly results, deposits grow 11%",
      "Finance Daily",
@@ -245,6 +246,7 @@ def seed_if_empty(db) -> bool:
                 "reviewed_by": user_ids[review["user"]],
                 "reviewed_at": _ago(review["days_ago"]),
                 "review_relevant": review["relevant"],
+                "review_severity": review.get("severity"),
                 "review_risk_areas": json.dumps(review["risk_areas"]),
                 "review_actionable": review["actionable"],
                 "review_action": review["action"],
