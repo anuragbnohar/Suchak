@@ -21,7 +21,10 @@ from .similarity import rank_similar
 
 log = logging.getLogger("suchak.classify")
 
-MODEL = os.environ.get("SUCHAK_MODEL", "claude-opus-5")
+# Two models by design: a cheap one screens every fetched item for
+# relevance and negative-list matches, and a stronger one writes the full
+# verdict only for what survives. Override either with the env vars.
+MODEL = os.environ.get("SUCHAK_MODEL", "claude-sonnet-5")
 
 # Severity criteria live in the settings table so the team can tune them in
 # the admin UI without touching code; this is the default until edited.

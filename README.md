@@ -49,9 +49,11 @@ in that entity's queue. A background cycle also runs every 30 minutes.
   - *YouTube Data API v3* — video coverage per entity. Needs a free API key
     in `SUCHAK_YOUTUBE_KEY`; skipped silently when unset.
   - *X/Twitter recent search* — customer complaints only. **The one paid
-    source**, billed per post returned, so the query is deliberately narrow
-    and the result count is hard-capped. Needs `SUCHAK_X_BEARER`; skipped
-    silently when unset.
+    source**, and **off by default**: it needs `SUCHAK_X_ENABLED=1` *and*
+    `SUCHAK_X_BEARER`, so a token left in the environment can never start
+    spending on its own. When on, the query is deliberately narrow and the
+    result count hard-capped. `scripts/x_trial.py` still runs a bounded,
+    confirmed one-off trial without the standing switch.
 
   **Broadcast sources** are fetched *once per sweep* — one feed covers every
   entity — and each item is routed to the entities it names, via the same
@@ -142,8 +144,9 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 | Env var | Default | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | unset | Enables LLM classification (else keyword fallback) |
-| `SUCHAK_MODEL` | `claude-opus-5` | Claude model used for classification |
-| `SUCHAK_GATE_MODEL` | `claude-haiku-4-5` | Cheap relevance screen; `""` disables it |
+| `SUCHAK_MODEL` | `claude-sonnet-5` | Model that writes the full verdict |
+| `SUCHAK_GATE_MODEL` | `claude-haiku-4-5` | Cheap model screening every fetched item; `""` disables it |
+| `SUCHAK_X_ENABLED` | unset (off) | Must be `1` for the paid X source to run at all |
 | `SUCHAK_YOUTUBE_KEY` | unset | YouTube Data API key; unset disables video ingestion |
 | `SUCHAK_YOUTUBE_MAX` | `25` | Videos per entity per sweep (API caps at 50) |
 | `SUCHAK_X_BEARER` | unset | X API bearer token; unset disables the paid source |
@@ -236,6 +239,21 @@ python -m scripts.x_trial "HDFC Bank Ltd." --handle HDFCBank_Cares --max 100
 
 Verify a bank's grievance handle on X before using `care_handle`; a wrong
 handle silently returns nothing.
+
+## Re-classifying items already collected
+
+Classification happens once, at fetch time, so items collected before an
+API key was set keep their keyword-rule verdicts. To re-judge them with
+the configured models:
+
+```bash
+python -m scripts.reclassify --entity "ICICI Bank Ltd."   # try one bank first
+python -m scripts.reclassify                              # everything
+```
+
+Shows the item count, both models, a cost estimate and a runtime estimate,
+then waits for confirmation. Reviewed items are skipped unless
+`--include-reviewed` is passed.
 
 ## Clearing the demo data
 

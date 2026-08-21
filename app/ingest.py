@@ -73,6 +73,10 @@ YOUTUBE_MAX_RESULTS = min(int(os.environ.get("SUCHAK_YOUTUBE_MAX", "25")), 50)
 # query is written to be narrow and the result count is capped hard. Recent
 # search only covers the last 7 days regardless of SUCHAK_LOOKBACK_DAYS.
 X_SEARCH = "https://api.x.com/2/tweets/search/recent"
+# X is OFF unless explicitly switched on -- a bearer token alone is not
+# enough, so a token left in the environment can never start spending by
+# accident. Set SUCHAK_X_ENABLED=1 (and a token) to turn it back on.
+X_ENABLED = os.environ.get("SUCHAK_X_ENABLED", "").strip().lower() in ("1", "true", "yes")
 X_BEARER = os.environ.get("SUCHAK_X_BEARER", "")
 # Hard ceiling on posts per entity per sweep. At $0.005/post this is your
 # spend control: 100 posts = $0.50 per bank per sweep, whatever happens.
@@ -258,7 +262,7 @@ def fetch_x(registry: Registry, entity) -> list[dict]:
     paginated, so the cost per sweep is bounded by X_MAX_POSTS and cannot
     run away if a query turns out broader than expected.
     """
-    if not X_BEARER:
+    if not (X_ENABLED and X_BEARER):
         return []
 
     since = datetime.now(timezone.utc) - timedelta(

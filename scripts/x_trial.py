@@ -28,6 +28,9 @@ def main() -> int:
     if not ingest.X_BEARER:
         print("SUCHAK_X_BEARER is not set - nothing would be fetched.", file=sys.stderr)
         return 1
+    # the trial is an explicit, bounded, confirmed run, so it does not need
+    # the standing SUCHAK_X_ENABLED switch that guards the automatic sweeps
+    ingest.X_ENABLED = True
 
     init_db()
     db = connect()
