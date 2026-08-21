@@ -149,7 +149,8 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 | `SUCHAK_X_ENABLED` | unset (off) | Must be `1` for the paid X source to run at all |
 | `SUCHAK_YOUTUBE_KEY` | unset | YouTube Data API key; unset disables video ingestion |
 | `SUCHAK_YOUTUBE_MAX` | `25` | Videos per entity per sweep (API caps at 50) |
-| `SUCHAK_X_BEARER` | unset | X API bearer token; unset disables the paid source |
+| `SUCHAK_X_ENABLED` | unset (off) | X is off unless this is `1` **and** a bearer token is set |
+| `SUCHAK_X_BEARER` | unset | X API bearer token; both this and the flag are required |
 | `SUCHAK_X_MAX_POSTS` | `100` | **Hard spend cap**: posts per entity per sweep |
 | `SUCHAK_X_STRATEGY` | `complaints` | `complaints`, `care_handle`, or `both` |
 | `SUCHAK_X_LANGS` | `en,hi` | Languages fetched from X |
