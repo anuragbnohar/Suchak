@@ -3,7 +3,9 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
+from urllib.parse import quote
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -189,6 +191,18 @@ def queue(request: Request):
         entity, entities = resolve_entity(db, user, request.query_params.get("entity"))
         status = request.query_params.get("status", "open")
         risk = request.query_params.get("risk", "")
+        sev = request.query_params.get("sev", "")
+        if sev not in taxonomy.SEVERITIES:
+            sev = ""
+        factor = (request.query_params.get("factor") or "")[:80]
+        org = (request.query_params.get("org") or "")[:120]
+        on_day = request.query_params.get("on", "")
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", on_day or ""):
+            on_day = ""
+        try:
+            days = max(0, min(int(request.query_params.get("days", "0")), 365))
+        except ValueError:
+            days = 0
 
         where, params = ["i.entity_id = ?"], [entity["id"]]
         if status == "open":
@@ -198,9 +212,29 @@ def queue(request: Request):
         elif status in ("reviewed", "dismissed"):
             where.append("i.status = ?")
             params.append(status)
+        elif status == "all":
+            # "everything the team works with": screened-out noise has its
+            # own tab and is excluded, so dashboard counts match this view
+            where.append("i.gated_out = 0")
         if risk:
             where.append("i.risk_areas LIKE ?")
             params.append(f'%"{risk}"%')
+        if sev:
+            where.append("COALESCE(i.review_severity, i.severity) = ?")
+            params.append(sev)
+        if days:
+            where.append("i.published_at >= ?")
+            params.append((datetime.now(timezone.utc) - timedelta(days=days))
+                          .isoformat())
+        if on_day:
+            where.append("i.published_at LIKE ?")
+            params.append(on_day + "%")
+        if factor:
+            where.append("i.factor_matches LIKE ?")
+            params.append(f'%"{factor}"%')
+        if org:
+            where.append("i.relationships LIKE ?")
+            params.append(f'%"name": "{org}"%')
 
         rows = q(
             db,
@@ -220,9 +254,14 @@ def queue(request: Request):
                 "        WHEN status IN ('new','classified') THEN 'open'"
                 "        ELSE status END s,"
                 " COUNT(*) n FROM items WHERE entity_id = ? GROUP BY s", (entity["id"],))}
+        extras = {k: v for k, v in (
+            ("risk", risk), ("sev", sev), ("days", days or ""),
+            ("on", on_day), ("factor", factor), ("org", org)) if v}
+        filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
         return render(request, "queue.html", user=user, entity=entity,
                       entities=entities, items=[prep_item(r) for r in rows],
-                      status=status, risk=risk, counts=counts)
+                      status=status, risk=risk, counts=counts,
+                      extras=extras, filter_qs=filter_qs)
     finally:
         db.close()
 
@@ -316,7 +355,8 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     trend = []
     for offset in range(days - 1, -1, -1):
         d = today - timedelta(days=offset)
-        trend.append({"date": d.strftime("%d %b"), "count": by_day.get(d.isoformat(), 0)})
+        trend.append({"date": d.strftime("%d %b"), "iso": d.isoformat(),
+                      "count": by_day.get(d.isoformat(), 0)})
     max_trend = max((t["count"] for t in trend), default=0)
 
     open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"

@@ -23,7 +23,7 @@
   <nav class="tabs">
     {% for s, label in [('open','To review'), ('reviewed','Reviewed'), ('dismissed','Dismissed'), ('filtered','Filtered out'), ('all','All')] %}
     <a class="tab {% if status == s %}active{% endif %}"
-       href="/queue?entity={{ entity.id }}&amp;status={{ s }}{% if risk %}&amp;risk={{ risk }}{% endif %}">
+       href="/queue?entity={{ entity.id }}&amp;status={{ s }}{{ filter_qs }}">
       {{ label }}
       {% if s != 'all' and counts.get(s) %}<span class="tab-count">{{ counts.get(s) }}</span>{% endif %}
     </a>
@@ -32,6 +32,9 @@
   <form method="get" action="/queue" class="risk-filter">
     <input type="hidden" name="entity" value="{{ entity.id }}">
     <input type="hidden" name="status" value="{{ status }}">
+    {% for k, v in extras.items() if k != 'risk' %}
+    <input type="hidden" name="{{ k }}" value="{{ v }}">
+    {% endfor %}
     <select name="risk" onchange="this.form.submit()">
       <option value="">All risk areas</option>
       {% for area in taxonomy.RISK_AREAS %}
@@ -41,6 +44,23 @@
   </form>
 </div>
 
+{% if extras %}
+<div class="filter-note">
+  <span>Showing:</span>
+  {% for k, v in extras.items() %}
+  <span class="filter-chip">
+    {%- if k == 'days' %}last {{ v }} days
+    {%- elif k == 'on' %}published {{ v }}
+    {%- elif k == 'sev' %}severity {{ v }}
+    {%- elif k == 'risk' %}{{ v }}
+    {%- elif k == 'factor' %}factor: {{ v }}
+    {%- elif k == 'org' %}linked to {{ v }}
+    {%- else %}{{ k }}: {{ v }}{% endif -%}
+  </span>
+  {% endfor %}
+  <a href="/queue?entity={{ entity.id }}&amp;status={{ status }}">✕ clear filters</a>
+</div>
+{% endif %}
 {% if items %}
 <ul class="item-list">
   {% for it in items %}

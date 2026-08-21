@@ -19,27 +19,28 @@
   {% endif %}
 </div>
 
+{% set base = "/queue?entity=" ~ entity.id ~ "&status=all&days=" ~ stats.days %}
 <div class="tile-row">
-  <div class="tile">
+  <a class="tile" href="{{ base }}">
     <p class="tile-label">Items ({{ stats.days }}d)</p>
     <p class="tile-value">{{ stats.total }}</p>
-  </div>
-  <div class="tile tile-serious">
+  </a>
+  <a class="tile tile-serious" href="{{ base }}&sev=high">
     <p class="tile-label">High severity</p>
     <p class="tile-value">{{ stats.by_sev.high }}</p>
-  </div>
-  <div class="tile tile-warning">
+  </a>
+  <a class="tile tile-warning" href="{{ base }}&sev=medium">
     <p class="tile-label">Medium severity</p>
     <p class="tile-value">{{ stats.by_sev.medium }}</p>
-  </div>
-  <div class="tile">
+  </a>
+  <a class="tile" href="{{ base }}&sev=low">
     <p class="tile-label">Low severity</p>
     <p class="tile-value">{{ stats.by_sev.low }}</p>
-  </div>
-  <div class="tile tile-accent">
+  </a>
+  <a class="tile tile-accent" href="/queue?entity={{ entity.id }}&status=open">
     <p class="tile-label">Awaiting review</p>
     <p class="tile-value">{{ stats.open_count }}</p>
-  </div>
+  </a>
 </div>
 
 <div class="dash-grid">
@@ -48,13 +49,22 @@
     {% if stats.max_risk %}
     <div class="hbar-chart">
       {% for area, count in stats.by_risk %}
-      <div class="hbar-row">
+      {% if count %}
+      <a class="hbar-row" href="{{ base }}&risk={{ area | urlencode }}"
+         title="Show the {{ count }} item(s) categorised {{ area }}">
         <span class="hbar-label">{{ area }}</span>
         <span class="hbar-track">
           <span class="hbar-fill" style="width: {{ (count / stats.max_risk * 100) | round(1) }}%"></span>
         </span>
         <span class="hbar-value">{{ count }}</span>
+      </a>
+      {% else %}
+      <div class="hbar-row">
+        <span class="hbar-label">{{ area }}</span>
+        <span class="hbar-track"></span>
+        <span class="hbar-value">0</span>
       </div>
+      {% endif %}
       {% endfor %}
     </div>
     {% else %}<p class="meta-dim">No categorized items in this window.</p>{% endif %}
@@ -65,10 +75,18 @@
     {% if stats.max_trend %}
     <div class="trend" role="img" aria-label="Daily item counts over the last {{ stats.days }} days">
       {% for t in stats.trend %}
-      <div class="trend-col" title="{{ t.date }}: {{ t.count }} item{{ 's' if t.count != 1 }}">
+      {% if t.count %}
+      <a class="trend-col" href="/queue?entity={{ entity.id }}&status=all&on={{ t.iso }}"
+         title="{{ t.date }}: {{ t.count }} item{{ 's' if t.count != 1 }} — click to view">
         <span class="trend-bar" style="height: {{ (t.count / stats.max_trend * 100) | round(1) }}%"></span>
         {% if loop.index0 % 3 == 0 %}<span class="trend-label">{{ t.date[:2] }}</span>{% else %}<span class="trend-label"></span>{% endif %}
+      </a>
+      {% else %}
+      <div class="trend-col" title="{{ t.date }}: no items">
+        <span class="trend-bar" style="height: 0%"></span>
+        {% if loop.index0 % 3 == 0 %}<span class="trend-label">{{ t.date[:2] }}</span>{% else %}<span class="trend-label"></span>{% endif %}
       </div>
+      {% endif %}
       {% endfor %}
     </div>
     <p class="meta-dim small">Peak: {{ stats.max_trend }} items/day. Hover a bar for the date.</p>
@@ -96,7 +114,8 @@
     <table class="data-table">
       <tr><th scope="col">Factor</th><th scope="col" class="num">Items</th></tr>
       {% for name, count in stats.by_factor %}
-      <tr><td>⚑ {{ name }}</td><td class="num">{{ count }}</td></tr>
+      <tr><td><a href="{{ base }}&factor={{ name | urlencode }}">⚑ {{ name }}</a></td>
+          <td class="num">{{ count }}</td></tr>
       {% endfor %}
     </table>
     {% else %}<p class="meta-dim">No factor matches in this window.
@@ -107,7 +126,8 @@
     <table class="data-table">
       <tr><th scope="col">Organization</th><th scope="col">Link</th><th scope="col" class="num">Items</th></tr>
       {% for l in stats.linkages %}
-      <tr><td>{{ l.name }}</td><td class="meta-dim">{{ l.type | replace('_',' ') }}</td><td class="num">{{ l.count }}</td></tr>
+      <tr><td><a href="{{ base }}&org={{ l.name | urlencode }}">{{ l.name }}</a></td>
+          <td class="meta-dim">{{ l.type | replace('_',' ') }}</td><td class="num">{{ l.count }}</td></tr>
       {% endfor %}
     </table>
     <p class="meta-dim small">Extracted from news text — the seed of second-order risk warnings.</p>

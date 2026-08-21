@@ -23,10 +23,10 @@
   <tr class="{% if r.high7 %}row-serious{% endif %}">
     <td><strong>{{ r.entity.name }}</strong></td>
     <td class="meta-dim">{{ r.entity.kind }}</td>
-    <td class="num">{{ r.total7 }}</td>
-    <td class="num">{% if r.high7 %}<span class="sev-chip sev-chip-high">{{ r.high7 }} high</span>{% else %}0{% endif %}</td>
-    <td class="num">{{ r.open }}</td>
-    <td>{{ r.top_risk }}</td>
+    <td class="num"><a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7">{{ r.total7 }}</a></td>
+    <td class="num">{% if r.high7 %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7&amp;sev=high"><span class="sev-chip sev-chip-high">{{ r.high7 }} high</span></a>{% else %}0{% endif %}</td>
+    <td class="num"><a href="/queue?entity={{ r.entity.id }}&amp;status=open">{{ r.open }}</a></td>
+    <td>{% if r.top_risk != '—' %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7&amp;risk={{ r.top_risk | urlencode }}">{{ r.top_risk }}</a>{% else %}—{% endif %}</td>
     <td class="meta-dim">{{ r.last | timeago }}</td>
     <td><a href="/dashboard?entity={{ r.entity.id }}">Dashboard</a> ·
         <a href="/queue?entity={{ r.entity.id }}">Queue</a></td>
