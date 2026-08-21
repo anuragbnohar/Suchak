@@ -7,9 +7,15 @@
     <p class="page-sub">Aliases drive news matching — include brand names, abbreviations and vernacular spellings.</p>
   </div>
   {% if user.role in ('lead','superadmin') %}
-  <form method="post" action="/fetch">
-    <button type="submit" class="btn btn-primary">Fetch now — all entities</button>
-  </form>
+  <div>
+    <form method="post" action="/fetch">
+      <button type="submit" class="btn btn-primary">Fetch now — all entities</button>
+    </form>
+    <p class="meta-dim small" style="margin:0.4rem 0 0; text-align:right">
+      {% if fetch_minutes %}Also fetching automatically every {{ fetch_minutes }} min
+      {% else %}Manual only — nothing is fetched until you press Fetch{% endif %}
+    </p>
+  </div>
   {% endif %}
 </div>
 

@@ -31,7 +31,11 @@ from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("suchak")
 
-FETCH_MINUTES = int(os.environ.get("SUCHAK_FETCH_MINUTES", "30"))
+# Fetching is MANUAL by default: items arrive only when someone presses
+# Fetch. A background sweep would fetch every loaded entity on a timer and
+# bill for it unattended, which is the wrong default for a paid pipeline.
+# Set SUCHAK_FETCH_MINUTES to a positive number to enable the sweep.
+FETCH_MINUTES = int(os.environ.get("SUCHAK_FETCH_MINUTES", "0"))
 BASE_DIR = Path(__file__).resolve().parent
 
 _bg_tasks: set = set()
@@ -67,6 +71,9 @@ async def lifespan(app: FastAPI):
     if FETCH_MINUTES > 0:
         _spawn(_periodic_fetch())
         log.info("Background fetch every %s minutes", FETCH_MINUTES)
+    else:
+        log.info("Manual fetching only - use the Fetch buttons on the "
+                 "Entities page (set SUCHAK_FETCH_MINUTES to enable a sweep)")
     yield
 
 
@@ -623,7 +630,7 @@ def entities_page(request: Request):
                 seen.add(r["source"])
                 broadcast.append(r)
         return render(request, "entities.html", user=user, rows=rows,
-                      broadcast=broadcast)
+                      broadcast=broadcast, fetch_minutes=FETCH_MINUTES)
     finally:
         db.close()
 

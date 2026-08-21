@@ -39,7 +39,10 @@ Demo entities are fictional and won't match real news. To see the live
 pipeline: sign in as `admin` → **Entities** → add a real regulated entity
 with its aliases (e.g. *State Bank of India, SBI*) → **Fetch**. Items arrive
 via Google News RSS (free, no key), get de-duplicated, classified, and appear
-in that entity's queue. A background cycle also runs every 30 minutes.
+in that entity's queue. Fetching is **on demand only** — each entity has its
+own Fetch button, and nothing is collected until you press one. Set
+`SUCHAK_FETCH_MINUTES` to a positive number to add an automatic sweep;
+remember it fetches *every* loaded entity and bills for it unattended.
 
 ## What it does
 
@@ -163,7 +166,7 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 | `SUCHAK_LOOKBACK_DAYS` | `30` | How far back each feed asks for news; `0` = current |
 | `SUCHAK_MAX_ENTRIES` | `100` | Items per feed (Google News returns ~100 max) |
 | `SUCHAK_FETCH_DELAY` | `1.5` | Seconds between entity feeds during a sweep |
-| `SUCHAK_FETCH_MINUTES` | `30` | Background fetch interval; `0` disables |
+| `SUCHAK_FETCH_MINUTES` | `0` (manual only) | Minutes between automatic sweeps; `0` fetches only on demand |
 | `SUCHAK_DB` | `./suchak.db` | SQLite database path |
 | `SUCHAK_SECRET` | random per start | Session-cookie signing key (set for stable logins) |
 
@@ -259,8 +262,13 @@ then waits for confirmation. Reviewed items are skipped unless
 ## Clearing the demo data
 
 ```bash
-python -m scripts.reset_data      # shows what will go, asks for confirmation
+python -m scripts.reset_data              # entities AND items; asks first
+python -m scripts.reset_data --items-only # just the collected items
 ```
+
+`--items-only` clears everything fetched but keeps your entities, their
+aliases and the team assignments — the right one for re-collecting from
+scratch without rebuilding the setup.
 
 Permanently deletes every entity and every collected item (including
 reviews on them) and the fetch log. Keeps user accounts (their team-entity
