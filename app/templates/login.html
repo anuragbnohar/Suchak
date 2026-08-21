@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Suchak{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="login-card">
+    <h1 class="login-brand">Suchak <span class="devanagari">सूचक</span></h1>
+    <p class="login-sub">Supervisory intelligence for SSM teams</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post" action="/login" class="login-form">
+      <label>Username
+        <input name="username" autocomplete="username" autofocus required>
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="btn btn-primary">Sign in</button>
+    </form>
+    <div class="demo-creds">
+      <p class="demo-title">Demo accounts</p>
+      <table>
+        <tr><td><code>admin / admin123</code></td><td>Super admin — all entities</td></tr>
+        <tr><td><code>priya / priya123</code></td><td>Team lead — Bharat National Bank</td></tr>
+        <tr><td><code>rahul / rahul123</code></td><td>Team member — Bharat National Bank</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

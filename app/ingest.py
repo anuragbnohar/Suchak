@@ -1,0 +1,160 @@
+"""Ingestion: Google News RSS per entity.
+
+One source type keeps the week-one prototype simple — Google News already
+aggregates the Indian financial press (ET, Mint, Business Standard,
+Moneycontrol, regional outlets), so per-outlet feeds add little at this
+stage. New source types plug in as functions that yield the same
+normalized dicts.
+"""
+import html
+import json
+import logging
+import re
+import threading
+import time
+import urllib.parse
+from datetime import datetime, timedelta, timezone
+
+import feedparser
+import httpx
+
+from .classify import classify_new_items
+from .db import connect, one, q, x
+from .similarity import title_similarity
+
+log = logging.getLogger("suchak.ingest")
+
+GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
+MAX_ENTRIES_PER_FEED = 40
+DUP_WINDOW_DAYS = 7
+DUP_THRESHOLD = 0.6
+
+# only one fetch cycle at a time
+fetch_lock = threading.Lock()
+
+
+def google_news_url(entity) -> str:
+    aliases = json.loads(entity["aliases"])[:3]
+    query = " OR ".join(f'"{a}"' for a in aliases)
+    return GOOGLE_NEWS_RSS.format(query=urllib.parse.quote(query))
+
+
+def _strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", html.unescape(text or "")).strip()
+
+
+def _entry_published(entry) -> str | None:
+    parsed = entry.get("published_parsed")
+    if parsed:
+        return datetime(*parsed[:6], tzinfo=timezone.utc).isoformat(timespec="seconds")
+    return None
+
+
+def _entry_source(entry, link: str) -> str:
+    src = entry.get("source")
+    if src and src.get("title"):
+        return src["title"]
+    try:
+        return urllib.parse.urlparse(link).netloc or "unknown"
+    except ValueError:
+        return "unknown"
+
+
+def ingest_entity(db, entity) -> dict:
+    url = google_news_url(entity)
+    result = {"found": 0, "added": 0, "merged": 0, "note": None}
+    try:
+        resp = httpx.get(
+            url, timeout=20, follow_redirects=True,
+            headers={"User-Agent": "Suchak/0.1 (supervisory prototype)"},
+        )
+        resp.raise_for_status()
+        feed = feedparser.parse(resp.text)
+    except Exception as exc:
+        result["note"] = f"fetch failed: {type(exc).__name__}: {exc}"
+        log.warning("Fetch failed for %s: %s", entity["name"], exc)
+        _log_fetch(db, entity["id"], result)
+        return result
+
+    window_start = (datetime.now(timezone.utc) - timedelta(days=DUP_WINDOW_DAYS)).isoformat()
+    recent = q(
+        db,
+        "SELECT id, title FROM items WHERE entity_id = ? AND created_at >= ?",
+        (entity["id"], window_start),
+    )
+    recent = [dict(r) for r in recent]
+
+    for entry in feed.entries[:MAX_ENTRIES_PER_FEED]:
+        title = _strip_html(entry.get("title", ""))
+        link = entry.get("link", "")
+        if not title or not link:
+            continue
+        result["found"] += 1
+        if one(db, "SELECT 1 FROM items WHERE entity_id=? AND url=?", (entity["id"], link)):
+            continue
+        if one(db, "SELECT 1 FROM item_sources s JOIN items i ON i.id=s.item_id"
+                   " WHERE i.entity_id=? AND s.url=?", (entity["id"], link)):
+            continue
+
+        source_name = _entry_source(entry, link)
+        published = _entry_published(entry)
+        snippet = _strip_html(entry.get("summary", ""))[:500]
+
+        dup_id, best = None, 0.0
+        for r in recent:
+            score = title_similarity(title, r["title"])
+            if score > best:
+                dup_id, best = r["id"], score
+        if dup_id and best >= DUP_THRESHOLD:
+            x(db, "INSERT INTO item_sources (item_id, url, source_name, title, published_at)"
+                  " VALUES (?,?,?,?,?)", (dup_id, link, source_name, title, published))
+            result["merged"] += 1
+        else:
+            new_id = x(
+                db,
+                "INSERT INTO items (entity_id, title, url, source_name, snippet, published_at)"
+                " VALUES (?,?,?,?,?,?)",
+                (entity["id"], title, link, source_name, snippet,
+                 published or datetime.now(timezone.utc).isoformat(timespec="seconds")),
+            )
+            recent.append({"id": new_id, "title": title})
+            result["added"] += 1
+
+    _log_fetch(db, entity["id"], result)
+    return result
+
+
+def _log_fetch(db, entity_id: int, result: dict) -> None:
+    x(db, "INSERT INTO fetch_log (entity_id, source, found, added, merged, note)"
+          " VALUES (?,?,?,?,?,?)",
+      (entity_id, "google_news_rss", result["found"], result["added"],
+       result["merged"], result["note"]))
+
+
+def run_cycle(entity_id: int | None = None) -> dict:
+    """Fetch (all or one entity) then classify anything new. Opens its own
+    DB connection — safe to call from a background thread."""
+    if not fetch_lock.acquire(blocking=False):
+        return {"skipped": True, "reason": "a fetch cycle is already running"}
+    started = time.monotonic()
+    totals = {"entities": 0, "found": 0, "added": 0, "merged": 0, "classified": 0}
+    try:
+        db = connect()
+        try:
+            if entity_id:
+                entities = q(db, "SELECT * FROM entities WHERE id = ?", (entity_id,))
+            else:
+                entities = q(db, "SELECT * FROM entities ORDER BY id")
+            for entity in entities:
+                r = ingest_entity(db, entity)
+                totals["entities"] += 1
+                for k in ("found", "added", "merged"):
+                    totals[k] += r[k]
+            totals["classified"] = classify_new_items(db)
+        finally:
+            db.close()
+    finally:
+        fetch_lock.release()
+    totals["seconds"] = round(time.monotonic() - started, 1)
+    log.info("Fetch cycle done: %s", totals)
+    return totals

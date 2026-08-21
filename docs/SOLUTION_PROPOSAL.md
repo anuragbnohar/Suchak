@@ -2,6 +2,16 @@
 
 *Proposal for a technical solution to the SSM team supervision problem described in SUCHAK.docx.*
 
+> **Revision (one-week build):** the prototype was descoped to ship in a week
+> and is now implemented in this repository — see the [README](../README.md)
+> for what runs today. Cuts: **YouTube removed from scope entirely** (per
+> stakeholder direction); Reddit, GDELT, and per-outlet RSS deferred (Google
+> News RSS covers the press); SQLite instead of PostgreSQL; TF-IDF similarity
+> instead of embedding models; server-rendered pages instead of a separate
+> React frontend; in-process scheduler instead of Celery. The architecture
+> below remains the target design; each deferred piece plugs into the same
+> pipeline.
+
 ---
 
 ## 1. Problem summary
@@ -70,14 +80,13 @@ Build a **human-in-the-loop supervisory signal triage pipeline**: automate the c
 |---|---|---|
 | Google News RSS | Free, no key (`news.google.com/rss/search?q="<entity name>"`) | Per-entity query feeds across thousands of outlets — the workhorse |
 | GDELT 2.0 | Free, open | Global news metadata every 15 min, with tone scores and themes |
-| Direct RSS: Economic Times, Mint, Business Standard, Moneycontrol, Hindu BusinessLine | Free | Indian financial press, low latency |
-| YouTube Data API | Free quota (10k units/day) | Video search per entity; titles/descriptions/comments |
-| Reddit API | Free tier | Social chatter (r/IndianStockMarket, r/personalfinanceindia, city subreddits) |
+| Direct RSS: Economic Times, Mint, Business Standard, Moneycontrol, Hindu BusinessLine | Free | Indian financial press, low latency *(deferred — Google News covers them)* |
+| Reddit API | Free tier | Social chatter *(deferred to a later phase)* |
 | RBI press releases & enforcement actions | Free (scrape/RSS) | Ground-truth regulatory events |
 | NSE/BSE corporate announcements | Free, public | Disclosures, defaults, auditor resignations — high-signal |
 
 Notes:
-- **X/Twitter API is no longer free** — defer it; Reddit + YouTube comments cover "social chatter" for the prototype.
+- **YouTube is out of scope** (removed at stakeholder direction) and the **X/Twitter API is no longer free** — social chatter, when added, comes via Reddit.
 - **Public grievances** (CPGRAMS, National Consumer Helpline, consumer forums) have no free streaming API; treat as a Phase-3 integration via data-sharing agreement rather than scraping.
 
 ### 3.2 Deduplication
@@ -179,7 +188,7 @@ Prototype it as a simple **relationship table**, not a full graph database:
 - Feedback loop: labeled items feed retrieval-based few-shot classification; measure accuracy uplift.
 - Action suggestions from similar past items.
 - User-defined Factors with retroactive testing.
-- Geographic tagging + map view. YouTube/Reddit ingestion.
+- Geographic tagging + map view. Reddit ingestion.
 - Super-admin cross-entity dashboard.
 
 **Phase 3 — Intelligence (weeks 11+)**

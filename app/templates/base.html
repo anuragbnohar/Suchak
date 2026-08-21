@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Suchak{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">Suchak <span class="devanagari">सूचक</span></a>
+  {% if user %}
+  <nav class="nav">
+    {% if user.role != 'superadmin' %}
+      <a href="/queue">Queue</a>
+      <a href="/dashboard">Dashboard</a>
+    {% else %}
+      <a href="/overview">Overview</a>
+      <a href="/queue">Queue</a>
+      <a href="/dashboard">Dashboard</a>
+    {% endif %}
+    <a href="/factors">Factors</a>
+    <a href="/entities">Entities</a>
+  </nav>
+  <div class="userbox">
+    <span class="username">{{ user.display_name }}</span>
+    <span class="role-chip role-{{ user.role }}">{{ user.role }}</span>
+    <a class="logout" href="/logout">Sign out</a>
+  </div>
+  {% endif %}
+</header>
+<main class="page">
+  {% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ entity.name }} · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Entity dashboard</h1>
+    <p class="page-sub">{{ entity.name }} · {{ entity.kind }} · last {{ stats.days }} days</p>
+  </div>
+  {% if entities|length > 1 %}
+  <form method="get" action="/dashboard" class="entity-picker">
+    <label>Entity
+      <select name="entity" onchange="this.form.submit()">
+        {% for e in entities %}
+        <option value="{{ e.id }}" {% if e.id == entity.id %}selected{% endif %}>{{ e.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+</div>
+
+<div class="tile-row">
+  <div class="tile">
+    <p class="tile-label">Items ({{ stats.days }}d)</p>
+    <p class="tile-value">{{ stats.total }}</p>
+  </div>
+  <div class="tile tile-serious">
+    <p class="tile-label">High severity</p>
+    <p class="tile-value">{{ stats.by_sev.high }}</p>
+  </div>
+  <div class="tile tile-warning">
+    <p class="tile-label">Medium severity</p>
+    <p class="tile-value">{{ stats.by_sev.medium }}</p>
+  </div>
+  <div class="tile">
+    <p class="tile-label">Low severity</p>
+    <p class="tile-value">{{ stats.by_sev.low }}</p>
+  </div>
+  <div class="tile tile-accent">
+    <p class="tile-label">Awaiting review</p>
+    <p class="tile-value">{{ stats.open_count }}</p>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2>Items by risk area</h2>
+    {% if stats.max_risk %}
+    <div class="hbar-chart">
+      {% for area, count in stats.by_risk %}
+      <div class="hbar-row">
+        <span class="hbar-label">{{ area }}</span>
+        <span class="hbar-track">
+          <span class="hbar-fill" style="width: {{ (count / stats.max_risk * 100) | round(1) }}%"></span>
+        </span>
+        <span class="hbar-value">{{ count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<p class="meta-dim">No categorized items in this window.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Daily volume</h2>
+    {% if stats.max_trend %}
+    <div class="trend" role="img" aria-label="Daily item counts over the last {{ stats.days }} days">
+      {% for t in stats.trend %}
+      <div class="trend-col" title="{{ t.date }}: {{ t.count }} item{{ 's' if t.count != 1 }}">
+        <span class="trend-bar" style="height: {{ (t.count / stats.max_trend * 100) | round(1) }}%"></span>
+        {% if loop.index0 % 3 == 0 %}<span class="trend-label">{{ t.date[:2] }}</span>{% else %}<span class="trend-label"></span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="meta-dim small">Peak: {{ stats.max_trend }} items/day. Hover a bar for the date.</p>
+    {% else %}<p class="meta-dim">No items in this window.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Recent high-severity items</h2>
+    {% if stats.high_recent %}
+    <ul class="similar-list">
+      {% for it in stats.high_recent %}
+      <li>
+        <a href="/item/{{ it.id }}">{{ it.title }}</a>
+        <p class="meta-dim small">{{ it.published_at | timeago }} ·
+          {{ it.risk_areas | join(', ') if it.risk_areas else 'uncategorized' }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="meta-dim">None in this window.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Factor matches</h2>
+    {% if stats.by_factor %}
+    <table class="data-table">
+      <tr><th scope="col">Factor</th><th scope="col" class="num">Items</th></tr>
+      {% for name, count in stats.by_factor %}
+      <tr><td>⚑ {{ name }}</td><td class="num">{{ count }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="meta-dim">No factor matches in this window.
+      Define factors on the <a href="/factors">Factors</a> page.</p>{% endif %}
+
+    <h2 class="mt">Linked organizations</h2>
+    {% if stats.linkages %}
+    <table class="data-table">
+      <tr><th scope="col">Organization</th><th scope="col">Link</th><th scope="col" class="num">Items</th></tr>
+      {% for l in stats.linkages %}
+      <tr><td>{{ l.name }}</td><td class="meta-dim">{{ l.type | replace('_',' ') }}</td><td class="num">{{ l.count }}</td></tr>
+      {% endfor %}
+    </table>
+    <p class="meta-dim small">Extracted from news text — the seed of second-order risk warnings.</p>
+    {% else %}<p class="meta-dim">No linkages extracted in this window.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

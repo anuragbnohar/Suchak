@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Overview · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>All regulated entities</h1>
+    <p class="page-sub">Cross-entity signal picture · last 7 days · sorted by high-severity volume</p>
+  </div>
+</div>
+
+<table class="data-table overview-table">
+  <tr>
+    <th scope="col">Entity</th>
+    <th scope="col">Kind</th>
+    <th scope="col" class="num">Items (7d)</th>
+    <th scope="col" class="num">High severity (7d)</th>
+    <th scope="col" class="num">Awaiting review</th>
+    <th scope="col">Top risk area (7d)</th>
+    <th scope="col">Latest item</th>
+    <th scope="col"></th>
+  </tr>
+  {% for r in rows %}
+  <tr class="{% if r.high7 %}row-serious{% endif %}">
+    <td><strong>{{ r.entity.name }}</strong></td>
+    <td class="meta-dim">{{ r.entity.kind }}</td>
+    <td class="num">{{ r.total7 }}</td>
+    <td class="num">{% if r.high7 %}<span class="sev-chip sev-chip-high">{{ r.high7 }} high</span>{% else %}0{% endif %}</td>
+    <td class="num">{{ r.open }}</td>
+    <td>{{ r.top_risk }}</td>
+    <td class="meta-dim">{{ r.last | timeago }}</td>
+    <td><a href="/dashboard?entity={{ r.entity.id }}">Dashboard</a> ·
+        <a href="/queue?entity={{ r.entity.id }}">Queue</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

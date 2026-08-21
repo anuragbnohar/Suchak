@@ -1,0 +1,287 @@
+"""Classification of ingested items.
+
+Primary path: Claude with a structured-output JSON schema. The prompt
+carries the taxonomy, the entity's context, active user-defined Factors,
+and few-shot examples retrieved from human-reviewed items — this is how
+the system "learns" from reviewer behaviour without any fine-tuning.
+
+Fallback path: a keyword heuristic, so the pipeline runs end-to-end with
+no API key (demo mode) or when the API is unreachable. Every verdict
+records which classifier and model produced it, for auditability.
+"""
+import json
+import logging
+import os
+from datetime import datetime, timezone
+
+from . import taxonomy
+from .db import one, q, x
+from .similarity import rank_similar
+
+log = logging.getLogger("suchak.classify")
+
+MODEL = os.environ.get("SUCHAK_MODEL", "claude-opus-5")
+
+VERDICT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "relevant": {"type": "boolean"},
+        "relevance_score": {"type": "number"},
+        "risk_areas": {
+            "type": "array",
+            "items": {"type": "string", "enum": taxonomy.RISK_AREAS},
+        },
+        "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+        "actionability": {
+            "type": "string",
+            "enum": ["action_recommended", "review_recommended", "monitor"],
+        },
+        "geography": {"type": ["string", "null"]},
+        "summary": {"type": "string"},
+        "factor_matches": {"type": "array", "items": {"type": "string"}},
+        "relationships": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "name": {"type": "string"},
+                },
+                "required": ["type", "name"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": [
+        "relevant", "relevance_score", "risk_areas", "severity",
+        "actionability", "geography", "summary", "factor_matches",
+        "relationships",
+    ],
+    "additionalProperties": False,
+}
+
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        import anthropic
+        _client = anthropic.Anthropic()
+    return _client
+
+
+def active_factors(db, entity_id: int) -> list:
+    return q(
+        db,
+        "SELECT * FROM factors WHERE active = 1 AND (entity_id IS NULL OR entity_id = ?)"
+        " ORDER BY entity_id IS NULL DESC, name",
+        (entity_id,),
+    )
+
+
+def similar_reviewed(db, entity_id: int, text: str, top_k: int = 3) -> list:
+    """Reviewed items most similar to `text` — same entity first, then any
+    entity — used both as few-shot examples and for action suggestions."""
+    rows = q(
+        db,
+        "SELECT id, entity_id, title, summary, review_relevant, review_risk_areas,"
+        "       review_actionable, review_action, review_notes"
+        " FROM items WHERE status IN ('reviewed','dismissed') AND reviewed_at IS NOT NULL"
+        " ORDER BY (entity_id = ?) DESC, reviewed_at DESC LIMIT 400",
+        (entity_id,),
+    )
+    if not rows:
+        return []
+    by_id = {r["id"]: r for r in rows}
+    candidates = [(r["id"], f"{r['title']} {r['summary'] or ''}") for r in rows]
+    ranked = rank_similar(text, candidates, top_k=top_k)
+    return [(by_id[key], score) for key, score in ranked]
+
+
+def suggest_action(similar: list) -> str | None:
+    """Most common recorded action among similar actionable reviewed items."""
+    actions = [
+        r["review_action"] for r, _ in similar
+        if r["review_actionable"] and r["review_action"]
+    ]
+    if not actions:
+        return None
+    return max(set(actions), key=actions.count)
+
+
+def _build_system(entity, factors, examples) -> str:
+    lines = [
+        "You are a supervisory triage assistant for the Banking Supervisor of India.",
+        "You classify public news items about a regulated entity so a small "
+        "supervision team can focus its review. You only summarize and classify "
+        "the text you are given — never invent facts beyond it.",
+        "",
+        f"Regulated entity under supervision: {entity['name']} ({entity['kind']}).",
+        f"Known aliases: {', '.join(json.loads(entity['aliases']))}.",
+        "",
+        "Risk areas (choose zero or more that genuinely apply): "
+        + "; ".join(taxonomy.RISK_AREAS) + ".",
+        "Severity: high = potential supervisory concern needing prompt attention "
+        "(fraud, default, run on deposits, regulatory breach, cyber incident); "
+        "medium = notable negative development worth review; low = routine or "
+        "positive coverage.",
+        "Actionability: action_recommended = the team likely must act; "
+        "review_recommended = a person should read this soon; monitor = ambient awareness only.",
+        "Relevance: the item must actually concern this entity (not merely a "
+        "similarly named organization). relevance_score is 0 to 1.",
+        "Geography: the Indian state/city the item concerns, if identifiable, else null.",
+        "Summary: one factual sentence based only on the given text.",
+        "Relationships: organizations linked to the entity in the text, with the link type "
+        "(borrower_of, promoter_of, subsidiary_of, partner_of, auditor_of, vendor_of, other).",
+    ]
+    if factors:
+        lines += ["", "User-defined Factors — list each factor whose conditions the item meets "
+                      "in factor_matches (use the factor name exactly):"]
+        for f in factors:
+            lines.append(f"- {f['name']}: {f['conditions']}")
+    if examples:
+        lines += ["", "Precedents — similar items this team already reviewed "
+                      "(follow their judgment where applicable):"]
+        for r, _score in examples:
+            label = "relevant" if r["review_relevant"] else "not relevant"
+            areas = ", ".join(json.loads(r["review_risk_areas"] or "[]")) or "none"
+            act = "actionable" if r["review_actionable"] else "not actionable"
+            action = f"; action taken: {r['review_action']}" if r["review_action"] else ""
+            lines.append(f'- "{r["title"]}" -> {label}; risk areas: {areas}; {act}{action}')
+    return "\n".join(lines)
+
+
+def _llm_classify(entity, factors, examples, title, snippet, source, published):
+    client = _get_client()
+    user_msg = (
+        f"Classify this item.\n"
+        f"Title: {title}\n"
+        f"Source: {source or 'unknown'}\n"
+        f"Published: {published or 'unknown'}\n"
+        f"Snippet: {snippet or '(none)'}"
+    )
+    resp = client.messages.create(
+        model=MODEL,
+        max_tokens=2048,
+        system=_build_system(entity, factors, examples),
+        messages=[{"role": "user", "content": user_msg}],
+        output_config={"format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
+    )
+    if resp.stop_reason == "refusal":
+        raise RuntimeError("model refused classification")
+    text = next(b.text for b in resp.content if b.type == "text")
+    verdict = json.loads(text)
+    return verdict, "llm", MODEL
+
+
+# --- keyword fallback -------------------------------------------------------
+
+_HEURISTIC_KEYWORDS = {
+    "Credit Risk": [
+        "default", "npa", "bad loan", "write-off", "writeoff", "provisioning",
+        "restructur", "insolvency", "bankruptc", "loan fraud", "evergreen",
+        "recovery suit", "wilful defaulter",
+    ],
+    "Market Risk": [
+        "treasury loss", "forex", "derivative", "mark-to-market", "bond loss",
+        "trading loss", "investment loss",
+    ],
+    "Liquidity Risk": [
+        "withdrawal", "deposit run", "bank run", "liquidity crunch",
+        "cash crunch", "redemption pressure", "withdrawal cap", "unable to pay depositors",
+    ],
+    "Operational Risk": [
+        "outage", "downtime", "system failure", "technical glitch", "server down",
+        "upi fail", "embezzle", "theft", "robbery", "internal fraud", "atm fraud",
+    ],
+    "Governance Risk": [
+        "resign", "board dispute", "auditor", "audit qualification", "promoter",
+        "related party", "penalty", "show cause", "violation", "money laundering",
+        "kyc lapse", "licence cancel", "license cancel", "irregularit",
+    ],
+    "Cybersecurity Risk": [
+        "hack", "breach", "ransomware", "phishing", "data leak", "malware",
+        "ddos", "cyber attack", "cyberattack",
+    ],
+    "Conduct & Consumer Protection": [
+        "mis-sell", "misselling", "mis-sold", "complaint", "grievance",
+        "harass", "recovery agent", "overcharg", "hidden charge", "unauthorised account",
+        "unauthorized account",
+    ],
+}
+
+_HIGH_SEVERITY = [
+    "fraud", "scam", "default", "penalty", "hack", "breach", "bank run",
+    "deposit run", "insolvency", "arrest", "raid", "licence cancel",
+    "license cancel", "money laundering", "ransomware",
+]
+
+
+def _heuristic_classify(entity, title, snippet):
+    text = f"{title} {snippet or ''}".lower()
+    aliases = [a.lower() for a in json.loads(entity["aliases"])]
+    in_title = any(a in title.lower() for a in aliases)
+    in_text = any(a in text for a in aliases)
+
+    risk_areas = [
+        area for area, words in _HEURISTIC_KEYWORDS.items()
+        if any(w in text for w in words)
+    ]
+    high = any(w in text for w in _HIGH_SEVERITY)
+    severity = "high" if high else ("medium" if risk_areas else "low")
+    verdict = {
+        "relevant": in_text,
+        "relevance_score": 0.9 if in_title else (0.6 if in_text else 0.2),
+        "risk_areas": risk_areas,
+        "severity": severity,
+        "actionability": "review_recommended" if high else ("monitor" if risk_areas else "monitor"),
+        "geography": None,
+        "summary": (snippet or title)[:280],
+        "factor_matches": [],
+        "relationships": [],
+    }
+    return verdict, "heuristic", "keyword-rules"
+
+
+def classify_item(db, item) -> None:
+    """Classify one item row and persist the verdict."""
+    entity = one(db, "SELECT * FROM entities WHERE id = ?", (item["entity_id"],))
+    factors = active_factors(db, item["entity_id"])
+    examples = similar_reviewed(db, item["entity_id"], f"{item['title']} {item['snippet'] or ''}")
+    try:
+        verdict, classifier, model = _llm_classify(
+            entity, factors, examples,
+            item["title"], item["snippet"], item["source_name"], item["published_at"],
+        )
+    except Exception as exc:  # missing key, network, rate limit, refusal, bad JSON
+        log.warning("LLM classification failed (%s: %s); using heuristic", type(exc).__name__, exc)
+        verdict, classifier, model = _heuristic_classify(entity, item["title"], item["snippet"])
+
+    x(
+        db,
+        "UPDATE items SET status='classified', relevance=?, risk_areas=?, severity=?,"
+        " actionability=?, geography=?, summary=?, factor_matches=?, relationships=?,"
+        " classifier=?, model=?, classified_at=? WHERE id=?",
+        (
+            float(verdict.get("relevance_score") or 0),
+            json.dumps(verdict.get("risk_areas") or []),
+            verdict.get("severity") or "low",
+            verdict.get("actionability") or "monitor",
+            verdict.get("geography"),
+            verdict.get("summary") or item["title"],
+            json.dumps(verdict.get("factor_matches") or []),
+            json.dumps(verdict.get("relationships") or []),
+            classifier,
+            model,
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            item["id"],
+        ),
+    )
+
+
+def classify_new_items(db, limit: int = 100) -> int:
+    rows = q(db, "SELECT * FROM items WHERE status = 'new' ORDER BY id LIMIT ?", (limit,))
+    for row in rows:
+        classify_item(db, row)
+    return len(rows)

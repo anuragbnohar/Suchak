@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Entities · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Regulated entities</h1>
+    <p class="page-sub">Aliases drive news matching — include brand names, abbreviations and vernacular spellings.</p>
+  </div>
+  {% if user.role in ('lead','superadmin') %}
+  <form method="post" action="/fetch">
+    <button type="submit" class="btn btn-primary">Fetch now — all entities</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="dash-grid">
+  <section class="panel wide">
+    <table class="data-table">
+      <tr>
+        <th scope="col">Entity</th>
+        <th scope="col">Kind</th>
+        <th scope="col">Aliases</th>
+        <th scope="col" class="num">Items</th>
+        <th scope="col">Last fetch</th>
+        {% if user.role in ('lead','superadmin') %}<th scope="col"></th>{% endif %}
+      </tr>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.entity.name }}</strong></td>
+        <td class="meta-dim">{{ r.entity.kind }}</td>
+        <td>
+          {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
+          <form method="post" action="/entities/{{ r.entity.id }}/aliases" class="inline-form">
+            <input name="aliases" value="{{ r.aliases | join(', ') }}">
+            <button type="submit" class="btn btn-small">Save</button>
+          </form>
+          {% else %}{{ r.aliases | join(', ') }}{% endif %}
+        </td>
+        <td class="num">{{ r.items }}</td>
+        <td class="meta-dim small">
+          {% if r.last_fetch %}
+            {{ r.last_fetch.ran_at | timeago }} · {{ r.last_fetch.added }} added,
+            {{ r.last_fetch.merged }} merged
+            {% if r.last_fetch.note %}<br>⚠ {{ r.last_fetch.note }}{% endif %}
+          {% else %}never{% endif %}
+        </td>
+        {% if user.role in ('lead','superadmin') %}
+        <td>
+          {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
+          <form method="post" action="/fetch">
+            <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
+            <button type="submit" class="btn btn-small">Fetch</button>
+          </form>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="meta-dim small">Source: Google News RSS (free, no key). Demo entities are fictional —
+      add a real regulated entity to pull live public news.</p>
+  </section>
+
+  {% if user.role == 'superadmin' %}
+  <section class="panel">
+    <h2>Add an entity</h2>
+    <form method="post" action="/entities" class="stack-form">
+      <label>Name
+        <input name="name" placeholder="e.g. State Bank of India" required>
+      </label>
+      <label>Kind
+        <select name="kind">
+          {% for k in taxonomy.ENTITY_KINDS %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Aliases (comma-separated)
+        <input name="aliases" placeholder="State Bank of India, SBI">
+      </label>
+      <button type="submit" class="btn btn-primary">Add entity</button>
+    </form>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

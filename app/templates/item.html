@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title[:60] }} · Suchak{% endblock %}
+{% block content %}
+<p class="crumb"><a href="/queue?entity={{ entity.id }}">← Back to queue</a></p>
+
+<article class="detail">
+  <div class="detail-main">
+    <h1 class="detail-title">{{ item.title }}</h1>
+    <p class="item-meta">
+      <span class="sev-chip sev-chip-{{ item.severity or 'low' }}">{{ item.severity or 'low' }}</span>
+      <span class="meta-action">{{ item.actionability_label }}</span>
+      {% if item.geography %}<span class="meta-dim">📍 {{ item.geography }}</span>{% endif %}
+      <span class="meta-dim">{{ item.published_at | timeago }}</span>
+    </p>
+
+    {% if item.summary %}<p class="detail-summary">{{ item.summary }}</p>{% endif %}
+    {% if item.snippet and item.snippet != item.summary %}
+    <p class="detail-snippet">{{ item.snippet }}</p>
+    {% endif %}
+
+    <div class="chip-row">
+      {% for area in item.risk_areas %}<span class="area-chip">{{ area }}</span>{% endfor %}
+      {% for f in item.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
+    </div>
+
+    <section class="detail-block">
+      <h2>Sources</h2>
+      <ul class="source-list">
+        <li><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.source_name or 'Source' }}</a>
+            <span class="meta-dim">{{ item.published_at | timeago }}</span></li>
+        {% for s in sources %}
+        <li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.source_name or 'Source' }}</a>
+            <span class="meta-dim">{{ s.published_at | timeago }}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    {% if item.relationships %}
+    <section class="detail-block">
+      <h2>Linkages mentioned</h2>
+      <ul class="rel-list">
+        {% for r in item.relationships %}
+        <li><strong>{{ r.name }}</strong> <span class="meta-dim">({{ r.type | replace('_', ' ') }})</span></li>
+        {% endfor %}
+      </ul>
+      <p class="meta-dim small">Linked organizations feed second-order risk warnings across entities.</p>
+    </section>
+    {% endif %}
+
+    <p class="audit-line">Classified by: {{ item.classifier or '—' }}
+      {% if item.model %}({{ item.model }}){% endif %}
+      {% if item.classified_at %} · {{ item.classified_at | timeago }}{% endif %}
+      · relevance {{ '%.0f' | format((item.relevance or 0) * 100) }}%</p>
+  </div>
+
+  <aside class="detail-side">
+    {% if item.status in ('reviewed', 'dismissed') %}
+    <section class="panel">
+      <h2>Review on record</h2>
+      <p><strong>{{ item.reviewer_name }}</strong> · {{ item.reviewed_at | timeago }}</p>
+      <p>{{ 'Relevant' if item.review_relevant else 'Not relevant' }} ·
+         {{ 'Actionable' if item.review_actionable else 'Not actionable' }}</p>
+      {% if item.review_risk_areas %}
+      <div class="chip-row">{% for a in item.review_risk_areas %}<span class="area-chip">{{ a }}</span>{% endfor %}</div>
+      {% endif %}
+      {% if item.review_action %}<p>Action: <strong>{{ item.review_action }}</strong></p>{% endif %}
+      {% if item.review_notes %}<p class="meta-dim">“{{ item.review_notes }}”</p>{% endif %}
+    </section>
+    {% endif %}
+
+    {% if similar %}
+    <section class="panel">
+      <h2>Similar reviewed items</h2>
+      {% if suggestion %}
+      <p class="suggestion">Suggested action: <strong>{{ suggestion }}</strong></p>
+      <p class="meta-dim small">Based on how this team handled similar items.</p>
+      {% endif %}
+      <ul class="similar-list">
+        {% for s, score in similar %}
+        <li>
+          <a href="/item/{{ s.id }}">{{ s.title }}</a>
+          <p class="meta-dim small">
+            {{ 'relevant' if s.review_relevant else 'not relevant' }}{% if s.review_action %} · {{ s.review_action }}{% endif %}
+          </p>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <h2>{{ 'Update review' if item.status in ('reviewed','dismissed') else 'Record your review' }}</h2>
+      <form method="post" action="/item/{{ item.id }}/review" class="review-form">
+        <fieldset>
+          <legend>Is this relevant to {{ entity.name }}?</legend>
+          <label><input type="radio" name="relevant" value="yes"
+                 {% if item.review_relevant or item.review_relevant is none %}checked{% endif %}> Yes</label>
+          <label><input type="radio" name="relevant" value="no"
+                 {% if item.review_relevant == 0 %}checked{% endif %}> No — dismiss</label>
+        </fieldset>
+        <fieldset>
+          <legend>Risk areas</legend>
+          {% for area in taxonomy.RISK_AREAS %}
+          <label class="check"><input type="checkbox" name="risk_areas" value="{{ area }}"
+            {% if (item.review_risk_areas and area in item.review_risk_areas)
+                  or (not item.review_risk_areas and area in item.risk_areas) %}checked{% endif %}>
+            {{ area }}</label>
+          {% endfor %}
+        </fieldset>
+        <fieldset>
+          <legend>Actionable?</legend>
+          <label><input type="radio" name="actionable" value="yes"
+            {% if item.review_actionable %}checked{% endif %}> Yes</label>
+          <label><input type="radio" name="actionable" value="no"
+            {% if not item.review_actionable %}checked{% endif %}> No</label>
+        </fieldset>
+        <label>Action taken / proposed
+          <select name="action">
+            <option value="">—</option>
+            {% for a in taxonomy.ACTIONS %}
+            <option value="{{ a }}" {% if item.review_action == a or (not item.review_action and suggestion == a) %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Notes
+          <textarea name="notes" rows="3">{{ item.review_notes or '' }}</textarea>
+        </label>
+        <button type="submit" class="btn btn-primary">Save review</button>
+        <p class="meta-dim small">Your review becomes a precedent that improves future classification.</p>
+      </form>
+    </section>
+  </aside>
+</article>
+{% endblock %}

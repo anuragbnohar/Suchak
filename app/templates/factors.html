@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Factors · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Factors</h1>
+    <p class="page-sub">Named rules in plain language — the classifier flags every item that meets a factor's conditions.</p>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <section class="panel wide">
+    {% if factors %}
+    <table class="data-table">
+      <tr>
+        <th scope="col">Factor</th>
+        <th scope="col">Conditions</th>
+        <th scope="col">Scope</th>
+        <th scope="col">Status</th>
+        {% if user.role in ('lead','superadmin') %}<th scope="col"></th>{% endif %}
+      </tr>
+      {% for f in factors %}
+      <tr>
+        <td><strong>⚑ {{ f.name }}</strong><br><span class="meta-dim small">by {{ f.author or '—' }}</span></td>
+        <td class="conditions">{{ f.conditions }}</td>
+        <td>{{ f.entity_name or 'All entities' }}</td>
+        <td>{% if f.active %}<span class="ok-chip">active</span>{% else %}<span class="meta-dim">inactive</span>{% endif %}</td>
+        {% if user.role in ('lead','superadmin') %}
+        <td>
+          <form method="post" action="/factors/{{ f.id }}/toggle">
+            <button type="submit" class="btn btn-small">{{ 'Deactivate' if f.active else 'Activate' }}</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="meta-dim">No factors defined yet.</p>{% endif %}
+  </section>
+
+  {% if user.role in ('lead','superadmin') %}
+  <section class="panel">
+    <h2>Add a factor</h2>
+    <form method="post" action="/factors" class="stack-form">
+      <label>Name
+        <input name="name" placeholder="e.g. Sales malpractice" required>
+      </label>
+      <label>Conditions (plain language)
+        <textarea name="conditions" rows="4" required
+          placeholder="Flag if the item alleges mis-selling of insurance or investment products…"></textarea>
+      </label>
+      <label>Scope
+        <select name="scope">
+          {% if user.entity_id %}<option value="entity">My entity only</option>{% endif %}
+          {% if user.role == 'superadmin' %}<option value="global">All entities</option>{% endif %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary">Add factor</button>
+      <p class="meta-dim small">New items are evaluated against active factors at classification time.</p>
+    </form>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

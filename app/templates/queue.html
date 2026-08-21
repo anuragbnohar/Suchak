@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Queue · {{ entity.name }} · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Review queue</h1>
+    <p class="page-sub">{{ entity.name }} · {{ entity.kind }}</p>
+  </div>
+  {% if entities|length > 1 %}
+  <form method="get" action="/queue" class="entity-picker">
+    <label>Entity
+      <select name="entity" onchange="this.form.submit()">
+        {% for e in entities %}
+        <option value="{{ e.id }}" {% if e.id == entity.id %}selected{% endif %}>{{ e.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+</div>
+
+<div class="filter-row">
+  <nav class="tabs">
+    {% for s, label in [('open','To review'), ('reviewed','Reviewed'), ('dismissed','Dismissed'), ('all','All')] %}
+    <a class="tab {% if status == s %}active{% endif %}"
+       href="/queue?entity={{ entity.id }}&amp;status={{ s }}{% if risk %}&amp;risk={{ risk }}{% endif %}">
+      {{ label }}
+      {% if s != 'all' and counts.get(s) %}<span class="tab-count">{{ counts.get(s) }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </nav>
+  <form method="get" action="/queue" class="risk-filter">
+    <input type="hidden" name="entity" value="{{ entity.id }}">
+    <input type="hidden" name="status" value="{{ status }}">
+    <select name="risk" onchange="this.form.submit()">
+      <option value="">All risk areas</option>
+      {% for area in taxonomy.RISK_AREAS %}
+      <option value="{{ area }}" {% if risk == area %}selected{% endif %}>{{ area }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+{% if items %}
+<ul class="item-list">
+  {% for it in items %}
+  <li class="item-row sev-{{ it.severity or 'low' }}">
+    <a class="item-link" href="/item/{{ it.id }}">
+      <div class="item-top">
+        <span class="sev-chip sev-chip-{{ it.severity or 'low' }}">{{ it.severity or 'low' }}</span>
+        <span class="item-title">{{ it.title }}</span>
+      </div>
+      <div class="item-meta">
+        <span class="meta-action">{{ it.actionability_label }}</span>
+        {% for area in it.risk_areas %}<span class="area-chip">{{ area }}</span>{% endfor %}
+        {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
+        <span class="meta-dim">{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }} more source{{ 's' if it.extra_sources > 1 }}{% endif %}</span>
+        <span class="meta-dim">{{ it.published_at | timeago }}</span>
+        {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name }}</span>{% endif %}
+        {% if it.status == 'dismissed' %}<span class="meta-dim">✕ dismissed</span>{% endif %}
+        {% if it.status == 'new' %}<span class="meta-dim">awaiting classification</span>{% endif %}
+      </div>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">
+  <p>No items here.</p>
+  <p class="meta-dim">Use <a href="/entities">Entities → Fetch now</a> to pull fresh news, or switch tabs.</p>
+</div>
+{% endif %}
+{% endblock %}
