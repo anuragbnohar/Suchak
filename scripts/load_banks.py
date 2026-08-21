@@ -1,6 +1,7 @@
 """Load India's scheduled commercial banks as regulated entities.
 
-    python -m scripts.load_banks
+    python -m scripts.load_banks                       # all 33
+    python -m scripts.load_banks --only "SBI,HDFC,ICICI"
 
 Aliases are chosen for precision: abbreviations that are ambiguous in news
 text (BoB, TMB) are deliberately omitted, because a bad alias costs money
@@ -63,12 +64,37 @@ EXCLUDE_TERMS = {
 KIND = "Scheduled Commercial Bank"
 
 
-def main(dry_run: bool = False, team: str | None = None) -> None:
+def _selected(only: list[str] | None):
+    """Banks matching any of the given terms, against name or alias, so
+    "SBI,HDFC,ICICI" is enough -- no need for exact legal names."""
+    everything = PUBLIC_SECTOR + PRIVATE_SECTOR
+    if not only:
+        return everything
+    terms = [t.strip().lower() for t in only if t.strip()]
+    picked = []
+    for name, aliases in everything:
+        hay = " | ".join([name] + aliases).lower()
+        if any(t in hay for t in terms):
+            picked.append((name, aliases))
+    return picked
+
+
+def main(dry_run: bool = False, team: str | None = None,
+         only: list[str] | None = None) -> None:
     init_db()
     db = connect()
     try:
+        selection = _selected(only)
+        if only:
+            if not selection:
+                print(f"No bank matched {only!r}. Nothing loaded.")
+                return
+            print("Loading only:")
+            for name, _ in selection:
+                print(f"  {name}")
+            print()
         added = skipped = 0
-        for name, aliases in PUBLIC_SECTOR + PRIVATE_SECTOR:
+        for name, aliases in selection:
             if one(db, "SELECT 1 FROM entities WHERE name = ?", (name,)):
                 skipped += 1
                 continue
@@ -107,10 +133,16 @@ def main(dry_run: bool = False, team: str | None = None) -> None:
         db.close()
 
 
+def _flag_value(args: list[str], flag: str) -> str | None:
+    if flag in args:
+        i = args.index(flag)
+        return args[i + 1] if i + 1 < len(args) else None
+    return None
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
-    team_name = None
-    if "--team" in args:
-        i = args.index("--team")
-        team_name = args[i + 1] if i + 1 < len(args) else None
-    main(dry_run="--dry-run" in args, team=team_name)
+    only_raw = _flag_value(args, "--only")
+    main(dry_run="--dry-run" in args,
+         team=_flag_value(args, "--team"),
+         only=only_raw.split(",") if only_raw else None)

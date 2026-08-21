@@ -278,8 +278,14 @@ bank so they have a queue to work; the super admin sees everything anyway.
 ## Loading India's scheduled commercial banks
 
 ```bash
-python -m scripts.load_banks     # 33 SCBs: 12 public sector, 21 private
+python -m scripts.load_banks                        # all 33 SCBs
+python -m scripts.load_banks --only "SBI,HDFC,ICICI"  # just a few, for a pilot
 ```
+
+`--only` matches its terms against each bank's name and aliases, so short
+forms are enough. Load only what you intend to monitor: the background
+sweep fetches **every** loaded entity, so an unused entity still costs
+API calls on each cycle.
 
 Then sign in as `admin` and use **Entities -> Fetch now**. Aliases are chosen
 for precision -- ambiguous abbreviations (BoB, TMB) are deliberately omitted,
