@@ -77,6 +77,25 @@
     {% endif %}
   </section>
 
+  <section class="panel">
+    <h2>Trusted sources</h2>
+    {% if user.role == 'superadmin' %}
+    <form method="post" action="/settings/trusted" class="stack-form">
+      <label>Outlets ranked above the rest (one per line)
+        <textarea name="trusted_sources" rows="8">{{ trusted_sources }}</textarea>
+      </label>
+      <button type="submit" class="btn btn-primary">Save trusted sources</button>
+      <p class="meta-dim small">Items from these outlets rank above others of the
+        same severity and carry a ✓ beside the source name; RBI and exchange
+        items always rank first. The queue's source filter can show trusted
+        sources only. Saving re-tiers every stored item immediately.</p>
+    </form>
+    {% else %}
+    <p class="conditions">{{ trusted_sources | replace('\n', ' · ') }}</p>
+    <p class="meta-dim small">Editable by the super admin.</p>
+    {% endif %}
+  </section>
+
   {% if user.role in ('lead','superadmin') %}
   <section class="panel">
     <h2>Add a factor</h2>

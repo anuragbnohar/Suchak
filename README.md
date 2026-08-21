@@ -115,6 +115,12 @@ in that entity's queue. A background cycle also runs every 30 minutes.
   *Filtered out* tab with the reason recorded — nothing is silently
   deleted, and genuine company events are never excluded merely because
   the share price is mentioned.
+- **Source trust tiers** — every item is tiered *official* (RBI, exchanges)
+  / *trusted* (the super-admin-editable outlet list on the Factors page,
+  seeded with the major Indian financial press and wires) / *other*. Within
+  the same severity, official and trusted sources rank first; trusted items
+  carry a ✓ beside the outlet; the queue's source filter shows trusted
+  sources only. Editing the list re-tiers every stored item immediately.
 - **Complaints view** — the classifier tags customer-grievance items (from
   news and social posts) with topics: Mis-selling, Recovery practices,
   Service disruption, Unauthorized transactions, Charges & fees, Harassment,

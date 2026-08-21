@@ -14,7 +14,7 @@
         {% for area in it.risk_areas %}<span class="area-chip">{{ area }}</span>{% endfor %}
         {% for t in it.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
         {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
-        <span class="meta-dim">{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }} more source{{ 's' if it.extra_sources > 1 }}{% endif %}</span>
+        <span class="meta-dim">{% if it.source_tier == 'trusted' %}<span class="ok-chip" title="trusted source">✓</span> {% endif %}{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }} more source{{ 's' if it.extra_sources > 1 }}{% endif %}</span>
         <span class="meta-dim">{{ it.published_at | timeago }}</span>
         {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name }}</span>{% endif %}
         {% if it.status == 'dismissed' %}<span class="meta-dim">✕ dismissed</span>{% endif %}
@@ -57,9 +57,13 @@
   <form method="get" action="/queue" class="risk-filter">
     <input type="hidden" name="entity" value="{{ entity.id }}">
     <input type="hidden" name="status" value="{{ status }}">
-    {% for k, v in extras.items() if k != 'risk' %}
+    {% for k, v in extras.items() if k not in ('risk', 'src') %}
     <input type="hidden" name="{{ k }}" value="{{ v }}">
     {% endfor %}
+    <select name="src" onchange="this.form.submit()">
+      <option value="">All sources</option>
+      <option value="trusted" {% if extras.get('src') == 'trusted' %}selected{% endif %}>Trusted sources only</option>
+    </select>
     <select name="risk" onchange="this.form.submit()">
       <option value="">All risk areas</option>
       {% for area in taxonomy.RISK_AREAS %}
@@ -80,6 +84,7 @@
     {%- elif k == 'risk' %}{{ v }}
     {%- elif k == 'factor' %}factor: {{ v }}
     {%- elif k == 'org' %}linked to {{ v }}
+    {%- elif k == 'src' %}trusted sources only
     {%- elif k == 'complaints' %}customer complaints
     {%- elif k == 'topic' %}topic: {{ v }}
     {%- else %}{{ k }}: {{ v }}{% endif -%}

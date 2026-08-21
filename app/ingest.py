@@ -42,6 +42,7 @@ from .classify import classify_new_items
 from .db import connect, one, q, x
 from .matching import Registry, build_query
 from .similarity import title_similarity
+from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
 
@@ -477,6 +478,7 @@ def ingest_entity(db, entity, registry: Registry | None = None,
               "billed": 0, "note": None}
     notes = []
 
+    trusted_norms = load_trusted_norms(db)
     candidates = list(extra_candidates or [])
     if candidates:
         notes.append(f"{len(candidates)} from regulator/exchange feeds")
@@ -547,9 +549,11 @@ def ingest_entity(db, entity, registry: Registry | None = None,
             new_id = x(
                 db,
                 "INSERT INTO items (entity_id, title, url, source_name, snippet,"
-                " published_at, source_type) VALUES (?,?,?,?,?,?,?)",
+                " published_at, source_type, source_tier) VALUES (?,?,?,?,?,?,?,?)",
                 (entity["id"], title, link, cand["source_name"],
-                 cand["snippet"][:500], published, cand["source_type"]),
+                 cand["snippet"][:500], published, cand["source_type"],
+                 tier_for(cand["source_type"], cand["source_name"], link,
+                          trusted_norms)),
             )
             recent.append({"id": new_id, "title": title,
                            "source_type": cand["source_type"]})

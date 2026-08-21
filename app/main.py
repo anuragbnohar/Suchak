@@ -25,6 +25,8 @@ from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
 from .db import connect, get_setting, init_db, one, q, set_setting, x
 from .ingest import run_cycle
 from .seed import seed_if_empty
+from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
+                    recompute_source_tiers)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("suchak")
@@ -57,6 +59,9 @@ async def lifespan(app: FastAPI):
     try:
         if seed_if_empty(db):
             log.info("Seeded demo entities, users, factors and items")
+        changed = recompute_source_tiers(db)
+        if changed:
+            log.info("Source trust tiers set on %d item(s)", changed)
     finally:
         db.close()
     if FETCH_MINUTES > 0:
@@ -198,6 +203,9 @@ def queue(request: Request):
             sev = ""
         factor = (request.query_params.get("factor") or "")[:80]
         org = (request.query_params.get("org") or "")[:120]
+        src = request.query_params.get("src", "")
+        if src != "trusted":
+            src = ""
         complaints = request.query_params.get("complaints", "") == "1"
         topic = request.query_params.get("topic", "")
         if topic not in taxonomy.COMPLAINT_TOPICS:
@@ -241,6 +249,8 @@ def queue(request: Request):
         if org:
             where.append("i.relationships LIKE ?")
             params.append(f'%"name": "{org}"%')
+        if src == "trusted":
+            where.append("i.source_tier IN ('official','trusted')")
         if complaints or topic:
             where.append("i.complaint_topics != '[]'")
         if topic:
@@ -257,6 +267,8 @@ def queue(request: Request):
             "   WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
             " CASE i.actionability WHEN 'action_recommended' THEN 0"
             "   WHEN 'review_recommended' THEN 1 ELSE 2 END,"
+            " CASE i.source_tier WHEN 'official' THEN 0"
+            "   WHEN 'trusted' THEN 1 ELSE 2 END,"
             " i.relevance DESC, i.published_at DESC LIMIT 200",
             params,
         )
@@ -281,7 +293,7 @@ def queue(request: Request):
 
         extras = {k: v for k, v in (
             ("risk", risk), ("sev", sev), ("days", days or ""),
-            ("on", on_day), ("factor", factor), ("org", org),
+            ("on", on_day), ("factor", factor), ("org", org), ("src", src),
             ("complaints", "1" if complaints else ""), ("topic", topic)) if v}
         filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
         return render(request, "queue.html", user=user, entity=entity,
@@ -483,8 +495,10 @@ def factors_page(request: Request):
                          " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
         severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
         exclusion_rules = get_setting(db, EXCLUSION_RULES_KEY, DEFAULT_EXCLUSION_RULES)
+        trusted_sources = get_setting(db, TRUSTED_SOURCES_KEY, DEFAULT_TRUSTED_SOURCES)
         return render(request, "factors.html", user=user, factors=rows,
-                      severity_defs=severity_defs, exclusion_rules=exclusion_rules)
+                      severity_defs=severity_defs, exclusion_rules=exclusion_rules,
+                      trusted_sources=trusted_sources)
     finally:
         db.close()
 
@@ -546,6 +560,25 @@ async def settings_exclusions(request: Request):
         db.close()
     return RedirectResponse(
         "/factors?msg=Negative+list+updated+—+applies+to+items+fetched+from+now+on",
+        status_code=303)
+
+
+@app.post("/settings/trusted")
+async def settings_trusted(request: Request):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        text = (form.get("trusted_sources") or "").strip()
+        if not text:
+            raise HTTPException(400, "List at least one trusted source")
+        set_setting(db, TRUSTED_SOURCES_KEY, text, user["id"])
+        changed = recompute_source_tiers(db)
+    finally:
+        db.close()
+    return RedirectResponse(
+        f"/factors?msg=Trusted+sources+saved+—+{changed}+item(s)+re-tiered",
         status_code=303)
 
 

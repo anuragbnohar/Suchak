@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS items (
     url            TEXT NOT NULL,
     source_name    TEXT,
     source_type    TEXT NOT NULL DEFAULT 'news',
+    source_tier    TEXT NOT NULL DEFAULT '',
     snippet        TEXT,
     published_at   TEXT,
     created_at     TEXT NOT NULL DEFAULT (datetime('now')),
@@ -133,6 +134,7 @@ MIGRATIONS = [
     ("entities", "x_handle", "TEXT"),
     ("items", "review_severity", "TEXT"),
     ("items", "complaint_topics", "TEXT DEFAULT '[]'"),
+    ("items", "source_tier", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
