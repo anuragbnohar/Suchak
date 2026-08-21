@@ -106,9 +106,15 @@ in that entity's queue. A background cycle also runs every 30 minutes.
   classifier applies are plain-language text edited by the super admin on
   the Factors page (stored in the DB, applied to new classifications). The
   no-API-key keyword fallback keeps its own fixed trigger words.
-- **Dashboards** — per-entity risk-area breakdown, severity tiles, daily
-  volume trend, factor hits, and extracted organization linkages; a
-  cross-entity overview for the super admin.
+- **Complaints view** — the classifier tags customer-grievance items (from
+  news and social posts) with topics: Mis-selling, Recovery practices,
+  Service disruption, Unauthorized transactions, Charges & fees, Harassment,
+  Account access / KYC. The dashboard's Complaints tile opens the queue
+  grouped by topic; a by-topic table drills into each.
+- **Dashboards** — per-entity risk-area breakdown, severity tiles, complaints
+  tile with by-topic breakdown, daily volume trend, factor hits, and
+  extracted organization linkages — every figure is a drill-down into the
+  exact items it counts; a cross-entity overview for the super admin.
 
 ## Configuration
 

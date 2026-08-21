@@ -66,6 +66,10 @@ VERDICT_SCHEMA = {
         "geography": {"type": ["string", "null"]},
         "summary": {"type": "string"},
         "factor_matches": {"type": "array", "items": {"type": "string"}},
+        "complaint_topics": {
+            "type": "array",
+            "items": {"type": "string", "enum": taxonomy.COMPLAINT_TOPICS},
+        },
         "relationships": {
             "type": "array",
             "items": {
@@ -82,7 +86,7 @@ VERDICT_SCHEMA = {
     "required": [
         "relevant", "relevance_score", "risk_areas", "severity",
         "actionability", "geography", "summary", "factor_matches",
-        "relationships",
+        "complaint_topics", "relationships",
     ],
     "additionalProperties": False,
 }
@@ -194,6 +198,11 @@ def _build_system(entity, factors, examples,
         "Summary: one factual sentence based only on the given text.",
         "Relationships: organizations linked to the entity in the text, with the link type "
         "(borrower_of, promoter_of, subsidiary_of, partner_of, auditor_of, vendor_of, other).",
+        "Complaint topics: when the item reports customer grievances -- complaints by "
+        "customers of the entity, whether covered in news or posted directly on social "
+        "media -- list every matching topic from: "
+        + "; ".join(taxonomy.COMPLAINT_TOPICS) + ". "
+        "Leave the list empty when the item is not about customer grievances.",
     ]
     if factors:
         lines += ["", "User-defined Factors — list each factor whose conditions the item meets "
@@ -278,6 +287,22 @@ _HEURISTIC_KEYWORDS = {
     ],
 }
 
+_COMPLAINT_TOPIC_KEYWORDS = {
+    "Mis-selling": ["mis-sell", "misselling", "mis-sold", "forced insurance",
+                    "forced bundling", "bundled with", "policies bundled"],
+    "Recovery practices": ["recovery agent", "coercive recovery", "recovery practices"],
+    "Service disruption": ["outage", "downtime", "server down", "technical glitch",
+                           "upi fail", "failed transactions", "services down",
+                           "branch shut", "not working"],
+    "Unauthorized transactions": ["unauthorized transaction", "unauthorised transaction",
+                                  "money deducted", "account debited without",
+                                  "fraudulent debit"],
+    "Charges & fees": ["hidden charge", "overcharg", "excess charge", "wrongful charge"],
+    "Harassment": ["harass"],
+    "Account access / KYC": ["account frozen", "account blocked", "account locked",
+                             "kyc pending", "kyc rejected"],
+}
+
 _HIGH_SEVERITY = [
     "fraud", "scam", "default", "penalty", "hack", "breach", "bank run",
     "deposit run", "insolvency", "arrest", "raid", "licence cancel",
@@ -298,6 +323,10 @@ def _heuristic_classify(entity, title, snippet, registry=None):
     ]
     high = any(w in text for w in _HIGH_SEVERITY)
     severity = "high" if high else ("medium" if risk_areas else "low")
+    complaint_topics = [
+        topic for topic, words in _COMPLAINT_TOPIC_KEYWORDS.items()
+        if any(w in text for w in words)
+    ]
     verdict = {
         "relevant": in_text,
         "relevance_score": 0.9 if in_title else (0.6 if in_text else 0.2),
@@ -307,6 +336,7 @@ def _heuristic_classify(entity, title, snippet, registry=None):
         "geography": None,
         "summary": (snippet or title)[:280],
         "factor_matches": [],
+        "complaint_topics": complaint_topics,
         "relationships": [],
     }
     return verdict, "heuristic", "keyword-rules"
@@ -368,8 +398,8 @@ def classify_item(db, item) -> None:
     x(
         db,
         "UPDATE items SET status='classified', relevance=?, risk_areas=?, severity=?,"
-        " actionability=?, geography=?, summary=?, factor_matches=?, relationships=?,"
-        " classifier=?, model=?, classified_at=? WHERE id=?",
+        " actionability=?, geography=?, summary=?, factor_matches=?, complaint_topics=?,"
+        " relationships=?, classifier=?, model=?, classified_at=? WHERE id=?",
         (
             float(verdict.get("relevance_score") or 0),
             json.dumps(verdict.get("risk_areas") or []),
@@ -378,6 +408,7 @@ def classify_item(db, item) -> None:
             verdict.get("geography"),
             verdict.get("summary") or item["title"],
             json.dumps(verdict.get("factor_matches") or []),
+            json.dumps(verdict.get("complaint_topics") or []),
             json.dumps(verdict.get("relationships") or []),
             classifier,
             model,

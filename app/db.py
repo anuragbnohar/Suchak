@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS items (
     summary        TEXT,
     factor_matches TEXT DEFAULT '[]',
     relationships  TEXT DEFAULT '[]',
+    complaint_topics TEXT DEFAULT '[]',
     classifier     TEXT,
     model          TEXT,
     classified_at  TEXT,
@@ -131,6 +132,7 @@ MIGRATIONS = [
     ("items", "source_type", "TEXT NOT NULL DEFAULT 'news'"),
     ("entities", "x_handle", "TEXT"),
     ("items", "review_severity", "TEXT"),
+    ("items", "complaint_topics", "TEXT DEFAULT '[]'"),
 ]
 
 

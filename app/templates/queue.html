@@ -1,5 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Queue · {{ entity.name }} · Suchak{% endblock %}
+
+{% macro item_row(it) %}
+  <li class="item-row sev-{{ it.severity_shown }}">
+    <a class="item-link" href="/item/{{ it.id }}">
+      <div class="item-top">
+        <span class="sev-chip sev-chip-{{ it.severity_shown }}">{{ it.severity_shown }}</span>
+        <span class="item-title">{{ it.title }}</span>
+        {% if it.source_type_label %}<span class="type-chip">{{ it.source_type_label }}</span>{% endif %}
+      </div>
+      <div class="item-meta">
+        <span class="meta-action">{{ it.actionability_label }}</span>
+        {% for area in it.risk_areas %}<span class="area-chip">{{ area }}</span>{% endfor %}
+        {% for t in it.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
+        {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
+        <span class="meta-dim">{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }} more source{{ 's' if it.extra_sources > 1 }}{% endif %}</span>
+        <span class="meta-dim">{{ it.published_at | timeago }}</span>
+        {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name }}</span>{% endif %}
+        {% if it.status == 'dismissed' %}<span class="meta-dim">✕ dismissed</span>{% endif %}
+        {% if it.status == 'new' %}<span class="meta-dim">awaiting classification</span>{% endif %}
+        {% if it.gated_out %}<span class="meta-dim">filtered: {{ it.gate_reason }}</span>{% endif %}
+      </div>
+    </a>
+  </li>
+{% endmacro %}
+
 {% block content %}
 <div class="page-head">
   <div>
@@ -55,36 +80,29 @@
     {%- elif k == 'risk' %}{{ v }}
     {%- elif k == 'factor' %}factor: {{ v }}
     {%- elif k == 'org' %}linked to {{ v }}
+    {%- elif k == 'complaints' %}customer complaints
+    {%- elif k == 'topic' %}topic: {{ v }}
     {%- else %}{{ k }}: {{ v }}{% endif -%}
   </span>
   {% endfor %}
   <a href="/queue?entity={{ entity.id }}&amp;status={{ status }}">✕ clear filters</a>
 </div>
 {% endif %}
-{% if items %}
-<ul class="item-list">
-  {% for it in items %}
-  <li class="item-row sev-{{ it.severity_shown }}">
-    <a class="item-link" href="/item/{{ it.id }}">
-      <div class="item-top">
-        <span class="sev-chip sev-chip-{{ it.severity_shown }}">{{ it.severity_shown }}</span>
-        <span class="item-title">{{ it.title }}</span>
-        {% if it.source_type_label %}<span class="type-chip">{{ it.source_type_label }}</span>{% endif %}
-      </div>
-      <div class="item-meta">
-        <span class="meta-action">{{ it.actionability_label }}</span>
-        {% for area in it.risk_areas %}<span class="area-chip">{{ area }}</span>{% endfor %}
-        {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
-        <span class="meta-dim">{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }} more source{{ 's' if it.extra_sources > 1 }}{% endif %}</span>
-        <span class="meta-dim">{{ it.published_at | timeago }}</span>
-        {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name }}</span>{% endif %}
-        {% if it.status == 'dismissed' %}<span class="meta-dim">✕ dismissed</span>{% endif %}
-        {% if it.status == 'new' %}<span class="meta-dim">awaiting classification</span>{% endif %}
-        {% if it.gated_out %}<span class="meta-dim">filtered: {{ it.gate_reason }}</span>{% endif %}
-      </div>
-    </a>
-  </li>
+{% if grouped %}
+  {% for g in grouped %}
+  <section class="topic-group">
+    <h2 class="topic-head">
+      <a href="/queue?entity={{ entity.id }}&amp;status={{ status }}{{ filter_qs }}&amp;topic={{ g.topic | urlencode }}">{{ g.topic }}</a>
+      <span class="tab-count">{{ g.entries | length }}</span>
+    </h2>
+    <ul class="item-list">
+      {% for it in g.entries %}{{ item_row(it) }}{% endfor %}
+    </ul>
+  </section>
   {% endfor %}
+{% elif items %}
+<ul class="item-list">
+  {% for it in items %}{{ item_row(it) }}{% endfor %}
 </ul>
 {% else %}
 <div class="empty">

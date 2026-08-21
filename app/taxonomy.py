@@ -45,6 +45,20 @@ ENTITY_KINDS = [
 
 ROLES = ["member", "lead", "superadmin"]
 
+# Topics for customer-grievance items, assigned by the classifier when an
+# item reports complaints (in news coverage or social posts). An empty list
+# means the item is not about customer grievances.
+COMPLAINT_TOPICS = [
+    "Mis-selling",
+    "Recovery practices",
+    "Service disruption",
+    "Unauthorized transactions",
+    "Charges & fees",
+    "Harassment",
+    "Account access / KYC",
+    "Other grievance",
+]
+
 # Chip shown in the queue/detail for non-news items; news shows none.
 SOURCE_TYPE_LABELS = {
     "video": "\u25b6 video",

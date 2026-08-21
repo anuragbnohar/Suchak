@@ -109,7 +109,8 @@ def render(request: Request, name: str, **ctx):
 
 def prep_item(row) -> dict:
     d = dict(row)
-    for field in ("risk_areas", "factor_matches", "relationships", "review_risk_areas"):
+    for field in ("risk_areas", "factor_matches", "complaint_topics",
+                  "relationships", "review_risk_areas"):
         if field in d:
             try:
                 d[field] = json.loads(d[field] or "[]")
@@ -196,6 +197,10 @@ def queue(request: Request):
             sev = ""
         factor = (request.query_params.get("factor") or "")[:80]
         org = (request.query_params.get("org") or "")[:120]
+        complaints = request.query_params.get("complaints", "") == "1"
+        topic = request.query_params.get("topic", "")
+        if topic not in taxonomy.COMPLAINT_TOPICS:
+            topic = ""
         on_day = request.query_params.get("on", "")
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", on_day or ""):
             on_day = ""
@@ -235,6 +240,11 @@ def queue(request: Request):
         if org:
             where.append("i.relationships LIKE ?")
             params.append(f'%"name": "{org}"%')
+        if complaints or topic:
+            where.append("i.complaint_topics != '[]'")
+        if topic:
+            where.append("i.complaint_topics LIKE ?")
+            params.append(f'%"{topic}"%')
 
         rows = q(
             db,
@@ -254,12 +264,27 @@ def queue(request: Request):
                 "        WHEN status IN ('new','classified') THEN 'open'"
                 "        ELSE status END s,"
                 " COUNT(*) n FROM items WHERE entity_id = ? GROUP BY s", (entity["id"],))}
+        prepped = [prep_item(r) for r in rows]
+
+        # the Complaints tile leads here: group by each item's primary topic
+        grouped = None
+        if complaints and not topic:
+            buckets: dict = {}
+            for it in prepped:
+                first = (it["complaint_topics"] or ["Other grievance"])[0]
+                buckets.setdefault(first, []).append(it)
+            # key must not be "items": Jinja's g.items would resolve to
+            # dict.items() instead of the list
+            grouped = [{"topic": t, "entries": lst} for t, lst in
+                       sorted(buckets.items(), key=lambda kv: (-len(kv[1]), kv[0]))]
+
         extras = {k: v for k, v in (
             ("risk", risk), ("sev", sev), ("days", days or ""),
-            ("on", on_day), ("factor", factor), ("org", org)) if v}
+            ("on", on_day), ("factor", factor), ("org", org),
+            ("complaints", "1" if complaints else ""), ("topic", topic)) if v}
         filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
         return render(request, "queue.html", user=user, entity=entity,
-                      entities=entities, items=[prep_item(r) for r in rows],
+                      entities=entities, items=prepped, grouped=grouped,
                       status=status, risk=risk, counts=counts,
                       extras=extras, filter_qs=filter_qs)
     finally:
@@ -338,11 +363,16 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
             " AND gated_out = 0", (entity_id, since))]
 
     by_risk, by_sev, by_factor, by_day = Counter(), Counter(), Counter(), Counter()
+    by_topic, complaints_total = Counter(), 0
     linkages = Counter()
     for it in rows:
         for a in it["risk_areas"]:
             by_risk[a] += 1
         by_sev[it["severity_shown"]] += 1
+        if it["complaint_topics"]:
+            complaints_total += 1
+            for t in it["complaint_topics"]:
+                by_topic[t] += 1
         for f in it["factor_matches"]:
             by_factor[f] += 1
         for rel in it["relationships"]:
@@ -373,6 +403,8 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
         "max_risk": max(by_risk.values(), default=0),
         "by_sev": {s: by_sev.get(s, 0) for s in taxonomy.SEVERITIES},
         "by_factor": by_factor.most_common(8),
+        "complaints_total": complaints_total,
+        "by_topic": by_topic.most_common(12),
         "trend": trend, "max_trend": max_trend,
         "open_count": open_count,
         "high_recent": high_recent,

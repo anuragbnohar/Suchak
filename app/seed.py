@@ -256,6 +256,18 @@ def seed_if_empty(db) -> bool:
         marks = ", ".join("?" for _ in fields)
         x(db, f"INSERT INTO items ({cols}) VALUES ({marks})", tuple(fields.values()))
 
+    # tag the demo items that report customer grievances with their topics
+    topic_updates = [
+        ("%insurance policies bundled%", ["Mis-selling"]),
+        ("%UPI services down%", ["Service disruption"]),
+        ("%branch in Nashik shut%", ["Service disruption"]),
+        ("%Recovery-agent conduct complaint%", ["Recovery practices", "Harassment"]),
+        ("%wallet outage delays%", ["Service disruption"]),
+    ]
+    for pattern, topics in topic_updates:
+        x(db, "UPDATE items SET complaint_topics=? WHERE title LIKE ?",
+          (json.dumps(topics), pattern))
+
     # mark the official-source demo items with their source types
     x(db, "UPDATE items SET source_type='regulatory'"
           " WHERE title LIKE 'Reserve Bank of India imposes%'")

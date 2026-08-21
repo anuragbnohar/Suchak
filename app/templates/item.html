@@ -24,6 +24,7 @@
 
     <div class="chip-row">
       {% for area in item.risk_areas %}<span class="area-chip">{{ area }}</span>{% endfor %}
+      {% for t in item.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
       {% for f in item.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
     </div>
 

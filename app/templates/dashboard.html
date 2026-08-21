@@ -37,6 +37,11 @@
     <p class="tile-label">Low severity</p>
     <p class="tile-value">{{ stats.by_sev.low }}</p>
   </a>
+  <a class="tile tile-complaint" href="{{ base }}&complaints=1"
+     title="Customer-grievance items from news and social posts, grouped by topic">
+    <p class="tile-label">Complaints ({{ stats.days }}d)</p>
+    <p class="tile-value">{{ stats.complaints_total }}</p>
+  </a>
   <a class="tile tile-accent" href="/queue?entity={{ entity.id }}&status=open">
     <p class="tile-label">Awaiting review</p>
     <p class="tile-value">{{ stats.open_count }}</p>
@@ -120,6 +125,18 @@
     </table>
     {% else %}<p class="meta-dim">No factor matches in this window.
       Define factors on the <a href="/factors">Factors</a> page.</p>{% endif %}
+
+    <h2 class="mt">Complaints by topic</h2>
+    {% if stats.by_topic %}
+    <table class="data-table">
+      <tr><th scope="col">Topic</th><th scope="col" class="num">Items</th></tr>
+      {% for name, count in stats.by_topic %}
+      <tr><td><a href="{{ base }}&topic={{ name | urlencode }}">✉ {{ name }}</a></td>
+          <td class="num">{{ count }}</td></tr>
+      {% endfor %}
+    </table>
+    <p class="meta-dim small">Grievances identified in news coverage and social posts.</p>
+    {% else %}<p class="meta-dim">No complaint items in this window.</p>{% endif %}
 
     <h2 class="mt">Linked organizations</h2>
     {% if stats.linkages %}

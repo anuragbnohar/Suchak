@@ -130,6 +130,10 @@ label.check { display: flex; margin: 0.15rem 0; }
   font-size: 0.75rem; background: var(--accent-soft); color: var(--accent);
   border-radius: 4px; padding: 0.1rem 0.5rem; white-space: nowrap;
 }
+.topic-chip {
+  font-size: 0.75rem; background: var(--warning-soft); color: var(--warning);
+  border-radius: 4px; padding: 0.1rem 0.5rem; white-space: nowrap;
+}
 .factor-chip {
   font-size: 0.75rem; background: var(--paper); color: var(--ink);
   border: 1px dashed var(--line-strong); border-radius: 4px; padding: 0.1rem 0.5rem;
@@ -142,6 +146,9 @@ label.check { display: flex; margin: 0.15rem 0; }
   padding: 0.08rem 0.4rem; white-space: nowrap;
 }
 .chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.75rem 0; }
+
+.topic-group { margin-bottom: 1.5rem; }
+.topic-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
 
 .filter-note { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 1rem; font-size: 0.85rem; color: var(--muted); }
 .filter-chip { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 999px; padding: 0.1rem 0.65rem; color: var(--ink); }
@@ -172,6 +179,8 @@ label.check { display: flex; margin: 0.15rem 0; }
 a.tile:hover { text-decoration: none; border-color: var(--accent); border-left-width: 4px; box-shadow: 0 1px 4px rgba(28,39,51,0.08); }
 a.tile.tile-serious:hover { border-left-color: var(--serious); }
 a.tile.tile-warning:hover { border-left-color: var(--warning); }
+.tile-complaint { border-left-color: var(--warning); }
+a.tile.tile-complaint:hover { border-left-color: var(--warning); }
 .tile-serious { border-left-color: var(--serious); }
 .tile-warning { border-left-color: var(--warning); }
 .tile-accent { border-left-color: var(--accent); }
