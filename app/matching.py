@@ -57,12 +57,24 @@ class Registry:
                 excludes = json.loads(row["exclude_terms"] or "[]")
             except (KeyError, IndexError, TypeError, ValueError):
                 excludes = []
+            try:
+                handle = row["x_handle"] or ""
+            except (KeyError, IndexError):
+                handle = ""
+            # An X handle is a name for the entity, so it counts when
+            # deciding what a post is about -- "@HDFCBank_Cares my card is
+            # blocked" never spells out "HDFC Bank". It is deliberately kept
+            # out of `aliases`, which builds news search queries.
+            match_names = list(aliases)
+            if handle:
+                match_names += [f"@{handle}", handle]
             self.entities[row["id"]] = {
                 "id": row["id"],
                 "name": row["name"],
                 "aliases": aliases,
+                "handle": handle,
                 "excludes": excludes,
-                "patterns": [(a, p) for a in aliases for p in alias_patterns(a)],
+                "patterns": [(a, p) for a in match_names for p in alias_patterns(a)],
                 "exclude_patterns": [p for e in excludes for p in alias_patterns(e)],
             }
 

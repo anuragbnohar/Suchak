@@ -10,6 +10,10 @@ Live sources:
                reaches the whole Indian financial press.
   youtube      YouTube Data API v3 search. Needs a free API key in
                SUCHAK_YOUTUBE_KEY; skipped silently when unset.
+  x            X/Twitter recent search, scoped to customer complaints.
+               Needs a bearer token in SUCHAK_X_BEARER; skipped silently
+               when unset. This is the ONLY paid source, billed per post
+               returned, so it is capped hard -- see SUCHAK_X_MAX_POSTS.
 """
 import html
 import json
@@ -47,6 +51,31 @@ YOUTUBE_KEY = os.environ.get("SUCHAK_YOUTUBE_KEY", "")
 # search.list costs 100 quota units; the free daily allowance is 10,000, so
 # 33 banks cost 3,300 units per sweep. maxResults is capped at 50 by the API.
 YOUTUBE_MAX_RESULTS = min(int(os.environ.get("SUCHAK_YOUTUBE_MAX", "25")), 50)
+
+# --- X / Twitter -------------------------------------------------------------
+# The only source that costs money, and it bills per post RETURNED, so the
+# query is written to be narrow and the result count is capped hard. Recent
+# search only covers the last 7 days regardless of SUCHAK_LOOKBACK_DAYS.
+X_SEARCH = "https://api.x.com/2/tweets/search/recent"
+X_BEARER = os.environ.get("SUCHAK_X_BEARER", "")
+# Hard ceiling on posts per entity per sweep. At $0.005/post this is your
+# spend control: 100 posts = $0.50 per bank per sweep, whatever happens.
+X_MAX_POSTS = max(10, min(int(os.environ.get("SUCHAK_X_MAX_POSTS", "100")), 1000))
+X_PRICE_PER_POST = float(os.environ.get("SUCHAK_X_PRICE_PER_POST", "0.005"))
+# complaints | care_handle | both
+X_STRATEGY = os.environ.get("SUCHAK_X_STRATEGY", "complaints")
+X_LANGS = [c.strip() for c in os.environ.get("SUCHAK_X_LANGS", "en,hi").split(",") if c.strip()]
+X_RECENT_SEARCH_DAYS = 7
+
+# Vocabulary that marks a post as a grievance rather than market chatter.
+# Kept tight on purpose: every extra term returns more posts, and every post
+# returned is billed.
+X_COMPLAINT_TERMS = [t.strip() for t in os.environ.get(
+    "SUCHAK_X_COMPLAINT_TERMS",
+    'complaint,grievance,fraud,cheated,refund,unauthorized,debited,blocked,'
+    'harassment,mis-sold,misselling,"not working","no response","customer care",'
+    '"worst service"'
+).split(",") if t.strip()]
 
 # only one fetch cycle at a time
 fetch_lock = threading.Lock()
@@ -155,9 +184,98 @@ def fetch_youtube(registry: Registry, entity) -> list[dict]:
     return items
 
 
+def x_query(registry: Registry, entity) -> str:
+    """Build a narrow complaint query.
+
+    Every clause here exists to reduce the number of posts returned, because
+    that is exactly what X bills for. Retweets and promoted posts are
+    excluded outright; the entity terms are ANDed with complaint vocabulary
+    so market chatter and news reposts do not come back.
+    """
+    ent = registry.entities[entity["id"]]
+    handle = ent.get("handle") or ""
+    names = " OR ".join(f'"{a}"' for a in ent["aliases"][:2])
+    complaints = " OR ".join(X_COMPLAINT_TERMS)
+
+    if X_STRATEGY == "care_handle":
+        if not handle:
+            raise RuntimeError(
+                f"strategy 'care_handle' needs an x_handle for {entity['name']}")
+        core = f"to:{handle}"
+    elif X_STRATEGY == "both" and handle:
+        core = f"(to:{handle} OR (({names}) ({complaints})))"
+    else:
+        core = f"(({names}) ({complaints}))"
+
+    query = f"{core} -is:retweet -is:nullcast"
+    if X_LANGS:
+        langs = " OR ".join(f"lang:{c}" for c in X_LANGS)
+        query += f" ({langs})" if len(X_LANGS) > 1 else f" {langs}"
+    return query
+
+
+def fetch_x(registry: Registry, entity) -> list[dict]:
+    """X/Twitter recent search, scoped to customer complaints.
+
+    Paid, billed per post returned. One request per entity per sweep, never
+    paginated, so the cost per sweep is bounded by X_MAX_POSTS and cannot
+    run away if a query turns out broader than expected.
+    """
+    if not X_BEARER:
+        return []
+
+    since = datetime.now(timezone.utc) - timedelta(
+        days=min(LOOKBACK_DAYS or X_RECENT_SEARCH_DAYS, X_RECENT_SEARCH_DAYS))
+    params = {
+        "query": x_query(registry, entity),
+        "max_results": min(X_MAX_POSTS, 100),   # API ceiling per request
+        "start_time": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "tweet.fields": "created_at,lang,author_id",
+        "expansions": "author_id",
+        "user.fields": "username,name",
+    }
+    resp = httpx.get(X_SEARCH, params=params, timeout=20,
+                     headers={"Authorization": f"Bearer {X_BEARER}"})
+    if resp.status_code in (401, 403):
+        raise RuntimeError(f"X rejected the credentials: {resp.text[:200]}")
+    if resp.status_code == 429:
+        raise RuntimeError("X rate limit reached; try again later")
+    resp.raise_for_status()
+
+    payload = resp.json()
+    posts = payload.get("data") or []
+    users = {u["id"]: u for u in (payload.get("includes", {}).get("users") or [])}
+
+    items = []
+    for post in posts[:X_MAX_POSTS]:
+        text = " ".join((post.get("text") or "").split())
+        if not text:
+            continue
+        author = users.get(post.get("author_id"), {})
+        username = author.get("username") or "i"
+        # A post has no headline, so the first line stands in as the title
+        # and the full text becomes the snippet the classifier reads.
+        title = text if len(text) <= 120 else text[:117].rstrip() + "..."
+        items.append({
+            "title": title,
+            "url": f"https://x.com/{username}/status/{post['id']}",
+            "source_name": f"@{username}",
+            "snippet": text,
+            "published_at": post.get("created_at"),
+            "source_type": "social",
+            # Targeting the bank's own grievance handle establishes
+            # attribution by itself; such posts rarely spell out the bank
+            # name, so the usual name check would wrongly discard them.
+            "attribution_confident": X_STRATEGY == "care_handle",
+            "billed": True,
+        })
+    return items
+
+
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
+    "x": fetch_x,
 }
 
 
@@ -165,7 +283,8 @@ def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
     """Fetch every enabled source for one entity and store what survives
     disambiguation and de-duplication."""
     registry = registry or load_registry(db)
-    result = {"found": 0, "added": 0, "merged": 0, "rejected": 0, "note": None}
+    result = {"found": 0, "added": 0, "merged": 0, "rejected": 0,
+              "billed": 0, "note": None}
     notes = []
 
     candidates = []
@@ -173,8 +292,13 @@ def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
         try:
             got = fetch(registry, entity)
             candidates.extend(got)
-            if name == "youtube" and got:
-                notes.append(f"{len(got)} from youtube")
+            billed = sum(1 for c in got if c.get("billed"))
+            if billed:
+                result["billed"] += billed
+                notes.append(f"{billed} paid posts from {name} "
+                             f"(~${billed * X_PRICE_PER_POST:.2f})")
+            elif name != "google_news" and got:
+                notes.append(f"{len(got)} from {name}")
         except Exception as exc:
             msg = f"{name} failed: {type(exc).__name__}: {exc}"
             notes.append(msg)
@@ -182,7 +306,8 @@ def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
 
     window_start = (datetime.now(timezone.utc) - timedelta(days=DUP_WINDOW_DAYS)).isoformat()
     recent = [dict(r) for r in q(
-        db, "SELECT id, title FROM items WHERE entity_id = ? AND created_at >= ?",
+        db, "SELECT id, title, source_type FROM items"
+            " WHERE entity_id = ? AND created_at >= ?",
         (entity["id"], window_start))]
 
     for cand in candidates:
@@ -191,7 +316,8 @@ def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
 
         # Free disambiguation, before anything is stored or classified:
         # "State Bank of India ..." must not be filed under Bank of India.
-        if not registry.mentions(entity["id"], f"{title} {cand['snippet']}"):
+        if not cand.get("attribution_confident") and \
+                not registry.mentions(entity["id"], f"{title} {cand['snippet']}"):
             result["rejected"] += 1
             continue
 
@@ -205,11 +331,19 @@ def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
 
         # A video and an article about the same event are the same event, so
         # duplicate detection deliberately spans source types.
+        #
+        # Social posts are the exception: ten customers complaining about
+        # blocked cards is ten data points, not one story covered ten times.
+        # Volume IS the conduct signal, so near-identical complaints are kept
+        # apart and only the exact-URL check above suppresses true repeats.
         dup_id, best = None, 0.0
-        for r in recent:
-            score = title_similarity(title, r["title"])
-            if score > best:
-                dup_id, best = r["id"], score
+        if cand["source_type"] != "social":
+            for r in recent:
+                if r.get("source_type") == "social":
+                    continue
+                score = title_similarity(title, r["title"])
+                if score > best:
+                    dup_id, best = r["id"], score
         if dup_id and best >= DUP_THRESHOLD:
             x(db, "INSERT INTO item_sources (item_id, url, source_name, title, published_at)"
                   " VALUES (?,?,?,?,?)",
@@ -223,7 +357,8 @@ def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
                 (entity["id"], title, link, cand["source_name"],
                  cand["snippet"][:500], published, cand["source_type"]),
             )
-            recent.append({"id": new_id, "title": title})
+            recent.append({"id": new_id, "title": title,
+                           "source_type": cand["source_type"]})
             result["added"] += 1
 
     result["note"] = "; ".join(notes) or None
@@ -249,7 +384,7 @@ def run_cycle(entity_id: int | None = None) -> dict:
         return {"skipped": True, "reason": "a fetch cycle is already running"}
     started = time.monotonic()
     totals = {"entities": 0, "found": 0, "added": 0, "merged": 0,
-              "rejected": 0, "classified": 0}
+              "rejected": 0, "billed": 0, "classified": 0}
     try:
         db = connect()
         try:
@@ -263,7 +398,7 @@ def run_cycle(entity_id: int | None = None) -> dict:
                     time.sleep(FETCH_DELAY_SECONDS)
                 r = ingest_entity(db, entity, registry)
                 totals["entities"] += 1
-                for k in ("found", "added", "merged", "rejected"):
+                for k in ("found", "added", "merged", "rejected", "billed"):
                     totals[k] += r[k]
             totals["classified"] = classify_new_items(db)
         finally:
@@ -271,5 +406,7 @@ def run_cycle(entity_id: int | None = None) -> dict:
     finally:
         fetch_lock.release()
     totals["seconds"] = round(time.monotonic() - started, 1)
+    if totals["billed"]:
+        totals["estimated_cost_usd"] = round(totals["billed"] * X_PRICE_PER_POST, 2)
     log.info("Fetch cycle done: %s", totals)
     return totals

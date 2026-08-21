@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS entities (
     kind       TEXT NOT NULL,
     aliases    TEXT NOT NULL DEFAULT '[]',
     exclude_terms TEXT NOT NULL DEFAULT '[]',
+    x_handle   TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -119,6 +120,7 @@ MIGRATIONS = [
     ("items", "gated_out", "INTEGER NOT NULL DEFAULT 0"),
     ("items", "gate_reason", "TEXT"),
     ("items", "source_type", "TEXT NOT NULL DEFAULT 'news'"),
+    ("entities", "x_handle", "TEXT"),
 ]
 
 

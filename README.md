@@ -48,6 +48,10 @@ in that entity's queue. A background cycle also runs every 30 minutes.
     reaches the whole Indian financial press.
   - *YouTube Data API v3* — video coverage per entity. Needs a free API key
     in `SUCHAK_YOUTUBE_KEY`; skipped silently when unset.
+  - *X/Twitter recent search* — customer complaints only. **The one paid
+    source**, billed per post returned, so the query is deliberately narrow
+    and the result count is hard-capped. Needs `SUCHAK_X_BEARER`; skipped
+    silently when unset.
 
   Adding a source means adding one function and one entry in `SOURCES`;
   everything downstream is source-agnostic.
@@ -59,7 +63,9 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 - **De-duplicate** — the same story from many outlets is clustered into one
   review item by title similarity; extra outlets attach as additional sources.
   De-duplication spans source types, so a video and an article about the same
-  event become one item.
+  event become one item. Social posts are excluded from this: ten customers
+  complaining about blocked cards is ten data points, not one story told ten
+  times — volume *is* the conduct signal.
 - **Screen** — a small, cheap model (Haiku 4.5 by default) decides whether
   each item is genuinely about the entity before the full classification
   runs. Rejected items cost about a fiftieth of a verdict, stay out of the
@@ -91,6 +97,12 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 | `SUCHAK_GATE_MODEL` | `claude-haiku-4-5` | Cheap relevance screen; `""` disables it |
 | `SUCHAK_YOUTUBE_KEY` | unset | YouTube Data API key; unset disables video ingestion |
 | `SUCHAK_YOUTUBE_MAX` | `25` | Videos per entity per sweep (API caps at 50) |
+| `SUCHAK_X_BEARER` | unset | X API bearer token; unset disables the paid source |
+| `SUCHAK_X_MAX_POSTS` | `100` | **Hard spend cap**: posts per entity per sweep |
+| `SUCHAK_X_STRATEGY` | `complaints` | `complaints`, `care_handle`, or `both` |
+| `SUCHAK_X_LANGS` | `en,hi` | Languages fetched from X |
+| `SUCHAK_X_COMPLAINT_TERMS` | see `ingest.py` | Grievance vocabulary ANDed with the entity |
+| `SUCHAK_X_PRICE_PER_POST` | `0.005` | Used only to report estimated spend |
 | `SUCHAK_LOOKBACK_DAYS` | `30` | How far back each feed asks for news; `0` = current |
 | `SUCHAK_MAX_ENTRIES` | `100` | Items per feed (Google News returns ~100 max) |
 | `SUCHAK_FETCH_DELAY` | `1.5` | Seconds between entity feeds during a sweep |
@@ -123,6 +135,41 @@ inside the free tier. Videos carry a `video` chip in the queue and flow
 through the same disambiguation, de-duplication, screening and
 classification as news.
 
+### Enabling X/Twitter (paid — read this first)
+
+X is the only source that costs money, and it bills **per post returned**,
+not per query. Three things keep that bounded:
+
+1. The query is narrow by construction — entity terms ANDed with grievance
+   vocabulary, retweets and promoted posts excluded.
+2. `SUCHAK_X_MAX_POSTS` is a hard ceiling per entity per sweep. One request,
+   never paginated, so the bill cannot exceed it. At the default 100 posts
+   and $0.005/post that is $0.50 per bank per sweep, whatever happens.
+3. Every fetch logs how many billed posts it pulled and the estimated spend,
+   visible on the Entities page.
+
+`SUCHAK_X_STRATEGY` picks how complaints are found:
+
+| Strategy | Query | Notes |
+|---|---|---|
+| `complaints` | entity names AND grievance vocabulary | Works with no extra config |
+| `care_handle` | `to:<bank grievance handle>` | Highest precision, cheapest; needs `x_handle` set |
+| `both` | either of the above | Widest, and the most expensive |
+
+Note X's recent-search endpoint only covers the **last 7 days**, whatever
+`SUCHAK_LOOKBACK_DAYS` says. Going further back needs full-archive access.
+
+Run a bounded trial for one bank — it prints the query and the worst-case
+cost and waits for confirmation before spending anything:
+
+```bash
+export SUCHAK_X_BEARER=...
+python -m scripts.x_trial "HDFC Bank Ltd." --handle HDFCBank_Cares --max 100
+```
+
+Verify a bank's grievance handle on X before using `care_handle`; a wrong
+handle silently returns nothing.
+
 ## Loading India's scheduled commercial banks
 
 ```bash
@@ -141,7 +188,7 @@ app/
   main.py        FastAPI app + routes
   db.py          SQLite schema and helpers
   taxonomy.py    Risk areas, severities, actions — finalize with the team
-  ingest.py      Google News RSS fetch + dedup
+  ingest.py      Pluggable sources (news, video, X) + dedup
   classify.py    Claude structured classification + keyword fallback + learning loop
   similarity.py  Pure-Python TF-IDF (dedup + retrieval)
   auth.py        Passwords + sessions
