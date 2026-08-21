@@ -50,8 +50,9 @@ in that entity's queue. A background cycle also runs every 30 minutes.
     in `SUCHAK_YOUTUBE_KEY`; skipped silently when unset.
   - *X/Twitter recent search* — customer complaints only. **The one paid
     source**, billed per post returned, so the query is deliberately narrow
-    and the result count is hard-capped. Needs `SUCHAK_X_BEARER`; skipped
-    silently when unset.
+    and the result count is hard-capped. **Currently parked** — it stays out
+    of the sweep until `SUCHAK_X_ENABLED` *and* `SUCHAK_X_BEARER` are both
+    set. See [Enabling X/Twitter](#enabling-xtwitter-paid--read-this-first).
 
   **Broadcast sources** are fetched *once per sweep* — one feed covers every
   entity — and each item is routed to the entities it names, via the same
@@ -142,11 +143,12 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 | Env var | Default | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | unset | Enables LLM classification (else keyword fallback) |
-| `SUCHAK_MODEL` | `claude-opus-5` | Claude model used for classification |
+| `SUCHAK_MODEL` | `claude-sonnet-5` | Claude model used for the verdict |
 | `SUCHAK_GATE_MODEL` | `claude-haiku-4-5` | Cheap relevance screen; `""` disables it |
 | `SUCHAK_YOUTUBE_KEY` | unset | YouTube Data API key; unset disables video ingestion |
 | `SUCHAK_YOUTUBE_MAX` | `25` | Videos per entity per sweep (API caps at 50) |
-| `SUCHAK_X_BEARER` | unset | X API bearer token; unset disables the paid source |
+| `SUCHAK_X_ENABLED` | unset (off) | Set to `1` to put the paid X source back in the sweep |
+| `SUCHAK_X_BEARER` | unset | X API bearer token; needed *in addition to* the flag above |
 | `SUCHAK_X_MAX_POSTS` | `100` | **Hard spend cap**: posts per entity per sweep |
 | `SUCHAK_X_STRATEGY` | `complaints` | `complaints`, `care_handle`, or `both` |
 | `SUCHAK_X_LANGS` | `en,hi` | Languages fetched from X |
@@ -205,14 +207,20 @@ If a feed shows `fetch failed` on the Entities page, find the current URL
 ### Enabling X/Twitter (paid — read this first)
 
 X is the only source that costs money, and it bills **per post returned**,
-not per query. Three things keep that bounded:
+not per query. It is **parked by default** — `fetch_x`, its query builder,
+the spend caps, and the `scripts/x_trial.py` dry run are all intact, but the
+source is left out of the sweep until you opt in. Four things keep it
+bounded:
 
-1. The query is narrow by construction — entity terms ANDed with grievance
+1. Two switches, both required: `SUCHAK_X_ENABLED=1` says you mean to spend,
+   `SUCHAK_X_BEARER` says you can. A bearer token left in the environment
+   cannot start billing on its own.
+2. The query is narrow by construction — entity terms ANDed with grievance
    vocabulary, retweets and promoted posts excluded.
-2. `SUCHAK_X_MAX_POSTS` is a hard ceiling per entity per sweep. One request,
+3. `SUCHAK_X_MAX_POSTS` is a hard ceiling per entity per sweep. One request,
    never paginated, so the bill cannot exceed it. At the default 100 posts
    and $0.005/post that is $0.50 per bank per sweep, whatever happens.
-3. Every fetch logs how many billed posts it pulled and the estimated spend,
+4. Every fetch logs how many billed posts it pulled and the estimated spend,
    visible on the Entities page.
 
 `SUCHAK_X_STRATEGY` picks how complaints are found:
@@ -233,6 +241,9 @@ cost and waits for confirmation before spending anything:
 export SUCHAK_X_BEARER=...
 python -m scripts.x_trial "HDFC Bank Ltd." --handle HDFCBank_Cares --max 100
 ```
+
+The trial script talks to X directly, so it needs only the bearer. To put the
+source back into the regular sweep, set `SUCHAK_X_ENABLED=1` as well.
 
 Verify a bank's grievance handle on X before using `care_handle`; a wrong
 handle silently returns nothing.

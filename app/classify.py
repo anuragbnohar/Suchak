@@ -21,7 +21,10 @@ from .similarity import rank_similar
 
 log = logging.getLogger("suchak.classify")
 
-MODEL = os.environ.get("SUCHAK_MODEL", "claude-opus-5")
+# Sonnet for the verdict: the cost/quality middle of the range, and the
+# only call that makes a judgement worth paying for. The gate below
+# stays on Haiku.
+MODEL = os.environ.get("SUCHAK_MODEL", "claude-sonnet-5")
 
 # Severity criteria live in the settings table so the team can tune them in
 # the admin UI without touching code; this is the default until edited.

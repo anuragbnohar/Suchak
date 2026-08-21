@@ -69,6 +69,12 @@ def main() -> int:
                 print("Cancelled. Nothing fetched, nothing billed.")
                 return 0
 
+        # X is parked out of the regular sweep (SUCHAK_X_ENABLED); this
+        # script is the sanctioned way to spend, so it re-enables the source
+        # for its own run only -- and only after the confirmation above.
+        ingest.X_ENABLED = True
+        ingest.SOURCES["x"] = ingest.fetch_x
+
         result = ingest.ingest_entity(db, entity, registry)
         billed = result.get("billed", 0)
         print(f"\nFetched {billed} post(s) -> actual cost about "

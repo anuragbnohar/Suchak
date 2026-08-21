@@ -11,9 +11,11 @@ Live sources:
   youtube      YouTube Data API v3 search. Needs a free API key in
                SUCHAK_YOUTUBE_KEY; skipped silently when unset.
   x            X/Twitter recent search, scoped to customer complaints.
-               Needs a bearer token in SUCHAK_X_BEARER; skipped silently
-               when unset. This is the ONLY paid source, billed per post
-               returned, so it is capped hard -- see SUCHAK_X_MAX_POSTS.
+               PARKED -- off unless SUCHAK_X_ENABLED is set. This is the
+               ONLY paid source, billed per post returned; the code is
+               intact and capped hard (see SUCHAK_X_MAX_POSTS), it just
+               does not run in a sweep until the flag and SUCHAK_X_BEARER
+               are both set.
 
 Broadcast sources are different in kind: one feed covers every regulated
 entity, so they are fetched ONCE per sweep and each item is routed to the
@@ -73,6 +75,11 @@ YOUTUBE_MAX_RESULTS = min(int(os.environ.get("SUCHAK_YOUTUBE_MAX", "25")), 50)
 # query is written to be narrow and the result count is capped hard. Recent
 # search only covers the last 7 days regardless of SUCHAK_LOOKBACK_DAYS.
 X_SEARCH = "https://api.x.com/2/tweets/search/recent"
+# Two independent switches, both required, so a bearer token left in the
+# environment can never start billing on its own: the flag says "we mean to
+# spend", the token says "we can".
+X_ENABLED = os.environ.get("SUCHAK_X_ENABLED", "").strip().lower() \
+    not in ("", "0", "false", "no")
 X_BEARER = os.environ.get("SUCHAK_X_BEARER", "")
 # Hard ceiling on posts per entity per sweep. At $0.005/post this is your
 # spend control: 100 posts = $0.50 per bank per sweep, whatever happens.
@@ -258,7 +265,7 @@ def fetch_x(registry: Registry, entity) -> list[dict]:
     paginated, so the cost per sweep is bounded by X_MAX_POSTS and cannot
     run away if a query turns out broader than expected.
     """
-    if not X_BEARER:
+    if not (X_ENABLED and X_BEARER):
         return []
 
     since = datetime.now(timezone.utc) - timedelta(
@@ -431,8 +438,12 @@ def fetch_bse() -> list[dict]:
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
-    "x": fetch_x,
 }
+# The paid source is parked rather than deleted: set SUCHAK_X_ENABLED=1 (and
+# SUCHAK_X_BEARER) to put it back in the sweep. fetch_x and x_query above are
+# unchanged, as are the spend caps and the scripts/x_trial.py dry run.
+if X_ENABLED:
+    SOURCES["x"] = fetch_x
 
 BROADCAST_SOURCES = {
     "rbi": fetch_rbi,
