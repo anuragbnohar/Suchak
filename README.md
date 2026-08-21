@@ -44,10 +44,20 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 ## What it does
 
 - **Ingest** — Google News RSS query feed per entity, built from its alias
-  list. One source type for week one; Google News already aggregates the
-  Indian financial press.
+  list, limited to a lookback window. One source type for week one; Google
+  News already aggregates the Indian financial press.
+- **Disambiguate** — names that contain other names ("Bank of India" inside
+  "State Bank of India") are resolved by longest match across the whole
+  entity registry, with word boundaries, so a story about one bank is never
+  filed under another. Rival names are also excluded from each search query.
+  All of this is free and runs before anything is stored.
 - **De-duplicate** — the same story from many outlets is clustered into one
   review item by title similarity; extra outlets attach as additional sources.
+- **Screen** — a small, cheap model (Haiku 4.5 by default) decides whether
+  each item is genuinely about the entity before the full classification
+  runs. Rejected items cost about a fiftieth of a verdict, stay out of the
+  queue, and remain visible under the queue's *Filtered out* tab with the
+  reason recorded. Set `SUCHAK_GATE_MODEL=""` to disable.
 - **Classify** — one Claude call per item returns a strict JSON verdict:
   relevance, risk areas, severity, actionability, geography, a one-line
   summary, user-defined **Factor** matches, and organizations linked to the
@@ -71,6 +81,10 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 |---|---|---|
 | `ANTHROPIC_API_KEY` | unset | Enables LLM classification (else keyword fallback) |
 | `SUCHAK_MODEL` | `claude-opus-5` | Claude model used for classification |
+| `SUCHAK_GATE_MODEL` | `claude-haiku-4-5` | Cheap relevance screen; `""` disables it |
+| `SUCHAK_LOOKBACK_DAYS` | `30` | How far back each feed asks for news; `0` = current |
+| `SUCHAK_MAX_ENTRIES` | `100` | Items per feed (Google News returns ~100 max) |
+| `SUCHAK_FETCH_DELAY` | `1.5` | Seconds between entity feeds during a sweep |
 | `SUCHAK_FETCH_MINUTES` | `30` | Background fetch interval; `0` disables |
 | `SUCHAK_DB` | `./suchak.db` | SQLite database path |
 | `SUCHAK_SECRET` | random per start | Session-cookie signing key (set for stable logins) |
@@ -85,6 +99,17 @@ embedding models (TF-IDF similarity is enough at this scale), PostgreSQL
 second-order **alerts** (linkages are extracted and displayed; alerting
 across entities is the natural next step).
 
+## Loading India's scheduled commercial banks
+
+```bash
+python -m scripts.load_banks     # 33 SCBs: 12 public sector, 21 private
+```
+
+Then sign in as `admin` and use **Entities -> Fetch now**. Aliases are chosen
+for precision -- ambiguous abbreviations (BoB, TMB) are deliberately omitted,
+since a bad alias costs money and fills the queue with another bank's news.
+Editing an entity's aliases in the UI is the lever for tuning this.
+
 ## Layout
 
 ```
@@ -96,6 +121,7 @@ app/
   classify.py    Claude structured classification + keyword fallback + learning loop
   similarity.py  Pure-Python TF-IDF (dedup + retrieval)
   auth.py        Passwords + sessions
+  matching.py    Entity resolution: longest-match disambiguation, query building
   seed.py        Fictional demo data
   templates/     Server-rendered pages
   static/        Stylesheet

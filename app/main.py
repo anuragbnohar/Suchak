@@ -188,7 +188,9 @@ def queue(request: Request):
 
         where, params = ["i.entity_id = ?"], [entity["id"]]
         if status == "open":
-            where.append("i.status IN ('new','classified')")
+            where.append("i.status IN ('new','classified') AND i.gated_out = 0")
+        elif status == "filtered":
+            where.append("i.gated_out = 1")
         elif status in ("reviewed", "dismissed"):
             where.append("i.status = ?")
             params.append(status)
@@ -209,7 +211,9 @@ def queue(request: Request):
             params,
         )
         counts = {r["s"]: r["n"] for r in q(
-            db, "SELECT CASE WHEN status IN ('new','classified') THEN 'open' ELSE status END s,"
+            db, "SELECT CASE WHEN gated_out = 1 THEN 'filtered'"
+                "        WHEN status IN ('new','classified') THEN 'open'"
+                "        ELSE status END s,"
                 " COUNT(*) n FROM items WHERE entity_id = ? GROUP BY s", (entity["id"],))}
         return render(request, "queue.html", user=user, entity=entity,
                       entities=entities, items=[prep_item(r) for r in rows],
@@ -283,7 +287,8 @@ async def item_review(request: Request, item_id: int):
 def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows = [prep_item(r) for r in q(
-        db, "SELECT * FROM items WHERE entity_id = ? AND published_at >= ?", (entity_id, since))]
+        db, "SELECT * FROM items WHERE entity_id = ? AND published_at >= ?"
+            " AND gated_out = 0", (entity_id, since))]
 
     by_risk, by_sev, by_factor, by_day = Counter(), Counter(), Counter(), Counter()
     linkages = Counter()
@@ -307,10 +312,11 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     max_trend = max((t["count"] for t in trend), default=0)
 
     open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
-                         " status IN ('new','classified')", (entity_id,))["n"]
+                         " status IN ('new','classified') AND gated_out = 0",
+                     (entity_id,))["n"]
     high_recent = [prep_item(r) for r in q(
         db, "SELECT * FROM items WHERE entity_id=? AND severity='high' AND published_at >= ?"
-            " ORDER BY published_at DESC LIMIT 6", (entity_id, since))]
+            " AND gated_out = 0 ORDER BY published_at DESC LIMIT 6", (entity_id, since))]
 
     return {
         "total": len(rows),
@@ -353,12 +359,13 @@ def overview(request: Request):
         rows = []
         for e in entities:
             items = [prep_item(r) for r in q(
-                db, "SELECT * FROM items WHERE entity_id=? AND published_at >= ?",
-                (e["id"], since))]
+                db, "SELECT * FROM items WHERE entity_id=? AND published_at >= ?"
+                    " AND gated_out = 0", (e["id"], since))]
             by_risk = Counter(a for it in items for a in it["risk_areas"])
             top_risk = by_risk.most_common(1)
             open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
-                                 " status IN ('new','classified')", (e["id"],))["n"]
+                                 " status IN ('new','classified') AND gated_out = 0",
+                             (e["id"],))["n"]
             last = one(db, "SELECT MAX(published_at) m FROM items WHERE entity_id=?",
                        (e["id"],))["m"]
             rows.append({

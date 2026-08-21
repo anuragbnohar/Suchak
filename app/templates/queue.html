@@ -21,7 +21,7 @@
 
 <div class="filter-row">
   <nav class="tabs">
-    {% for s, label in [('open','To review'), ('reviewed','Reviewed'), ('dismissed','Dismissed'), ('all','All')] %}
+    {% for s, label in [('open','To review'), ('reviewed','Reviewed'), ('dismissed','Dismissed'), ('filtered','Filtered out'), ('all','All')] %}
     <a class="tab {% if status == s %}active{% endif %}"
        href="/queue?entity={{ entity.id }}&amp;status={{ s }}{% if risk %}&amp;risk={{ risk }}{% endif %}">
       {{ label }}
@@ -59,6 +59,7 @@
         {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name }}</span>{% endif %}
         {% if it.status == 'dismissed' %}<span class="meta-dim">✕ dismissed</span>{% endif %}
         {% if it.status == 'new' %}<span class="meta-dim">awaiting classification</span>{% endif %}
+        {% if it.gated_out %}<span class="meta-dim">filtered: {{ it.gate_reason }}</span>{% endif %}
       </div>
     </a>
   </li>

@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS entities (
     name       TEXT NOT NULL UNIQUE,
     kind       TEXT NOT NULL,
     aliases    TEXT NOT NULL DEFAULT '[]',
+    exclude_terms TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -54,6 +55,8 @@ CREATE TABLE IF NOT EXISTS items (
     classifier     TEXT,
     model          TEXT,
     classified_at  TEXT,
+    gated_out      INTEGER NOT NULL DEFAULT 0,
+    gate_reason    TEXT,
     -- human review (the labels the system learns from)
     reviewed_by       INTEGER REFERENCES users(id),
     reviewed_at       TEXT,
@@ -109,10 +112,27 @@ def connect() -> sqlite3.Connection:
     return con
 
 
+# columns added after the first release; applied to existing databases
+MIGRATIONS = [
+    ("entities", "exclude_terms", "TEXT NOT NULL DEFAULT '[]'"),
+    ("items", "gated_out", "INTEGER NOT NULL DEFAULT 0"),
+    ("items", "gate_reason", "TEXT"),
+]
+
+
+def _migrate(con: sqlite3.Connection) -> None:
+    for table, column, decl in MIGRATIONS:
+        cols = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    con.commit()
+
+
 def init_db() -> None:
     con = connect()
     try:
         con.executescript(SCHEMA)
+        _migrate(con)
         con.commit()
     finally:
         con.close()

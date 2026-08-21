@@ -9,6 +9,7 @@ normalized dicts.
 import html
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -20,12 +21,19 @@ import httpx
 
 from .classify import classify_new_items
 from .db import connect, one, q, x
+from .matching import Registry, build_query
 from .similarity import title_similarity
 
 log = logging.getLogger("suchak.ingest")
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
-MAX_ENTRIES_PER_FEED = 40
+# Google News returns at most ~100 results per query, so this is the ceiling
+# rather than a throttle.
+MAX_ENTRIES_PER_FEED = int(os.environ.get("SUCHAK_MAX_ENTRIES", "100"))
+# How far back to ask for news. 0 = whatever Google considers current.
+LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "30"))
+# Pause between entity feeds so a 33-entity sweep is not seen as abuse.
+FETCH_DELAY_SECONDS = float(os.environ.get("SUCHAK_FETCH_DELAY", "1.5"))
 DUP_WINDOW_DAYS = 7
 DUP_THRESHOLD = 0.6
 
@@ -33,9 +41,14 @@ DUP_THRESHOLD = 0.6
 fetch_lock = threading.Lock()
 
 
-def google_news_url(entity) -> str:
-    aliases = json.loads(entity["aliases"])[:3]
-    query = " OR ".join(f'"{a}"' for a in aliases)
+def load_registry(db) -> Registry:
+    return Registry(q(db, "SELECT * FROM entities"))
+
+
+def google_news_url(registry: Registry, entity_id: int) -> str:
+    """Feed URL for one entity: its aliases, minus the longer names that
+    contain them, limited to the lookback window."""
+    query = build_query(registry, entity_id, days=LOOKBACK_DAYS or None)
     return GOOGLE_NEWS_RSS.format(query=urllib.parse.quote(query))
 
 
@@ -60,9 +73,10 @@ def _entry_source(entry, link: str) -> str:
         return "unknown"
 
 
-def ingest_entity(db, entity) -> dict:
-    url = google_news_url(entity)
-    result = {"found": 0, "added": 0, "merged": 0, "note": None}
+def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
+    registry = registry or load_registry(db)
+    url = google_news_url(registry, entity["id"])
+    result = {"found": 0, "added": 0, "merged": 0, "rejected": 0, "note": None}
     try:
         resp = httpx.get(
             url, timeout=20, follow_redirects=True,
@@ -90,6 +104,14 @@ def ingest_entity(db, entity) -> dict:
         if not title or not link:
             continue
         result["found"] += 1
+
+        # Free disambiguation, before anything is stored or classified:
+        # "State Bank of India ..." must not be filed under Bank of India.
+        summary_text = _strip_html(entry.get("summary", ""))
+        if not registry.mentions(entity["id"], f"{title} {summary_text}"):
+            result["rejected"] += 1
+            continue
+
         if one(db, "SELECT 1 FROM items WHERE entity_id=? AND url=?", (entity["id"], link)):
             continue
         if one(db, "SELECT 1 FROM item_sources s JOIN items i ON i.id=s.item_id"
@@ -98,7 +120,7 @@ def ingest_entity(db, entity) -> dict:
 
         source_name = _entry_source(entry, link)
         published = _entry_published(entry)
-        snippet = _strip_html(entry.get("summary", ""))[:500]
+        snippet = summary_text[:500]
 
         dup_id, best = None, 0.0
         for r in recent:
@@ -125,10 +147,14 @@ def ingest_entity(db, entity) -> dict:
 
 
 def _log_fetch(db, entity_id: int, result: dict) -> None:
+    note = result["note"]
+    if result.get("rejected"):
+        rejected = f"{result['rejected']} rejected as another entity's news"
+        note = f"{note}; {rejected}" if note else rejected
     x(db, "INSERT INTO fetch_log (entity_id, source, found, added, merged, note)"
           " VALUES (?,?,?,?,?,?)",
       (entity_id, "google_news_rss", result["found"], result["added"],
-       result["merged"], result["note"]))
+       result["merged"], note))
 
 
 def run_cycle(entity_id: int | None = None) -> dict:
@@ -137,7 +163,8 @@ def run_cycle(entity_id: int | None = None) -> dict:
     if not fetch_lock.acquire(blocking=False):
         return {"skipped": True, "reason": "a fetch cycle is already running"}
     started = time.monotonic()
-    totals = {"entities": 0, "found": 0, "added": 0, "merged": 0, "classified": 0}
+    totals = {"entities": 0, "found": 0, "added": 0, "merged": 0,
+              "rejected": 0, "classified": 0}
     try:
         db = connect()
         try:
@@ -145,10 +172,13 @@ def run_cycle(entity_id: int | None = None) -> dict:
                 entities = q(db, "SELECT * FROM entities WHERE id = ?", (entity_id,))
             else:
                 entities = q(db, "SELECT * FROM entities ORDER BY id")
-            for entity in entities:
-                r = ingest_entity(db, entity)
+            registry = load_registry(db)
+            for n, entity in enumerate(entities):
+                if n and FETCH_DELAY_SECONDS:
+                    time.sleep(FETCH_DELAY_SECONDS)
+                r = ingest_entity(db, entity, registry)
                 totals["entities"] += 1
-                for k in ("found", "added", "merged"):
+                for k in ("found", "added", "merged", "rejected"):
                     totals[k] += r[k]
             totals["classified"] = classify_new_items(db)
         finally:

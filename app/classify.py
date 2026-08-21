@@ -16,11 +16,26 @@ from datetime import datetime, timezone
 
 from . import taxonomy
 from .db import one, q, x
+from .matching import Registry
 from .similarity import rank_similar
 
 log = logging.getLogger("suchak.classify")
 
 MODEL = os.environ.get("SUCHAK_MODEL", "claude-opus-5")
+# A small, cheap model screens each item for relevance before the full
+# classification runs, so noise costs a fraction of a full verdict.
+# Set SUCHAK_GATE_MODEL="" to disable the screen.
+GATE_MODEL = os.environ.get("SUCHAK_GATE_MODEL", "claude-haiku-4-5")
+
+GATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "about_entity": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["about_entity", "reason"],
+    "additionalProperties": False,
+}
 
 VERDICT_SCHEMA = {
     "type": "object",
@@ -69,6 +84,41 @@ def _get_client():
         import anthropic
         _client = anthropic.Anthropic()
     return _client
+
+
+def _gate(entity, title: str, source: str | None) -> tuple[bool, str]:
+    """Cheap screen: is this item actually about the regulated entity?
+
+    Guards against near-miss names (a story about State Bank of India
+    surfacing in Bank of India's feed) and passing mentions that are not
+    about the institution at all. Costs roughly a fiftieth of a full
+    classification, so rejecting here is what keeps noise cheap.
+    """
+    client = _get_client()
+    aliases = ", ".join(json.loads(entity["aliases"]))
+    resp = client.messages.create(
+        model=GATE_MODEL,
+        max_tokens=256,
+        system=(
+            "You screen Indian banking news for a supervisory team. Decide "
+            "whether the headline is about one specific regulated entity.\n"
+            f"Entity: {entity['name']} ({entity['kind']}). Known as: {aliases}.\n"
+            "Answer false when the headline is about a DIFFERENT institution "
+            "whose name merely contains or resembles this one (for example "
+            "'State Bank of India' is not 'Bank of India', and 'Union Bank of "
+            "India' is not 'City Union Bank'), when the words appear only as a "
+            "generic phrase rather than this institution's name, or when the "
+            "entity is not a subject of the story at all. Answer true when the "
+            "story concerns this institution, including routine coverage."
+        ),
+        messages=[{"role": "user",
+                   "content": f"Headline: {title}\nSource: {source or 'unknown'}"}],
+        output_config={"format": {"type": "json_schema", "schema": GATE_SCHEMA}},
+    )
+    if resp.stop_reason == "refusal":
+        return True, "screen refused; passed through"
+    verdict = json.loads(next(b.text for b in resp.content if b.type == "text"))
+    return bool(verdict.get("about_entity")), (verdict.get("reason") or "")[:300]
 
 
 def active_factors(db, entity_id: int) -> list:
@@ -218,11 +268,12 @@ _HIGH_SEVERITY = [
 ]
 
 
-def _heuristic_classify(entity, title, snippet):
+def _heuristic_classify(entity, title, snippet, registry=None):
     text = f"{title} {snippet or ''}".lower()
-    aliases = [a.lower() for a in json.loads(entity["aliases"])]
-    in_title = any(a in title.lower() for a in aliases)
-    in_text = any(a in text for a in aliases)
+    registry = registry or Registry([entity])
+    eid = entity["id"]
+    in_title = registry.mentions(eid, title)
+    in_text = in_title or registry.mentions(eid, f"{title} {snippet or ''}")
 
     risk_areas = [
         area for area, words in _HEURISTIC_KEYWORDS.items()
@@ -244,9 +295,37 @@ def _heuristic_classify(entity, title, snippet):
     return verdict, "heuristic", "keyword-rules"
 
 
+def _record_gated_out(db, item, reason: str) -> None:
+    """Park an item the cheap screen rejected: kept for audit, out of the
+    review queue, and never sent for full classification."""
+    x(
+        db,
+        "UPDATE items SET status='classified', gated_out=1, gate_reason=?,"
+        " relevance=0, risk_areas='[]', severity='low', actionability='monitor',"
+        " summary=?, classifier=?, model=?, classified_at=? WHERE id=?",
+        (reason, item["title"], "gate", GATE_MODEL,
+         datetime.now(timezone.utc).isoformat(timespec="seconds"), item["id"]),
+    )
+
+
 def classify_item(db, item) -> None:
     """Classify one item row and persist the verdict."""
     entity = one(db, "SELECT * FROM entities WHERE id = ?", (item["entity_id"],))
+
+    if GATE_MODEL:
+        try:
+            keep, reason = _gate(entity, item["title"], item["source_name"])
+            if not keep:
+                log.info("Gated out %r for %s: %s",
+                         item["title"][:60], entity["name"], reason)
+                _record_gated_out(db, item, reason)
+                return
+        except Exception as exc:
+            # never let the screen block the pipeline; fall through to
+            # full classification, which makes its own relevance judgment
+            log.warning("Relevance screen unavailable (%s: %s)",
+                        type(exc).__name__, exc)
+
     factors = active_factors(db, item["entity_id"])
     examples = similar_reviewed(db, item["entity_id"], f"{item['title']} {item['snippet'] or ''}")
     try:
@@ -256,7 +335,8 @@ def classify_item(db, item) -> None:
         )
     except Exception as exc:  # missing key, network, rate limit, refusal, bad JSON
         log.warning("LLM classification failed (%s: %s); using heuristic", type(exc).__name__, exc)
-        verdict, classifier, model = _heuristic_classify(entity, item["title"], item["snippet"])
+        verdict, classifier, model = _heuristic_classify(
+            entity, item["title"], item["snippet"])
 
     x(
         db,
