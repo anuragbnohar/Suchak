@@ -45,5 +45,13 @@ ENTITY_KINDS = [
 
 ROLES = ["member", "lead", "superadmin"]
 
+# Chip shown in the queue/detail for non-news items; news shows none.
+SOURCE_TYPE_LABELS = {
+    "video": "\u25b6 video",
+    "social": "\u2709 social",
+    "regulatory": "\u2696 regulator",
+    "filing": "\u21ea exchange filing",
+}
+
 SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
 ACTIONABILITY_RANK = {"action_recommended": 0, "review_recommended": 1, "monitor": 2}

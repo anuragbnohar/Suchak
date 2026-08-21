@@ -166,6 +166,20 @@ DEMO_ITEMS = [
      "metadata was listed on an underground forum; PayEase said it found no "
      "breach of its core systems.",
      "high", ["Cybersecurity Risk"], "action_recommended", "Pan-India", [], None),
+    (3, 1.4,
+     "Reserve Bank of India imposes monetary penalty on Suvarna Sahakari Bank",
+     "Reserve Bank of India",
+     "A monetary penalty of \u20b945 lakh was imposed for non-compliance with "
+     "directions on KYC norms and loan classification, based on the statutory "
+     "inspection of the bank.",
+     "high", ["Governance Risk"], "action_recommended", "Maharashtra", [], None),
+    (1, 2.6,
+     "Bharat National Bank Ltd - Outcome of Board Meeting",
+     "BSE",
+     "The board approved raising Tier-II capital of up to \u20b91,200 crore "
+     "through issuance of bonds in one or more tranches.",
+     "low", [], "monitor", None, [], None),
+
     (5, 13.2,
      "PayEase partners with Kaveri Gramin Bank for rural payment access",
      "Rural Sandesh",
@@ -239,5 +253,11 @@ def seed_if_empty(db) -> bool:
         cols = ", ".join(fields)
         marks = ", ".join("?" for _ in fields)
         x(db, f"INSERT INTO items ({cols}) VALUES ({marks})", tuple(fields.values()))
+
+    # mark the official-source demo items with their source types
+    x(db, "UPDATE items SET source_type='regulatory'"
+          " WHERE title LIKE 'Reserve Bank of India imposes%'")
+    x(db, "UPDATE items SET source_type='filing'"
+          " WHERE title LIKE '%Outcome of Board Meeting%'")
 
     return True

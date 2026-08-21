@@ -49,7 +49,7 @@
       <div class="item-top">
         <span class="sev-chip sev-chip-{{ it.severity or 'low' }}">{{ it.severity or 'low' }}</span>
         <span class="item-title">{{ it.title }}</span>
-        {% if it.source_type == 'video' %}<span class="type-chip">▶ video</span>{% endif %}
+        {% if it.source_type_label %}<span class="type-chip">{{ it.source_type_label }}</span>{% endif %}
       </div>
       <div class="item-meta">
         <span class="meta-action">{{ it.actionability_label }}</span>

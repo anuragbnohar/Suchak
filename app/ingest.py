@@ -14,6 +14,16 @@ Live sources:
                Needs a bearer token in SUCHAK_X_BEARER; skipped silently
                when unset. This is the ONLY paid source, billed per post
                returned, so it is capped hard -- see SUCHAK_X_MAX_POSTS.
+
+Broadcast sources are different in kind: one feed covers every regulated
+entity, so they are fetched ONCE per sweep and each item is routed to the
+entities it mentions via the same longest-match registry that keeps news
+attribution honest. All free.
+
+  rbi          RBI press releases RSS (enforcement actions, penalties).
+  nse          NSE corporate announcements RSS.
+  bse          BSE corporate announcements JSON (the endpoint the BSE
+               website itself uses; there is no separate documented API).
 """
 import html
 import json
@@ -67,6 +77,24 @@ X_STRATEGY = os.environ.get("SUCHAK_X_STRATEGY", "complaints")
 X_LANGS = [c.strip() for c in os.environ.get("SUCHAK_X_LANGS", "en,hi").split(",") if c.strip()]
 X_RECENT_SEARCH_DAYS = 7
 
+# --- Broadcast feeds: RBI + exchanges ---------------------------------------
+# One feed covers all entities; fetched once per sweep, items routed by
+# mention. Set any URL to "" to disable that source. These hosts were not
+# reachable from the build sandbox, so verify each URL once on first run --
+# a failure shows up on the Entities page rather than crashing the sweep.
+RBI_PRESS_RSS = os.environ.get(
+    "SUCHAK_RBI_RSS", "https://www.rbi.org.in/pressreleases_rss.xml")
+NSE_ANN_RSS = os.environ.get(
+    "SUCHAK_NSE_RSS",
+    "https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml")
+BSE_ANN_API = os.environ.get(
+    "SUCHAK_BSE_API", "https://api.bseindia.com/BseIndiaAPI/api/AnnGetData/w")
+# Items taken per broadcast feed per sweep.
+BROADCAST_MAX = int(os.environ.get("SUCHAK_BROADCAST_MAX", "200"))
+
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+               "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36")
+
 # Vocabulary that marks a post as a grievance rather than market chatter.
 # Kept tight on purpose: every extra term returns more posts, and every post
 # returned is billed.
@@ -76,6 +104,9 @@ X_COMPLAINT_TERMS = [t.strip() for t in os.environ.get(
     'harassment,mis-sold,misselling,"not working","no response","customer care",'
     '"worst service"'
 ).split(",") if t.strip()]
+
+# source types whose items never merge by title similarity (see dedup note)
+NO_MERGE_TYPES = {"social", "filing"}
 
 # only one fetch cycle at a time
 fetch_lock = threading.Lock()
@@ -272,22 +303,183 @@ def fetch_x(registry: Registry, entity) -> list[dict]:
     return items
 
 
+def _within_lookback(published_iso: str | None) -> bool:
+    if not published_iso or not LOOKBACK_DAYS:
+        return True
+    try:
+        dt = datetime.fromisoformat(published_iso.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    return dt >= datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
+
+
+def _rss_broadcast(url: str, source_name: str, source_type: str) -> list[dict]:
+    resp = httpx.get(url, timeout=25, follow_redirects=True,
+                     headers={"User-Agent": _BROWSER_UA})
+    resp.raise_for_status()
+    feed = feedparser.parse(resp.content)
+    items = []
+    for entry in feed.entries[:BROADCAST_MAX]:
+        title = _strip_html(entry.get("title", ""))
+        link = entry.get("link", "")
+        if not title or not link:
+            continue
+        published = _entry_published(entry)
+        if not _within_lookback(published):
+            continue
+        items.append({
+            "title": title,
+            "url": link,
+            "source_name": source_name,
+            "snippet": _strip_html(entry.get("summary", "")),
+            "published_at": published,
+            "source_type": source_type,
+        })
+    return items
+
+
+def fetch_rbi() -> list[dict]:
+    """RBI press releases: penalties, enforcement, directions. The feed
+    covers everything RBI publishes; routing keeps only items that name a
+    tracked entity."""
+    if not RBI_PRESS_RSS:
+        return []
+    return _rss_broadcast(RBI_PRESS_RSS, "Reserve Bank of India", "regulatory")
+
+
+def fetch_nse() -> list[dict]:
+    """NSE corporate announcements RSS (all listed companies)."""
+    if not NSE_ANN_RSS:
+        return []
+    return _rss_broadcast(NSE_ANN_RSS, "NSE", "filing")
+
+
+def _parse_bse_dt(value: str | None) -> str | None:
+    """BSE timestamps are naive IST like '2026-08-21T14:30:00.72'."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value[:19])
+    except ValueError:
+        return None
+    ist = timezone(timedelta(hours=5, minutes=30))
+    return dt.replace(tzinfo=ist).astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def fetch_bse() -> list[dict]:
+    """BSE corporate announcements.
+
+    BSE publishes no documented feed; this is the JSON endpoint the BSE
+    website itself calls, so treat it as changeable and keep every field
+    access defensive.
+    """
+    if not BSE_ANN_API:
+        return []
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=min(LOOKBACK_DAYS or 2, 30))
+    params = {
+        "strCat": "-1",
+        "strPrevDate": since.strftime("%Y%m%d"),
+        "strScrip": "",
+        "strSearch": "P",
+        "strToDate": now.strftime("%Y%m%d"),
+        "strType": "C",
+    }
+    resp = httpx.get(BSE_ANN_API, params=params, timeout=25, headers={
+        "User-Agent": _BROWSER_UA,
+        "Referer": "https://www.bseindia.com/",
+        "Accept": "application/json",
+    })
+    resp.raise_for_status()
+    rows = (resp.json() or {}).get("Table") or []
+
+    items = []
+    for row in rows[:BROADCAST_MAX]:
+        subject = _strip_html(row.get("NEWSSUB") or row.get("HEADLINE") or "")
+        company = _strip_html(row.get("SLONGNAME") or "")
+        if not subject and not company:
+            continue
+        # the resolver routes by name, so make sure the company name is in
+        # the title even when NEWSSUB omits it
+        title = subject if company.lower() in subject.lower() \
+            else f"{company} - {subject}".strip(" -")
+        attach = row.get("ATTACHMENTNAME")
+        link = row.get("NSURL") or (
+            f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{attach}"
+            if attach else "")
+        if not link:
+            link = f"https://www.bseindia.com/corporates/ann.html#{row.get('NEWSID', '')}"
+        items.append({
+            "title": title,
+            "url": link,
+            "source_name": "BSE",
+            "snippet": _strip_html(row.get("HEADLINE") or "") or subject,
+            "published_at": _parse_bse_dt(row.get("NEWS_DT") or row.get("DT_TM")),
+            "source_type": "filing",
+        })
+    return items
+
+
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
     "x": fetch_x,
 }
 
+BROADCAST_SOURCES = {
+    "rbi": fetch_rbi,
+    "nse": fetch_nse,
+    "bse": fetch_bse,
+}
 
-def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
+
+def fetch_broadcast_sources(db, registry: Registry) -> dict[int, list[dict]]:
+    """Fetch each broadcast feed once and route items to the entities they
+    mention. Returns {entity_id: [candidates]}; logs per-feed status to
+    fetch_log with a NULL entity."""
+    routed: dict[int, list[dict]] = {}
+    enabled = {"rbi": RBI_PRESS_RSS, "nse": NSE_ANN_RSS, "bse": BSE_ANN_API}
+    for name, fetch in BROADCAST_SOURCES.items():
+        if not enabled.get(name):
+            continue
+        note, found, kept = None, 0, 0
+        try:
+            items = fetch()
+            found = len(items)
+            for item in items:
+                eids = registry.resolve(f"{item['title']} {item['snippet']}")
+                for eid in eids:
+                    kept += 1
+                    routed.setdefault(eid, []).append({
+                        **item,
+                        # routing already ran the resolver; the per-item
+                        # check in ingest_entity would just repeat it
+                        "attribution_confident": True,
+                    })
+            note = f"routed {kept} item(s) to tracked entities"
+        except Exception as exc:
+            note = f"fetch failed: {type(exc).__name__}: {exc}"
+            log.warning("Broadcast source %s: %s", name, note)
+        x(db, "INSERT INTO fetch_log (entity_id, source, found, added, merged, note)"
+              " VALUES (NULL,?,?,0,0,?)", (name, found, note))
+    return routed
+
+
+def ingest_entity(db, entity, registry: Registry | None = None,
+                  extra_candidates: list[dict] | None = None) -> dict:
     """Fetch every enabled source for one entity and store what survives
-    disambiguation and de-duplication."""
+    disambiguation and de-duplication. `extra_candidates` carries items
+    already routed to this entity from broadcast feeds (RBI, exchanges)."""
     registry = registry or load_registry(db)
     result = {"found": 0, "added": 0, "merged": 0, "rejected": 0,
               "billed": 0, "note": None}
     notes = []
 
-    candidates = []
+    candidates = list(extra_candidates or [])
+    if candidates:
+        notes.append(f"{len(candidates)} from regulator/exchange feeds")
     for name, fetch in SOURCES.items():
         try:
             got = fetch(registry, entity)
@@ -330,16 +522,18 @@ def ingest_entity(db, entity, registry: Registry | None = None) -> dict:
         published = cand["published_at"] or datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         # A video and an article about the same event are the same event, so
-        # duplicate detection deliberately spans source types.
+        # duplicate detection deliberately spans source types -- an RBI
+        # penalty release merges with the news coverage of that penalty.
         #
-        # Social posts are the exception: ten customers complaining about
-        # blocked cards is ten data points, not one story covered ten times.
-        # Volume IS the conduct signal, so near-identical complaints are kept
-        # apart and only the exact-URL check above suppresses true repeats.
+        # Two exceptions. Social posts: ten customers complaining about
+        # blocked cards is ten data points, not one story covered ten times
+        # -- volume IS the conduct signal. Exchange filings: titles are
+        # formulaic ("Announcement under Regulation 30..."), so two distinct
+        # filings can share a title; only the exact-URL check may merge them.
         dup_id, best = None, 0.0
-        if cand["source_type"] != "social":
+        if cand["source_type"] not in NO_MERGE_TYPES:
             for r in recent:
-                if r.get("source_type") == "social":
+                if r.get("source_type") in NO_MERGE_TYPES:
                     continue
                 score = title_similarity(title, r["title"])
                 if score > best:
@@ -393,10 +587,13 @@ def run_cycle(entity_id: int | None = None) -> dict:
             else:
                 entities = q(db, "SELECT * FROM entities ORDER BY id")
             registry = load_registry(db)
+            routed = fetch_broadcast_sources(db, registry)
+            totals["routed"] = sum(len(v) for v in routed.values())
             for n, entity in enumerate(entities):
                 if n and FETCH_DELAY_SECONDS:
                     time.sleep(FETCH_DELAY_SECONDS)
-                r = ingest_entity(db, entity, registry)
+                r = ingest_entity(db, entity, registry,
+                                  extra_candidates=routed.get(entity["id"], []))
                 totals["entities"] += 1
                 for k in ("found", "added", "merged", "rejected", "billed"):
                     totals[k] += r[k]

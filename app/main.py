@@ -114,6 +114,7 @@ def prep_item(row) -> dict:
                 d[field] = []
     d["actionability_label"] = taxonomy.ACTIONABILITY_LABELS.get(
         d.get("actionability") or "", d.get("actionability") or "")
+    d["source_type_label"] = taxonomy.SOURCE_TYPE_LABELS.get(d.get("source_type") or "news")
     return d
 
 
@@ -459,7 +460,16 @@ def entities_page(request: Request):
                                  " ORDER BY id DESC LIMIT 1", (e["id"],))
             rows.append({"entity": e, "aliases": json.loads(e["aliases"]),
                          "items": n_items, "last_fetch": last_fetch})
-        return render(request, "entities.html", user=user, rows=rows)
+        # latest status per broadcast feed (RBI, NSE, BSE) -- logged with a
+        # NULL entity because one fetch serves every entity
+        broadcast, seen = [], set()
+        for r in q(db, "SELECT * FROM fetch_log WHERE entity_id IS NULL"
+                       " ORDER BY id DESC LIMIT 30"):
+            if r["source"] not in seen:
+                seen.add(r["source"])
+                broadcast.append(r)
+        return render(request, "entities.html", user=user, rows=rows,
+                      broadcast=broadcast)
     finally:
         db.close()
 

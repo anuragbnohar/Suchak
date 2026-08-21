@@ -312,7 +312,15 @@ def classify_item(db, item) -> None:
     """Classify one item row and persist the verdict."""
     entity = one(db, "SELECT * FROM entities WHERE id = ?", (item["entity_id"],))
 
-    if GATE_MODEL:
+    try:
+        source_type = item["source_type"] or "news"
+    except (KeyError, IndexError):
+        source_type = "news"
+    # Official sources (RBI releases, exchange filings) are routed to an
+    # entity deterministically by the registry -- asking a model whether the
+    # filing is "about" the bank would only cost money and add a failure
+    # mode. The screen exists for noisy feeds, so it runs only on those.
+    if GATE_MODEL and source_type not in ("regulatory", "filing"):
         try:
             keep, reason = _gate(entity, item["title"], item["source_name"])
             if not keep:

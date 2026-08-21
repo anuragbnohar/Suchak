@@ -57,8 +57,12 @@
       </tr>
       {% endfor %}
     </table>
-    <p class="meta-dim small">Source: Google News RSS (free, no key). Demo entities are fictional —
-      add a real regulated entity to pull live public news.</p>
+    <p class="meta-dim small">Per-entity sources: Google News RSS (free, no key)
+      {%- if broadcast %} · Regulator &amp; exchange feeds:
+      {% for b in broadcast %}<strong>{{ b.source }}</strong> — {{ b.found }} fetched,
+        {{ b.note or 'ok' }} ({{ b.ran_at | timeago }}){{ ' · ' if not loop.last }}{% endfor %}
+      {%- endif %}.
+      Demo entities are fictional — add a real regulated entity to pull live public data.</p>
   </section>
 
   {% if user.role == 'superadmin' %}

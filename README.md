@@ -53,6 +53,22 @@ in that entity's queue. A background cycle also runs every 30 minutes.
     and the result count is hard-capped. Needs `SUCHAK_X_BEARER`; skipped
     silently when unset.
 
+  **Broadcast sources** are fetched *once per sweep* — one feed covers every
+  entity — and each item is routed to the entities it names, via the same
+  longest-match registry that keeps news attribution honest. All free, on by
+  default:
+  - *RBI press releases* (RSS) — penalties, enforcement actions, directions.
+  - *NSE corporate announcements* (RSS) — board outcomes, disclosures.
+  - *BSE corporate announcements* (JSON) — the endpoint the BSE website
+    itself uses; there is no separate documented API, so treat it as
+    changeable.
+
+  Items from official sources skip the paid relevance screen (routing is
+  already deterministic) and carry *regulator* / *exchange filing* chips in
+  the queue. An RBI release and the news coverage of the same penalty merge
+  into one review item; distinct exchange filings with formulaic identical
+  titles deliberately do **not** merge.
+
   Adding a source means adding one function and one entry in `SOURCES`;
   everything downstream is source-agnostic.
 - **Disambiguate** — names that contain other names ("Bank of India" inside
@@ -103,6 +119,10 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 | `SUCHAK_X_LANGS` | `en,hi` | Languages fetched from X |
 | `SUCHAK_X_COMPLAINT_TERMS` | see `ingest.py` | Grievance vocabulary ANDed with the entity |
 | `SUCHAK_X_PRICE_PER_POST` | `0.005` | Used only to report estimated spend |
+| `SUCHAK_RBI_RSS` | RBI press-release feed | `""` disables; override if RBI moves the URL |
+| `SUCHAK_NSE_RSS` | NSE announcements feed | `""` disables |
+| `SUCHAK_BSE_API` | BSE announcements endpoint | `""` disables |
+| `SUCHAK_BROADCAST_MAX` | `200` | Items taken per broadcast feed per sweep |
 | `SUCHAK_LOOKBACK_DAYS` | `30` | How far back each feed asks for news; `0` = current |
 | `SUCHAK_MAX_ENTRIES` | `100` | Items per feed (Google News returns ~100 max) |
 | `SUCHAK_FETCH_DELAY` | `1.5` | Seconds between entity feeds during a sweep |
@@ -134,6 +154,20 @@ so a 33-bank sweep costs 3,300 units and roughly three sweeps a day fit
 inside the free tier. Videos carry a `video` chip in the queue and flow
 through the same disambiguation, de-duplication, screening and
 classification as news.
+
+### Regulator & exchange feeds (free, on by default)
+
+Nothing to configure — each sweep pulls RBI press releases and NSE/BSE
+corporate announcements once and routes items to the banks they name. The
+**Entities** page shows each feed's last status (items fetched, routed, or
+the error if the fetch failed).
+
+One-time check on first run: these endpoints were unreachable from the
+environment this code was built in, so the default URLs are best-effort.
+If a feed shows `fetch failed` on the Entities page, find the current URL
+(RBI's RSS page; NSE's "RSS feeds" page; the announcements API called by
+`bseindia.com/corporates/ann.html`) and set `SUCHAK_RBI_RSS` /
+`SUCHAK_NSE_RSS` / `SUCHAK_BSE_API` accordingly.
 
 ### Enabling X/Twitter (paid — read this first)
 
