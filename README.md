@@ -46,7 +46,11 @@ remember it fetches *every* loaded entity and bills for it unattended.
 
 ## What it does
 
-- **Ingest** — pluggable sources, one normalized item shape:
+- **Ingest** — pluggable sources, one normalized item shape. Every fetch is
+  **incremental over a rolling window** (7 days by default, up to 100 items
+  per feed): URLs already stored are skipped, and a story another outlet
+  re-reports merges into the item it duplicates. Re-pressing Fetch therefore
+  classifies — and bills for — only what is genuinely new.
   - *Google News RSS* — free, no key. An aggregator, so one query per entity
     reaches the whole Indian financial press.
   - *YouTube Data API v3* — video coverage per entity. Needs a free API key
@@ -163,7 +167,7 @@ remember it fetches *every* loaded entity and bills for it unattended.
 | `SUCHAK_NSE_RSS` | NSE announcements feed | `""` disables |
 | `SUCHAK_BSE_API` | BSE announcements endpoint | `""` disables |
 | `SUCHAK_BROADCAST_MAX` | `200` | Items taken per broadcast feed per sweep |
-| `SUCHAK_LOOKBACK_DAYS` | `30` | How far back each feed asks for news; `0` = current |
+| `SUCHAK_LOOKBACK_DAYS` | `7` | Rolling window each fetch asks for; raise for a one-off backfill |
 | `SUCHAK_MAX_ENTRIES` | `100` | Items per feed (Google News returns ~100 max) |
 | `SUCHAK_FETCH_DELAY` | `1.5` | Seconds between entity feeds during a sweep |
 | `SUCHAK_FETCH_MINUTES` | `0` (manual only) | Minutes between automatic sweeps; `0` fetches only on demand |

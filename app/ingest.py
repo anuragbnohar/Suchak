@@ -51,8 +51,12 @@ GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&c
 # Google News returns at most ~100 results per query, so this is the ceiling
 # rather than a throttle.
 MAX_ENTRIES_PER_FEED = int(os.environ.get("SUCHAK_MAX_ENTRIES", "100"))
-# How far back to ask for news. 0 = whatever Google considers current.
-LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "30"))
+# How far back each feed asks for news, on every fetch. Fetching is
+# incremental -- already-stored URLs are skipped and re-reported stories
+# merge into the item they duplicate -- so a rolling window costs only
+# what is genuinely new. Raise it for a one-off backfill. 0 = whatever
+# the source considers current.
+LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "7"))
 # Pause between entity feeds so a 33-entity sweep is not seen as abuse.
 FETCH_DELAY_SECONDS = float(os.environ.get("SUCHAK_FETCH_DELAY", "1.5"))
 DUP_WINDOW_DAYS = 7
