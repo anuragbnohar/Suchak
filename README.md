@@ -43,9 +43,14 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 
 ## What it does
 
-- **Ingest** — Google News RSS query feed per entity, built from its alias
-  list, limited to a lookback window. One source type for week one; Google
-  News already aggregates the Indian financial press.
+- **Ingest** — pluggable sources, one normalized item shape:
+  - *Google News RSS* — free, no key. An aggregator, so one query per entity
+    reaches the whole Indian financial press.
+  - *YouTube Data API v3* — video coverage per entity. Needs a free API key
+    in `SUCHAK_YOUTUBE_KEY`; skipped silently when unset.
+
+  Adding a source means adding one function and one entry in `SOURCES`;
+  everything downstream is source-agnostic.
 - **Disambiguate** — names that contain other names ("Bank of India" inside
   "State Bank of India") are resolved by longest match across the whole
   entity registry, with word boundaries, so a story about one bank is never
@@ -53,6 +58,8 @@ in that entity's queue. A background cycle also runs every 30 minutes.
   All of this is free and runs before anything is stored.
 - **De-duplicate** — the same story from many outlets is clustered into one
   review item by title similarity; extra outlets attach as additional sources.
+  De-duplication spans source types, so a video and an article about the same
+  event become one item.
 - **Screen** — a small, cheap model (Haiku 4.5 by default) decides whether
   each item is genuinely about the entity before the full classification
   runs. Rejected items cost about a fiftieth of a verdict, stay out of the
@@ -82,6 +89,8 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 | `ANTHROPIC_API_KEY` | unset | Enables LLM classification (else keyword fallback) |
 | `SUCHAK_MODEL` | `claude-opus-5` | Claude model used for classification |
 | `SUCHAK_GATE_MODEL` | `claude-haiku-4-5` | Cheap relevance screen; `""` disables it |
+| `SUCHAK_YOUTUBE_KEY` | unset | YouTube Data API key; unset disables video ingestion |
+| `SUCHAK_YOUTUBE_MAX` | `25` | Videos per entity per sweep (API caps at 50) |
 | `SUCHAK_LOOKBACK_DAYS` | `30` | How far back each feed asks for news; `0` = current |
 | `SUCHAK_MAX_ENTRIES` | `100` | Items per feed (Google News returns ~100 max) |
 | `SUCHAK_FETCH_DELAY` | `1.5` | Seconds between entity feeds during a sweep |
@@ -91,13 +100,28 @@ in that entity's queue. A background cycle also runs every 30 minutes.
 
 ## Scope cuts for the one-week build
 
-Deliberately deferred, per the design doc: YouTube (removed from scope),
-Reddit/social feeds, GDELT and per-outlet RSS (Google News covers them),
+Deliberately deferred, per the design doc: Reddit/social feeds,
+GDELT and per-outlet RSS (Google News covers them),
 embedding models (TF-IDF similarity is enough at this scale), PostgreSQL
 (SQLite), Celery (in-process background task), separate React frontend
 (server-rendered pages), SSO (simple sessions), CSRF protection, and
 second-order **alerts** (linkages are extracted and displayed; alerting
 across entities is the natural next step).
+
+### Enabling YouTube
+
+Create a project at <https://console.cloud.google.com>, enable **YouTube Data
+API v3**, create an API key, then:
+
+```bash
+export SUCHAK_YOUTUBE_KEY=AIza...        # PowerShell: $env:SUCHAK_YOUTUBE_KEY="AIza..."
+```
+
+Quota is free: `search.list` costs 100 units against a 10,000/day allowance,
+so a 33-bank sweep costs 3,300 units and roughly three sweeps a day fit
+inside the free tier. Videos carry a `video` chip in the queue and flow
+through the same disambiguation, de-duplication, screening and
+classification as news.
 
 ## Loading India's scheduled commercial banks
 

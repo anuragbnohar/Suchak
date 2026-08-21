@@ -118,12 +118,16 @@ class Registry:
 
 
 def build_query(registry: Registry, entity_id: int, days: int | None = None,
-                max_aliases: int = 3) -> str:
-    """Google News search string: this entity's aliases, minus the longer
-    names that contain them, optionally limited to a recent window."""
+                max_aliases: int = 3, or_token: str = "OR") -> str:
+    """Search string: this entity's aliases, minus the longer names that
+    contain them, optionally limited to a recent window.
+
+    `or_token` is "OR" for Google News and "|" for the YouTube Data API,
+    which spell the boolean the same idea two different ways.
+    """
     ent = registry.entities[entity_id]
     aliases = ent["aliases"][:max_aliases]
-    query = " OR ".join(f'"{a}"' for a in aliases)
+    query = f" {or_token} ".join(f'"{a}"' for a in aliases)
     if len(aliases) > 1:
         query = f"({query})"
     for rival in registry.competitors_of(entity_id):
