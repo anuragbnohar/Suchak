@@ -41,7 +41,8 @@ import httpx
 from .classify import classify_new_items
 from .db import connect, one, q, x
 from .matching import Registry, build_query
-from .similarity import title_similarity
+from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
+                         strip_publisher)
 from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
@@ -55,7 +56,11 @@ LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "30"))
 # Pause between entity feeds so a 33-entity sweep is not seen as abuse.
 FETCH_DELAY_SECONDS = float(os.environ.get("SUCHAK_FETCH_DELAY", "1.5"))
 DUP_WINDOW_DAYS = 7
-DUP_THRESHOLD = 0.6
+# Calibrated on real headline variants of one event vs. different events:
+# same-event pairs score 0.35-0.60 here, different events under 0.31. The
+# overlap floor stops a high cosine built on one or two shared words.
+DUP_THRESHOLD = 0.40
+DUP_MIN_SHARED = 3
 
 YOUTUBE_SEARCH = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_KEY = os.environ.get("SUCHAK_YOUTUBE_KEY", "")
@@ -479,6 +484,7 @@ def ingest_entity(db, entity, registry: Registry | None = None,
     notes = []
 
     trusted_norms = load_trusted_norms(db)
+    entity_stop = alias_tokens(json.loads(entity["aliases"]))
     candidates = list(extra_candidates or [])
     if candidates:
         notes.append(f"{len(candidates)} from regulator/exchange feeds")
@@ -521,6 +527,11 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                    " WHERE i.entity_id=? AND s.url=?", (entity["id"], link)):
             continue
 
+        # the publisher suffix Google News appends differs per outlet, so it
+        # poisons similarity and clutters the queue; the outlet is shown
+        # separately anyway
+        title = strip_publisher(title, cand["source_name"])
+
         published = cand["published_at"] or datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         # A video and an article about the same event are the same event, so
@@ -532,18 +543,24 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         # -- volume IS the conduct signal. Exchange filings: titles are
         # formulaic ("Announcement under Regulation 30..."), so two distinct
         # filings can share a title; only the exact-URL check may merge them.
-        dup_id, best = None, 0.0
+        dup_id, best, best_title = None, 0.0, ""
         if cand["source_type"] not in NO_MERGE_TYPES:
             for r in recent:
                 if r.get("source_type") in NO_MERGE_TYPES:
                     continue
-                score = title_similarity(title, r["title"])
+                score = event_similarity(title, r["title"], entity_stop)
                 if score > best:
-                    dup_id, best = r["id"], score
-        if dup_id and best >= DUP_THRESHOLD:
+                    dup_id, best, best_title = r["id"], score, r["title"]
+        if dup_id and best >= DUP_THRESHOLD and \
+                distinctive_overlap(title, best_title, entity_stop) >= DUP_MIN_SHARED:
             x(db, "INSERT INTO item_sources (item_id, url, source_name, title, published_at)"
                   " VALUES (?,?,?,?,?)",
               (dup_id, link, cand["source_name"], title, published))
+            # keep this variant's wording in the pool, mapped to the same
+            # primary: a third outlet's angle may resemble it more than the
+            # primary's headline (transitive clustering)
+            recent.append({"id": dup_id, "title": title,
+                           "source_type": cand["source_type"]})
             result["merged"] += 1
         else:
             new_id = x(

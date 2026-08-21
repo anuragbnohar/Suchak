@@ -77,7 +77,13 @@ in that entity's queue. A background cycle also runs every 30 minutes.
   filed under another. Rival names are also excluded from each search query.
   All of this is free and runs before anything is stored.
 - **De-duplicate** — the same story from many outlets is clustered into one
-  review item by title similarity; extra outlets attach as additional sources.
+  review item; extra outlets attach as additional sources. Google News
+  publisher suffixes are stripped, plurals and month names fold together,
+  the entity's own name is ignored (it inflates every pair equally), and a
+  headline joins a cluster if it matches *any* variant already in it. A
+  merge needs at least three shared distinctive words. To re-cluster items
+  ingested before these rules: `python -m scripts.re_dedup` (reviewed items
+  always survive as the primary).
   De-duplication spans source types, so a video and an article about the same
   event become one item. Social posts are excluded from this: ten customers
   complaining about blocked cards is ten data points, not one story told ten

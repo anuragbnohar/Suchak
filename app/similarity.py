@@ -13,14 +13,92 @@ _STOPWORDS = {
     "was", "were", "with", "at", "by", "from", "as", "it", "its", "this",
     "that", "be", "has", "have", "had", "will", "would", "after", "over",
     "into", "amid", "says", "say", "said", "new", "not", "no", "but",
+    "what", "when", "how", "why", "check", "here", "your", "you",
 }
+
+# Written-out numbers match their digits: "beyond four" == "beyond 4".
+_NUM_WORDS = {
+    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+    "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+}
+
+
+_MONTHS = {
+    "january": "jan", "february": "feb", "march": "mar", "april": "apr",
+    "june": "jun", "july": "jul", "august": "aug", "september": "sep",
+    "sept": "sep", "october": "oct", "november": "nov", "december": "dec",
+}
+
+
+def _stem(token: str) -> str:
+    """Light plural folding so "withdrawals" matches "withdrawal" and
+    "charges" matches "charge" -- headline variants of one event routinely
+    differ only in number. Months fold to their abbreviations for the same
+    reason ("from Oct" == "from 1 October")."""
+    token = _NUM_WORDS.get(token, token)
+    token = _MONTHS.get(token, token)
+    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        token = token[:-1]
+    return token
 
 
 def tokenize(text: str) -> list[str]:
     return [
-        t for t in re.findall(r"[a-z0-9]+", (text or "").lower())
+        _stem(t) for t in re.findall(r"[a-z0-9]+", (text or "").lower())
         if len(t) > 1 and t not in _STOPWORDS
     ]
+
+
+def strip_publisher(title: str, source_name: str | None = None) -> str:
+    """Remove the " - Publisher" suffix Google News appends to headlines.
+
+    The suffix differs per outlet, so it poisons similarity between two
+    outlets' headlines for the same event. Stripped only when the tail
+    matches the item's source name or looks like a domain -- a real
+    headline containing " - " is left alone.
+    """
+    head, sep, tail = (title or "").rpartition(" - ")
+    if not sep or not head.strip() or len(tail) > 60:
+        return title
+    tail_n = re.sub(r"[^a-z0-9]", "", tail.lower())
+    src_n = re.sub(r"[^a-z0-9]", "", (source_name or "").lower())
+    if src_n and (src_n in tail_n or tail_n in src_n):
+        return head.strip()
+    if re.search(r"\.(com|in|net|org)$", tail.strip().lower()):
+        return head.strip()
+    return title
+
+
+# Tokens so common in Indian banking headlines that sharing them says
+# nothing about whether two items describe the same event.
+_DOMAIN_GENERIC = {
+    "bank", "rs", "inr", "crore", "lakh", "india", "indian", "ltd",
+    "limited", "share", "stock", "customer", "account",
+}
+
+
+def event_similarity(a: str, b: str, exclude: set | None = None) -> float:
+    """Similarity between two headlines describing (maybe) one event.
+
+    The entity's own aliases and domain-generic words are excluded: every
+    SBI headline contains "SBI", so it inflates all pairs equally while
+    distinctive words (withdrawal, penalty, outage) should decide."""
+    drop = _DOMAIN_GENERIC | (exclude or set())
+    ta = Counter(t for t in tokenize(a) if t not in drop)
+    tb = Counter(t for t in tokenize(b) if t not in drop)
+    return _cosine(ta, tb)
+
+
+def distinctive_overlap(a: str, b: str, exclude: set | None = None) -> int:
+    """How many distinctive words two headlines share -- the guard that
+    stops a high cosine built on one or two words from merging different
+    events."""
+    drop = _DOMAIN_GENERIC | (exclude or set())
+    return len((set(tokenize(a)) - drop) & (set(tokenize(b)) - drop))
+
+
+def alias_tokens(aliases: list[str]) -> set:
+    return {t for a in aliases for t in tokenize(a)}
 
 
 def _cosine(a: Counter, b: Counter) -> float:
