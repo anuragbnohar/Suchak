@@ -57,6 +57,26 @@
     {% endif %}
   </section>
 
+  <section class="panel">
+    <h2>Negative list — not analysed</h2>
+    {% if user.role == 'superadmin' %}
+    <form method="post" action="/settings/exclusions" class="stack-form">
+      <label>Item types the system should filter out (plain language)
+        <textarea name="exclusion_rules" rows="6" required>{{ exclusion_rules }}</textarea>
+      </label>
+      <button type="submit" class="btn btn-primary">Save negative list</button>
+      <p class="meta-dim small">Matching items are parked under the queue's
+        <em>Filtered out</em> tab with the reason recorded — nothing is silently
+        deleted. Applies to items fetched from now on. Genuine company events are
+        never excluded just because the share price is mentioned.</p>
+    </form>
+    {% else %}
+    <p class="conditions">{{ exclusion_rules }}</p>
+    <p class="meta-dim small">Editable by the super admin. Excluded items remain
+      visible under the queue's <em>Filtered out</em> tab.</p>
+    {% endif %}
+  </section>
+
   {% if user.role in ('lead','superadmin') %}
   <section class="panel">
     <h2>Add a factor</h2>

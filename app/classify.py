@@ -27,6 +27,17 @@ MODEL = os.environ.get("SUCHAK_MODEL", "claude-opus-5")
 # the admin UI without touching code; this is the default until edited.
 # NOTE: the keyword fallback classifier has its own hardcoded trigger list
 # and does not read this text.
+# The negative list: item types the team does NOT analyse. Edited by the
+# super admin in the UI; matching items are parked under "Filtered out"
+# with the reason recorded, never classified or queued.
+EXCLUSION_RULES_KEY = "exclusion_rules"
+DEFAULT_EXCLUSION_RULES = (
+    "Stock recommendations and share-price commentary: buy/sell/hold calls, "
+    "brokerage target prices, 'stocks to pick' listicles, technical-analysis "
+    "trade ideas, and routine share-price movement reports that describe no "
+    "underlying event at the institution."
+)
+
 SEVERITY_DEFS_KEY = "severity_definitions"
 DEFAULT_SEVERITY_DEFS = (
     "high = potential supervisory concern needing prompt attention "
@@ -43,9 +54,10 @@ GATE_SCHEMA = {
     "type": "object",
     "properties": {
         "about_entity": {"type": "boolean"},
+        "excluded": {"type": "boolean"},
         "reason": {"type": "string"},
     },
-    "required": ["about_entity", "reason"],
+    "required": ["about_entity", "excluded", "reason"],
     "additionalProperties": False,
 }
 
@@ -70,6 +82,8 @@ VERDICT_SCHEMA = {
             "type": "array",
             "items": {"type": "string", "enum": taxonomy.COMPLAINT_TOPICS},
         },
+        "excluded": {"type": "boolean"},
+        "exclusion_reason": {"type": ["string", "null"]},
         "relationships": {
             "type": "array",
             "items": {
@@ -86,7 +100,7 @@ VERDICT_SCHEMA = {
     "required": [
         "relevant", "relevance_score", "risk_areas", "severity",
         "actionability", "geography", "summary", "factor_matches",
-        "complaint_topics", "relationships",
+        "complaint_topics", "relationships", "excluded", "exclusion_reason",
     ],
     "additionalProperties": False,
 }
@@ -102,13 +116,15 @@ def _get_client():
     return _client
 
 
-def _gate(entity, title: str, source: str | None) -> tuple[bool, str]:
-    """Cheap screen: is this item actually about the regulated entity?
+def _gate(entity, title: str, source: str | None,
+          exclusion_rules: str = DEFAULT_EXCLUSION_RULES) -> tuple[bool, bool, str]:
+    """Cheap screen with two jobs in one call: is the item actually about
+    this entity, and is it a type on the team's negative list?
 
     Guards against near-miss names (a story about State Bank of India
-    surfacing in Bank of India's feed) and passing mentions that are not
-    about the institution at all. Costs roughly a fiftieth of a full
-    classification, so rejecting here is what keeps noise cheap.
+    surfacing in Bank of India's feed) and screens out excluded item types
+    (stock tips and the like) before the expensive verdict runs. Returns
+    (about_entity, excluded, reason).
     """
     client = _get_client()
     aliases = ", ".join(json.loads(entity["aliases"]))
@@ -116,8 +132,8 @@ def _gate(entity, title: str, source: str | None) -> tuple[bool, str]:
         model=GATE_MODEL,
         max_tokens=256,
         system=(
-            "You screen Indian banking news for a supervisory team. Decide "
-            "whether the headline is about one specific regulated entity.\n"
+            "You screen Indian banking news for a supervisory team. Two checks.\n"
+            "1. about_entity: is the headline about one specific regulated entity?\n"
             f"Entity: {entity['name']} ({entity['kind']}). Known as: {aliases}.\n"
             "Answer false when the headline is about a DIFFERENT institution "
             "whose name merely contains or resembles this one (for example "
@@ -125,16 +141,24 @@ def _gate(entity, title: str, source: str | None) -> tuple[bool, str]:
             "India' is not 'City Union Bank'), when the words appear only as a "
             "generic phrase rather than this institution's name, or when the "
             "entity is not a subject of the story at all. Answer true when the "
-            "story concerns this institution, including routine coverage."
+            "story concerns this institution, including routine coverage.\n"
+            "2. excluded: the team keeps a negative list of item types it does "
+            "NOT analyse. Set excluded=true when the item is of such a type, "
+            "even though it mentions the entity. The negative list:\n"
+            f"{exclusion_rules}\n"
+            "Genuine company events (fraud, penalties, defaults, outages, "
+            "results, management changes) are never excluded merely because "
+            "the share price is also mentioned."
         ),
         messages=[{"role": "user",
                    "content": f"Headline: {title}\nSource: {source or 'unknown'}"}],
         output_config={"format": {"type": "json_schema", "schema": GATE_SCHEMA}},
     )
     if resp.stop_reason == "refusal":
-        return True, "screen refused; passed through"
+        return True, False, "screen refused; passed through"
     verdict = json.loads(next(b.text for b in resp.content if b.type == "text"))
-    return bool(verdict.get("about_entity")), (verdict.get("reason") or "")[:300]
+    return (bool(verdict.get("about_entity")), bool(verdict.get("excluded")),
+            (verdict.get("reason") or "")[:300])
 
 
 def active_factors(db, entity_id: int) -> list:
@@ -177,7 +201,8 @@ def suggest_action(similar: list) -> str | None:
 
 
 def _build_system(entity, factors, examples,
-                  severity_defs: str = DEFAULT_SEVERITY_DEFS) -> str:
+                  severity_defs: str = DEFAULT_SEVERITY_DEFS,
+                  exclusion_rules: str = DEFAULT_EXCLUSION_RULES) -> str:
     lines = [
         "You are a supervisory triage assistant for the Banking Supervisor of India.",
         "You classify public news items about a regulated entity so a small "
@@ -203,6 +228,12 @@ def _build_system(entity, factors, examples,
         "media -- list every matching topic from: "
         + "; ".join(taxonomy.COMPLAINT_TOPICS) + ". "
         "Leave the list empty when the item is not about customer grievances.",
+        "Negative list -- item types the team does NOT analyse: "
+        + exclusion_rules + " "
+        "Set excluded=true with a short exclusion_reason when the item is of "
+        "such a type; otherwise excluded=false and exclusion_reason=null. "
+        "Genuine company events are never excluded merely because the share "
+        "price is also mentioned.",
     ]
     if factors:
         lines += ["", "User-defined Factors — list each factor whose conditions the item meets "
@@ -228,7 +259,8 @@ def _build_system(entity, factors, examples,
 
 
 def _llm_classify(entity, factors, examples, title, snippet, source, published,
-                  severity_defs: str = DEFAULT_SEVERITY_DEFS):
+                  severity_defs: str = DEFAULT_SEVERITY_DEFS,
+                  exclusion_rules: str = DEFAULT_EXCLUSION_RULES):
     client = _get_client()
     user_msg = (
         f"Classify this item.\n"
@@ -240,7 +272,8 @@ def _llm_classify(entity, factors, examples, title, snippet, source, published,
     resp = client.messages.create(
         model=MODEL,
         max_tokens=2048,
-        system=_build_system(entity, factors, examples, severity_defs),
+        system=_build_system(entity, factors, examples, severity_defs,
+                             exclusion_rules),
         messages=[{"role": "user", "content": user_msg}],
         output_config={"format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
     )
@@ -303,6 +336,15 @@ _COMPLAINT_TOPIC_KEYWORDS = {
                              "kyc pending", "kyc rejected"],
 }
 
+# Fixed patterns for the default negative-list rule; the fallback cannot
+# evaluate free-text rules, so only obvious stock-tip phrasing is caught.
+_STOCK_RECO_KEYWORDS = [
+    "target price", "price target", "buy rating", "sell rating", "hold rating",
+    "buy call", "sell call", "stocks to buy", "stocks to pick", "top picks",
+    "top stock", "brokerage", "technical picks", "intraday picks", "upside of",
+    "stock recommendation", "share price target",
+]
+
 _HIGH_SEVERITY = [
     "fraud", "scam", "default", "penalty", "hack", "breach", "bank run",
     "deposit run", "insolvency", "arrest", "raid", "licence cancel",
@@ -339,18 +381,22 @@ def _heuristic_classify(entity, title, snippet, registry=None):
         "complaint_topics": complaint_topics,
         "relationships": [],
     }
+    if any(k in text for k in _STOCK_RECO_KEYWORDS):
+        verdict["excluded"] = True
+        verdict["exclusion_reason"] = "stock recommendation (keyword match)"
     return verdict, "heuristic", "keyword-rules"
 
 
-def _record_gated_out(db, item, reason: str) -> None:
-    """Park an item the cheap screen rejected: kept for audit, out of the
-    review queue, and never sent for full classification."""
+def _record_gated_out(db, item, reason: str, classifier: str = "gate",
+                      model: str | None = None) -> None:
+    """Park a screened-out item: kept for audit under the Filtered-out tab,
+    out of the review queue, never counted on dashboards."""
     x(
         db,
         "UPDATE items SET status='classified', gated_out=1, gate_reason=?,"
         " relevance=0, risk_areas='[]', severity='low', actionability='monitor',"
         " summary=?, classifier=?, model=?, classified_at=? WHERE id=?",
-        (reason, item["title"], "gate", GATE_MODEL,
+        (reason, item["title"], classifier, model or GATE_MODEL,
          datetime.now(timezone.utc).isoformat(timespec="seconds"), item["id"]),
     )
 
@@ -367,13 +413,20 @@ def classify_item(db, item) -> None:
     # entity deterministically by the registry -- asking a model whether the
     # filing is "about" the bank would only cost money and add a failure
     # mode. The screen exists for noisy feeds, so it runs only on those.
+    exclusion_rules = get_setting(db, EXCLUSION_RULES_KEY, DEFAULT_EXCLUSION_RULES)
     if GATE_MODEL and source_type not in ("regulatory", "filing"):
         try:
-            keep, reason = _gate(entity, item["title"], item["source_name"])
+            keep, excluded, reason = _gate(entity, item["title"],
+                                           item["source_name"], exclusion_rules)
             if not keep:
                 log.info("Gated out %r for %s: %s",
                          item["title"][:60], entity["name"], reason)
                 _record_gated_out(db, item, reason)
+                return
+            if excluded:
+                log.info("Negative-list exclusion %r for %s: %s",
+                         item["title"][:60], entity["name"], reason)
+                _record_gated_out(db, item, f"negative list: {reason}")
                 return
         except Exception as exc:
             # never let the screen block the pipeline; fall through to
@@ -388,12 +441,22 @@ def classify_item(db, item) -> None:
         verdict, classifier, model = _llm_classify(
             entity, factors, examples,
             item["title"], item["snippet"], item["source_name"], item["published_at"],
-            severity_defs,
+            severity_defs, exclusion_rules,
         )
     except Exception as exc:  # missing key, network, rate limit, refusal, bad JSON
         log.warning("LLM classification failed (%s: %s); using heuristic", type(exc).__name__, exc)
         verdict, classifier, model = _heuristic_classify(
             entity, item["title"], item["snippet"])
+
+    # backstop for when the cheap screen is disabled or was unavailable:
+    # the full verdict also evaluates the negative list
+    if verdict.get("excluded"):
+        reason = verdict.get("exclusion_reason") or "matches the negative list"
+        log.info("Negative-list exclusion %r for %s: %s",
+                 item["title"][:60], entity["name"], reason)
+        _record_gated_out(db, item, f"negative list: {reason}",
+                          classifier=classifier, model=model)
+        return
 
     x(
         db,

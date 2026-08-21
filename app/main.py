@@ -19,7 +19,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import taxonomy
 from .auth import get_user, require_login, require_role, verify_password
-from .classify import (DEFAULT_SEVERITY_DEFS, SEVERITY_DEFS_KEY,
+from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
+                       EXCLUSION_RULES_KEY, SEVERITY_DEFS_KEY,
                        similar_reviewed, suggest_action)
 from .db import connect, get_setting, init_db, one, q, set_setting, x
 from .ingest import run_cycle
@@ -481,8 +482,9 @@ def factors_page(request: Request):
                          " WHERE f.entity_id IS NULL OR f.entity_id = ?"
                          " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
         severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
+        exclusion_rules = get_setting(db, EXCLUSION_RULES_KEY, DEFAULT_EXCLUSION_RULES)
         return render(request, "factors.html", user=user, factors=rows,
-                      severity_defs=severity_defs)
+                      severity_defs=severity_defs, exclusion_rules=exclusion_rules)
     finally:
         db.close()
 
@@ -525,6 +527,25 @@ async def settings_severity(request: Request):
         db.close()
     return RedirectResponse(
         "/factors?msg=Severity+criteria+updated+—+applies+to+new+classifications",
+        status_code=303)
+
+
+@app.post("/settings/exclusions")
+async def settings_exclusions(request: Request):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        text = (form.get("exclusion_rules") or "").strip()
+        if not text:
+            raise HTTPException(400, "The negative list cannot be empty; "
+                                     "describe at least one excluded item type")
+        set_setting(db, EXCLUSION_RULES_KEY, text, user["id"])
+    finally:
+        db.close()
+    return RedirectResponse(
+        "/factors?msg=Negative+list+updated+—+applies+to+items+fetched+from+now+on",
         status_code=303)
 
 

@@ -106,6 +106,15 @@ in that entity's queue. A background cycle also runs every 30 minutes.
   classifier applies are plain-language text edited by the super admin on
   the Factors page (stored in the DB, applied to new classifications). The
   no-API-key keyword fallback keeps its own fixed trigger words.
+- **Negative list** — plain-language descriptions of item types the team
+  does *not* analyse (default: stock recommendations and share-price
+  commentary), edited by the super admin on the Factors page. The cheap
+  screen applies it before any expensive classification; a backstop in the
+  full verdict covers gate-off mode, and the keyword fallback catches
+  obvious stock-tip phrasing. Matching items are parked under the queue's
+  *Filtered out* tab with the reason recorded — nothing is silently
+  deleted, and genuine company events are never excluded merely because
+  the share price is mentioned.
 - **Complaints view** — the classifier tags customer-grievance items (from
   news and social posts) with topics: Mis-selling, Recovery practices,
   Service disruption, Unauthorized transactions, Charges & fees, Harassment,
