@@ -318,6 +318,43 @@ python -m scripts.load_banks --team "HDFC Bank Ltd."
 `--team` points the lead/member demo accounts (priya, rahul) at the named
 bank so they have a queue to work; the super admin sees everything anyway.
 
+## Setting the supervised roster
+
+`scripts/set_roster.py` makes the entity list exactly the roster defined at
+the top of that file — adding what is missing and removing what is not on it
+— so changing which institutions are supervised is one command rather than
+clicking through the UI.
+
+```bash
+python -m scripts.set_roster --dry-run       # show the plan, change nothing
+python -m scripts.set_roster                 # plan, then confirm
+python -m scripts.set_roster --yes           # no prompt
+python -m scripts.set_roster --sync-aliases  # also align existing aliases/excludes
+```
+
+Entities already present keep their aliases untouched unless
+`--sync-aliases` is given, because those are tuned by hand on the Entities
+page. Removal deletes the entity's items **and its review history**; the plan
+counts both before anything happens, and asks before acting.
+
+The roster is not limited to banks: `ENTITY_KINDS` covers NBFCs, urban and
+rural cooperative banks and payment system operators, and the pipeline is
+identical for all of them. What differs is where the signal comes from — a
+large listed NBFC generates national press and exchange filings, while a
+small cooperative bank is mostly covered by RBI press releases, which the
+broadcast feed routes by mention.
+
+Aliases and `exclude_terms` are what keep a shared brand from becoming noise.
+`"Shriram Finance"` is an alias; `"Shriram"` alone is not, because the group
+also runs insurance, housing-finance and properties arms. Exclude terms are
+subtracted from the search query *and* from entity attribution, so
+"SBI Life Insurance posts Q1 profit" resolves to no entity at all rather than
+being filed under State Bank of India and paying for a screen to reject it.
+
+To remove a single entity from the UI instead: **Entities → Remove**
+(super admin only), which shows what will be deleted and asks you to type the
+entity's name.
+
 ## Loading India's scheduled commercial banks
 
 ```bash

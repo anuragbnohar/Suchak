@@ -239,6 +239,26 @@ def init_db() -> None:
         con.close()
 
 
+def remove_entity(db: sqlite3.Connection, entity_id: int) -> None:
+    """Delete an entity and everything belonging to it, in one transaction.
+
+    Lives here rather than in a route so the Entities page and
+    scripts/set_roster.py cannot drift apart on what "removing an entity"
+    means. Kept deliberately: user accounts (their team link is cleared),
+    global factors, and every setting.
+    """
+    with db:
+        db.execute("DELETE FROM reviews WHERE item_id IN"
+                   " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
+        db.execute("DELETE FROM item_sources WHERE item_id IN"
+                   " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
+        db.execute("DELETE FROM items WHERE entity_id = ?", (entity_id,))
+        db.execute("DELETE FROM factors WHERE entity_id = ?", (entity_id,))
+        db.execute("DELETE FROM fetch_log WHERE entity_id = ?", (entity_id,))
+        db.execute("UPDATE users SET entity_id = NULL WHERE entity_id = ?", (entity_id,))
+        db.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+
+
 def get_setting(db: sqlite3.Connection, key: str, default: str) -> str:
     row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else default

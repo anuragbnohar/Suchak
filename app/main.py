@@ -22,7 +22,8 @@ from .auth import get_user, require_login, require_role, verify_password
 from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
                        EXCLUSION_RULES_KEY, SEVERITY_DEFS_KEY,
                        similar_reviewed, suggest_action)
-from .db import connect, get_setting, init_db, one, q, set_setting, x
+from .db import (connect, get_setting, init_db, one, q, remove_entity,
+                 set_setting, x)
 from .ingest import run_cycle
 from .seed import seed_if_empty
 from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
@@ -1042,16 +1043,7 @@ async def entity_delete(request: Request, entity_id: int):
             return render(request, "entity_delete.html", user=user, entity=entity,
                           plan=_entity_removal_plan(db, entity_id),
                           error="That does not match the entity name. Nothing was deleted.")
-        with db:  # one transaction: all of it or none of it
-            db.execute("DELETE FROM reviews WHERE item_id IN"
-                       " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
-            db.execute("DELETE FROM item_sources WHERE item_id IN"
-                       " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
-            db.execute("DELETE FROM items WHERE entity_id = ?", (entity_id,))
-            db.execute("DELETE FROM factors WHERE entity_id = ?", (entity_id,))
-            db.execute("DELETE FROM fetch_log WHERE entity_id = ?", (entity_id,))
-            db.execute("UPDATE users SET entity_id = NULL WHERE entity_id = ?", (entity_id,))
-            db.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+        remove_entity(db, entity_id)
         log.info("Entity %r removed by %s", entity["name"], user["username"])
     finally:
         db.close()
