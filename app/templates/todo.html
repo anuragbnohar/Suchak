@@ -1,144 +1,135 @@
 {% extends "base.html" %}
 {% block title %}To-do · Suchak{% endblock %}
-
-{% macro owner_select(it, owners, name='action_owner') %}
-  <select name="{{ name }}">
-    {% for u in owners.get(it.entity_id, []) %}
-    <option value="{{ u.id }}" {% if u.id == it.action_owner %}selected{% endif %}>
-      {{ u.display_name }}{% if u.role == 'superadmin' %} (super admin){% endif %}</option>
-    {% endfor %}
-  </select>
-{% endmacro %}
-
 {% block content %}
 <div class="page-head">
   <div>
     <h1>To-do</h1>
-    <p class="page-sub">Follow-ups opened by reviews — yours and your team's.
-      An item lands here when a reviewer answers <strong>Actionable: Yes</strong>.</p>
+    <p class="page-sub">Follow-ups opened by reviews. An item lands here when a
+      reviewer answers <strong>Actionable: Yes</strong>.</p>
   </div>
 </div>
 
-{% set base = "/todo?status=" ~ status %}
-<div class="tile-row">
-  <a class="tile tile-accent" href="/todo?status=open">
-    <p class="tile-label">Open</p>
-    <p class="tile-value">{{ counts['open'] }}</p>
-  </a>
-  <a class="tile {% if counts['overdue'] %}tile-serious{% endif %}" href="/todo?status=open&amp;overdue=1">
-    <p class="tile-label">Overdue</p>
-    <p class="tile-value">{{ counts['overdue'] }}</p>
-  </a>
-  <a class="tile" href="/todo?status=open&amp;owner=me">
-    <p class="tile-label">Assigned to me</p>
-    <p class="tile-value">{{ counts['mine'] }}</p>
-  </a>
-  <a class="tile" href="/todo?status=done">
-    <p class="tile-label">Closed</p>
-    <p class="tile-value">{{ counts['done'] }}</p>
-  </a>
-</div>
-
-<div class="filter-row">
-  <nav class="tabs">
+<div class="toolbar">
+  <nav class="tabs" aria-label="Status">
     {% for s, label in [('open','Open'), ('done','Closed'), ('all','All')] %}
-    <a class="tab {% if status == s %}active{% endif %}"
-       href="/todo?status={{ s }}{{ filter_qs }}">
-      {{ label }}{% if counts[s] %}<span class="tab-count">{{ counts[s] }}</span>{% endif %}
+    <a class="tab {% if status == s %}active{% endif %}" href="/todo?status={{ s }}{{ filter_qs }}">
+      {{ label }}<span class="tab-count">{{ counts[s] }}</span>
     </a>
     {% endfor %}
   </nav>
-  <form method="get" action="/todo" class="risk-filter">
+
+  <div class="toolbar-pills">
+    <a class="pill {% if overdue_only %}active{% endif %} {% if counts['overdue'] %}pill-alert{% endif %}"
+       href="{{ url_overdue }}">Overdue <span class="pill-count">{{ counts['overdue'] }}</span></a>
+    <a class="pill {% if mine %}active{% endif %}" href="{{ url_mine }}">
+      Mine <span class="pill-count">{{ counts['mine'] }}</span></a>
+  </div>
+
+  <form method="get" action="/todo" class="toolbar-filters">
     <input type="hidden" name="status" value="{{ status }}">
     {% for k, v in extras.items() if k not in ('risk', 'sev', 'entity') %}
     <input type="hidden" name="{{ k }}" value="{{ v }}">
     {% endfor %}
     {% if user.role == 'superadmin' and entities|length > 1 %}
-    <select name="entity" onchange="this.form.submit()">
+    <select name="entity" onchange="this.form.submit()" aria-label="Entity">
       <option value="">All entities</option>
       {% for e in entities %}
       <option value="{{ e.id }}" {% if extras.get('entity') == e.id|string %}selected{% endif %}>{{ e.name }}</option>
       {% endfor %}
     </select>
     {% endif %}
-    <select name="sev" onchange="this.form.submit()">
+    <select name="sev" onchange="this.form.submit()" aria-label="Severity">
       <option value="">Any severity</option>
       {% for s in taxonomy.SEVERITIES %}
       <option value="{{ s }}" {% if extras.get('sev') == s %}selected{% endif %}>{{ s | capitalize }}</option>
       {% endfor %}
     </select>
-    <select name="risk" onchange="this.form.submit()">
+    <select name="risk" onchange="this.form.submit()" aria-label="Risk area">
       <option value="">Any risk area</option>
       {% for a in taxonomy.RISK_AREAS %}
       <option value="{{ a }}" {% if extras.get('risk') == a %}selected{% endif %}>{{ a }}</option>
       {% endfor %}
     </select>
+    {% if extras %}<a class="clear-filters" href="/todo?status={{ status }}" title="Clear filters">Clear</a>{% endif %}
   </form>
 </div>
-
-{% if extras %}
-<p class="filter-note">Filtered · <a href="/todo?status={{ status }}">✕ clear filters</a></p>
-{% endif %}
 
 {% if not rows %}
 <p class="empty">
   {% if counts['all'] %}Nothing matches these filters.
-  {% else %}No follow-ups yet. Open an item from the queue, review it, and answer
+  {% else %}No follow-ups yet. Review an item from the queue and answer
   <strong>Actionable: Yes</strong> — it will appear here.{% endif %}
 </p>
 {% else %}
 <ul class="todo-list">
   {% for it in rows %}
-  <li class="todo-card {% if it.action_status == 'done' %}todo-done{% elif it.overdue %}todo-overdue{% endif %}">
-    <div class="todo-head">
-      <span class="sev-chip sev-chip-{{ it.severity_shown }}">{{ it.severity_shown }}</span>
-      <a class="item-title" href="/item/{{ it.id }}">{{ it.title }}</a>
-      {% if it.action_status == 'done' %}<span class="ok-chip">✓ closed</span>
-      {% elif it.overdue %}<span class="due-chip due-late">overdue</span>
-      {% elif it.due_today %}<span class="due-chip due-soon">due today</span>{% endif %}
+  <li class="todo-card {% if it.action_status == 'done' %}is-done{% elif it.overdue %}is-late{% endif %}">
+    <div class="todo-main">
+      <p class="todo-line">
+        <span class="sev-chip sev-chip-{{ it.severity_shown }}">{{ it.severity_shown }}</span>
+        <a class="todo-title" href="/item/{{ it.id }}">{{ it.title }}</a>
+      </p>
+      <p class="todo-action">
+        {{ it.review_action or 'Action required' }}
+        {% if it.overdue %}<span class="due-chip due-late">overdue</span>
+        {% elif it.due_today %}<span class="due-chip due-soon">due today</span>{% endif %}
+      </p>
+      <p class="todo-meta">
+        {% if entities|length > 1 %}<span class="meta-strong">{{ it.entity_name }}</span>{% endif %}
+        {% for a in (it.review_risk_areas or it.risk_areas) %}<span class="mini-chip">{{ a }}</span>{% endfor %}
+        {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
+        <span>Owner {{ it.owner_name or '—' }}</span>
+        {% if it.due_label %}<span>Due {{ it.due_label }}</span>{% endif %}
+        <span>Raised by {{ it.reviewer_name }} · {{ it.reviewed_at | timeago }}</span>
+      </p>
+      {% if it.review_notes %}<p class="todo-note">{{ it.review_notes }}</p>{% endif %}
+      {% if it.action_status == 'done' %}
+      <p class="todo-closed">Closed by {{ it.closed_by_name }} · {{ it.action_closed_at | timeago }}
+        {% if it.action_close_note %}<span class="todo-closed-note">{{ it.action_close_note }}</span>{% endif %}</p>
+      {% endif %}
     </div>
 
-    <p class="todo-action">{{ it.review_action or 'Action required — none specified' }}</p>
-    {% if it.review_notes %}<p class="todo-notes">“{{ it.review_notes }}”</p>{% endif %}
-
-    <div class="item-meta">
-      {% if entities|length > 1 %}<span class="area-chip">{{ it.entity_name }}</span>{% endif %}
-      {% for a in (it.review_risk_areas or it.risk_areas) %}<span class="area-chip">{{ a }}</span>{% endfor %}
-      {% for t in it.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
-      <span class="meta-dim">Owner: <strong>{{ it.owner_name or 'unassigned' }}</strong></span>
-      {% if it.action_due %}<span class="meta-dim">Due {{ it.action_due }}</span>{% endif %}
-      <span class="meta-dim">Raised by {{ it.reviewer_name }} · {{ it.reviewed_at | timeago }}</span>
-    </div>
-
-    {% if it.action_status == 'done' %}
-    <p class="todo-closed">Closed by <strong>{{ it.closed_by_name }}</strong> ·
-      {{ it.action_closed_at | timeago }}
-      {% if it.action_close_note %}— “{{ it.action_close_note }}”{% endif %}</p>
-    {% endif %}
-
-    <div class="todo-controls">
+    <div class="todo-cta">
       {% if it.can_close and it.action_status == 'open' %}
-      <form method="post" action="/todo/{{ it.id }}/done" class="inline-form">
+      <form method="post" action="/todo/{{ it.id }}/done">
         <input type="hidden" name="back" value="{{ back }}">
-        <input name="close_note" placeholder="What was done? (optional)">
-        <button type="submit" class="btn btn-small btn-primary">Mark done</button>
+        <button type="submit" class="btn btn-primary btn-small">Mark done</button>
       </form>
       {% elif it.can_close %}
-      <form method="post" action="/todo/{{ it.id }}/reopen" class="inline-form">
+      <form method="post" action="/todo/{{ it.id }}/reopen">
         <input type="hidden" name="back" value="{{ back }}">
         <button type="submit" class="btn btn-small">Reopen</button>
       </form>
       {% endif %}
-
-      {% if it.can_assign and it.action_status == 'open' %}
-      <form method="post" action="/todo/{{ it.id }}/assign" class="inline-form">
-        <input type="hidden" name="back" value="{{ back }}">
-        {{ owner_select(it, owners) }}
-        <input type="date" name="action_due" value="{{ it.action_due or '' }}">
-        <button type="submit" class="btn btn-small">Save</button>
-      </form>
-      {% endif %}
     </div>
+
+    {% if it.action_status == 'open' and (it.can_close or it.can_assign) %}
+    <details class="todo-more">
+      <summary>{% if it.can_assign %}Note, owner &amp; due date{% else %}Close with a note{% endif %}</summary>
+      <div class="todo-more-body">
+        {% if it.can_close %}
+        <form method="post" action="/todo/{{ it.id }}/done" class="inline-form">
+          <input type="hidden" name="back" value="{{ back }}">
+          <input name="close_note" placeholder="What was done?">
+          <button type="submit" class="btn btn-small">Close with note</button>
+        </form>
+        {% endif %}
+        {% if it.can_assign %}
+        <form method="post" action="/todo/{{ it.id }}/assign" class="inline-form">
+          <input type="hidden" name="back" value="{{ back }}">
+          <select name="action_owner" aria-label="Owner">
+            {% for u in owners.get(it.entity_id, []) %}
+            <option value="{{ u.id }}" {% if u.id == it.action_owner %}selected{% endif %}>
+              {{ u.display_name }}{% if u.role == 'superadmin' %} (super admin){% endif %}</option>
+            {% endfor %}
+          </select>
+          <input type="date" name="action_due" value="{{ it.action_due or '' }}" aria-label="Due date">
+          <button type="submit" class="btn btn-small">Save</button>
+        </form>
+        {% endif %}
+      </div>
+    </details>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>

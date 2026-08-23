@@ -116,10 +116,12 @@ remember it fetches *every* loaded entity and bills for it unattended.
   that item, and the To-do page is where the team closes it. Members and
   leads see their entity's follow-ups, the super admin sees every entity's.
   Each carries an owner (the reviewer by default), an optional due date, the
-  recorded action and the reviewer's note; closing one asks what was done and
-  keeps that on the item. Tabs for Open / Closed / All, filters for
-  *assigned to me*, overdue, severity, risk area and entity, and a count in
-  the nav so open work is visible from every page. Overdue items sort first,
+  recorded action and the reviewer's note. Closing is one click; a disclosure
+  on each card holds the closing note, the owner and the due date, so the
+  default view stays a readable list rather than a wall of form fields.
+  Tabs for Open / Closed / All, quick filters for overdue and
+  *assigned to me*, dropdowns for severity, risk area and entity, and a count
+  in the nav so open work is visible from every page. Overdue items sort first,
   then by severity. Leads and the super admin can reassign or change a due
   date; members close what they own. Re-reviewing an item never reopens work
   someone already closed — the review records the judgment, the To-do records

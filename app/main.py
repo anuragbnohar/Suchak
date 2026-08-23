@@ -336,7 +336,7 @@ def item_detail(request: Request, item_id: int):
         similar_prepped = [(prep_item(r), round(score, 2)) for r, score in similar]
 
         return render(request, "item.html", user=user, entity=entity,
-                      item=prep_item(row), sources=sources,
+                      item=prep_action(row, _today()), sources=sources,
                       owners=_eligible_owners(db, row["entity_id"]),
                       similar=similar_prepped, suggestion=suggestion)
     finally:
@@ -454,6 +454,12 @@ def prep_action(row, today: str) -> dict:
     d["overdue"] = bool(d.get("action_due")) and d["action_status"] == "open" \
         and d["action_due"] < today
     d["due_today"] = d.get("action_due") == today and d["action_status"] == "open"
+    d["due_label"] = ""
+    if d.get("action_due"):
+        try:
+            d["due_label"] = datetime.strptime(d["action_due"], "%Y-%m-%d").strftime("%d %b")
+        except ValueError:
+            d["due_label"] = d["action_due"]
     return d
 
 
@@ -566,9 +572,18 @@ def todo_page(request: Request):
         filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
         back = f"status={status}" + filter_qs
 
+        def toggle(key: str, value: str) -> str:
+            """The same view with one filter flipped on or off."""
+            d = dict(extras)
+            d.pop(key, None) if d.get(key) == value else d.update({key: value})
+            return f"/todo?status={status}" + "".join(
+                f"&{k}={quote(str(v))}" for k, v in d.items() if v)
+
         return render(request, "todo.html", user=user, rows=rows, counts=counts,
                       status=status, entities=entities, owners=owners,
                       extras=extras, filter_qs=filter_qs, back=back,
+                      mine=mine, overdue_only=overdue_only,
+                      url_overdue=toggle("overdue", "1"), url_mine=toggle("owner", "me"),
                       today=today, todo_count=counts["open"])
     finally:
         db.close()

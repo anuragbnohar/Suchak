@@ -72,7 +72,7 @@
       {% if item.review_action %}<p>Action: <strong>{{ item.review_action }}</strong></p>{% endif %}
       {% if item.review_notes %}<p class="meta-dim">“{{ item.review_notes }}”</p>{% endif %}
       {% if item.action_status %}
-      <p class="todo-state">
+      <p class="todo-state {% if item.overdue %}is-late{% endif %}">
         {% if item.action_status == 'done' %}✓ Follow-up closed{% if item.action_close_note %} — “{{ item.action_close_note }}”{% endif %}
         {% else %}⚠ Follow-up open{% if item.action_due %}, due {{ item.action_due }}{% endif %}{% endif %}
         · <a href="/todo?status={{ 'done' if item.action_status == 'done' else 'open' }}">open the To-do page</a>
