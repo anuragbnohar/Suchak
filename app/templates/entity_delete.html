@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Remove {{ entity.name }} · Suchak{% endblock %}
+{% block content %}
+<p class="crumb"><a href="/entities">← Back to entities</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>Remove {{ entity.name }}</h1>
+    <p class="page-sub">{{ entity.kind }} · this cannot be undone.</p>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2>What will be deleted</h2>
+    <table class="data-table">
+      <tr><td>Collected items</td><td class="num">{{ plan.stored_items }}</td></tr>
+      <tr><td>Reviews on those items</td><td class="num">{{ plan.reviews }}</td></tr>
+      <tr><td>Open follow-ups</td><td class="num">{{ plan.open_actions }}</td></tr>
+      <tr><td>Factors scoped to this entity</td><td class="num">{{ plan.factors }}</td></tr>
+    </table>
+    {% if plan.reviews %}
+    <p class="warn-note">This includes <strong>{{ plan.reviews }}</strong> recorded
+      review{{ 's' if plan.reviews != 1 }} — the supervisory trail of who assessed
+      what. Nothing else in the app deletes a review. Export or note anything you
+      need before continuing.</p>
+    {% endif %}
+    {% if plan.members %}
+    <p class="meta-dim">These accounts will keep working but lose their team link,
+      and will need reassigning:
+      {% for m in plan.members %}<strong>{{ m.display_name }}</strong> ({{ m.role }}){{ ', ' if not loop.last }}{% endfor %}.</p>
+    {% endif %}
+    <p class="meta-dim small">Global factors, the severity criteria, the negative
+      list and the trusted-source list are shared across entities and are kept.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Confirm</h2>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <form method="post" action="/entities/{{ entity.id }}/delete" class="stack-form">
+      <label>Type <code>{{ entity.name }}</code> to confirm
+        <input name="confirm" autocomplete="off" placeholder="{{ entity.name }}" required>
+      </label>
+      <div class="btn-row">
+        <button type="submit" class="btn btn-danger">Remove this entity</button>
+        <a class="btn" href="/entities">Cancel</a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

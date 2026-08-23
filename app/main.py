@@ -991,6 +991,74 @@ async def entities_add(request: Request):
     return RedirectResponse("/entities?msg=Entity+added", status_code=303)
 
 
+def _entity_removal_plan(db, entity_id: int) -> dict:
+    """Exactly what disappears with this entity, counted before anything is
+    deleted. Removing an entity destroys review history that the rest of the
+    app is careful never to overwrite, so the confirmation states the cost
+    rather than implying it."""
+    n = lambda sql: one(db, sql, (entity_id,))["n"]
+    return {
+        # NOT "items": Jinja resolves plan.items to dict.items (the method)
+        # before it looks for the key, and renders the bound method.
+        "stored_items": n("SELECT COUNT(*) n FROM items WHERE entity_id = ?"),
+        "reviews": n("SELECT COUNT(*) n FROM reviews r JOIN items i ON i.id = r.item_id"
+                     " WHERE i.entity_id = ?"),
+        "open_actions": n("SELECT COUNT(*) n FROM items WHERE entity_id = ?"
+                          "   AND action_status = 'open'"),
+        "factors": n("SELECT COUNT(*) n FROM factors WHERE entity_id = ?"),
+        "members": q(db, "SELECT display_name, role FROM users WHERE entity_id = ?"
+                         " ORDER BY role, display_name", (entity_id,)),
+    }
+
+
+@app.get("/entities/{entity_id}/delete")
+def entity_delete_confirm(request: Request, entity_id: int):
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        entity = one(db, "SELECT * FROM entities WHERE id = ?", (entity_id,))
+        if not entity:
+            raise HTTPException(404, "Entity not found")
+        return render(request, "entity_delete.html", user=user, entity=entity,
+                      plan=_entity_removal_plan(db, entity_id))
+    finally:
+        db.close()
+
+
+@app.post("/entities/{entity_id}/delete")
+async def entity_delete(request: Request, entity_id: int):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        entity = one(db, "SELECT * FROM entities WHERE id = ?", (entity_id,))
+        if not entity:
+            raise HTTPException(404, "Entity not found")
+        # Typing the name is the guard. A misfired click must not be able to
+        # destroy an entity's whole supervisory record.
+        if (form.get("confirm") or "").strip() != entity["name"]:
+            return render(request, "entity_delete.html", user=user, entity=entity,
+                          plan=_entity_removal_plan(db, entity_id),
+                          error="That does not match the entity name. Nothing was deleted.")
+        with db:  # one transaction: all of it or none of it
+            db.execute("DELETE FROM reviews WHERE item_id IN"
+                       " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
+            db.execute("DELETE FROM item_sources WHERE item_id IN"
+                       " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
+            db.execute("DELETE FROM items WHERE entity_id = ?", (entity_id,))
+            db.execute("DELETE FROM factors WHERE entity_id = ?", (entity_id,))
+            db.execute("DELETE FROM fetch_log WHERE entity_id = ?", (entity_id,))
+            db.execute("UPDATE users SET entity_id = NULL WHERE entity_id = ?", (entity_id,))
+            db.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+        log.info("Entity %r removed by %s", entity["name"], user["username"])
+    finally:
+        db.close()
+    return RedirectResponse(
+        f"/entities?msg={quote(entity['name'] + ' removed')}", status_code=303)
+
+
 @app.post("/entities/{entity_id}/aliases")
 async def entities_aliases(request: Request, entity_id: int):
     form = await request.form()

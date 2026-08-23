@@ -52,12 +52,17 @@
         </td>
         {% if user.role in ('lead','superadmin') %}
         <td>
-          {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
-          <form method="post" action="/fetch">
-            <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
-            <button type="submit" class="btn btn-small">Fetch</button>
-          </form>
-          {% endif %}
+          <div class="row-actions">
+            {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
+            <form method="post" action="/fetch">
+              <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
+              <button type="submit" class="btn btn-small">Fetch</button>
+            </form>
+            {% endif %}
+            {% if user.role == 'superadmin' %}
+            <a class="btn btn-small btn-quiet" href="/entities/{{ r.entity.id }}/delete">Remove</a>
+            {% endif %}
+          </div>
         </td>
         {% endif %}
       </tr>
