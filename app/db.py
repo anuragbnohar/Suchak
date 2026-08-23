@@ -69,7 +69,16 @@ CREATE TABLE IF NOT EXISTS items (
     review_risk_areas TEXT,
     review_actionable INTEGER,
     review_action     TEXT,
-    review_notes      TEXT
+    review_notes      TEXT,
+    -- follow-up tracking: a review that says "action required" opens a
+    -- to-do here, and the To-do page closes it. NULL action_status means
+    -- the item carries no follow-up at all.
+    action_status     TEXT CHECK (action_status IN ('open','done')),
+    action_owner      INTEGER REFERENCES users(id),
+    action_due        TEXT,
+    action_closed_at  TEXT,
+    action_closed_by  INTEGER REFERENCES users(id),
+    action_close_note TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_items_entity ON items(entity_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
@@ -135,6 +144,23 @@ MIGRATIONS = [
     ("items", "review_severity", "TEXT"),
     ("items", "complaint_topics", "TEXT DEFAULT '[]'"),
     ("items", "source_tier", "TEXT NOT NULL DEFAULT ''"),
+    # follow-up tracking. Added without the CHECK constraint that the fresh
+    # schema carries: SQLite cannot add a constrained column to an existing
+    # table, and every write goes through _set_action() anyway.
+    ("items", "action_status", "TEXT"),
+    ("items", "action_owner", "INTEGER REFERENCES users(id)"),
+    ("items", "action_due", "TEXT"),
+    ("items", "action_closed_at", "TEXT"),
+    ("items", "action_closed_by", "INTEGER REFERENCES users(id)"),
+    ("items", "action_close_note", "TEXT"),
+]
+
+
+# Indexes over migrated columns. SCHEMA is executed before _migrate, so an
+# index naming a column added by a migration cannot live there -- on an
+# existing database that column does not exist yet and startup would fail.
+POST_MIGRATION_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_items_action ON items(action_status, entity_id)",
 ]
 
 
@@ -146,11 +172,29 @@ def _migrate(con: sqlite3.Connection) -> None:
     con.commit()
 
 
+def _backfill_actions(con: sqlite3.Connection) -> None:
+    """Give reviews recorded before follow-up tracking existed a to-do.
+
+    Self-limiting rather than run-once-flagged: every path that sets
+    review_actionable=1 now also opens an action, and the only path that
+    clears an action (a review saying "not actionable") sets
+    review_actionable=0 at the same time. So after the first pass no row
+    can match this again.
+    """
+    con.execute(
+        "UPDATE items SET action_status='open', action_owner=reviewed_by"
+        " WHERE review_actionable = 1 AND action_status IS NULL"
+    )
+
+
 def init_db() -> None:
     con = connect()
     try:
         con.executescript(SCHEMA)
         _migrate(con)
+        for stmt in POST_MIGRATION_INDEXES:
+            con.execute(stmt)
+        _backfill_actions(con)
         con.commit()
     finally:
         con.close()

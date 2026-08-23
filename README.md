@@ -112,6 +112,19 @@ remember it fetches *every* loaded entity and bills for it unattended.
   actionability, and record the action taken. A reviewer's severity
   correction wins everywhere — queue order, chips, dashboards — and the
   classifier's original verdict stays on the audit line.
+- **To-do** — answering *Actionable: Yes* on a review opens a follow-up on
+  that item, and the To-do page is where the team closes it. Members and
+  leads see their entity's follow-ups, the super admin sees every entity's.
+  Each carries an owner (the reviewer by default), an optional due date, the
+  recorded action and the reviewer's note; closing one asks what was done and
+  keeps that on the item. Tabs for Open / Closed / All, filters for
+  *assigned to me*, overdue, severity, risk area and entity, and a count in
+  the nav so open work is visible from every page. Overdue items sort first,
+  then by severity. Leads and the super admin can reassign or change a due
+  date; members close what they own. Re-reviewing an item never reopens work
+  someone already closed — the review records the judgment, the To-do records
+  the work. Reviews recorded before this existed are backfilled as open
+  follow-ups on first start.
 - **Learn** — reviewed items become retrieval-based few-shot examples for
   future classification, and power "suggested action" on similar new items.
   No fine-tuning needed.
@@ -142,9 +155,13 @@ remember it fetches *every* loaded entity and bills for it unattended.
   Account access / KYC. The dashboard's Complaints tile opens the queue
   grouped by topic; a by-topic table drills into each.
 - **Dashboards** — per-entity risk-area breakdown, severity tiles, complaints
-  tile with by-topic breakdown, daily volume trend, factor hits, and
+  tile with by-topic breakdown, an **Open actions** tile (with an overdue
+  sub-count) into the To-do page, daily volume trend, factor hits, and
   extracted organization linkages — every figure is a drill-down into the
   exact items it counts; a cross-entity overview for the super admin.
+  One deliberate exception to the day window: *Awaiting review* and
+  *Open actions* are all-time, because a follow-up opened five weeks ago is
+  still owed today.
 
 ## Configuration
 

@@ -71,6 +71,13 @@
       {% endif %}
       {% if item.review_action %}<p>Action: <strong>{{ item.review_action }}</strong></p>{% endif %}
       {% if item.review_notes %}<p class="meta-dim">“{{ item.review_notes }}”</p>{% endif %}
+      {% if item.action_status %}
+      <p class="todo-state">
+        {% if item.action_status == 'done' %}✓ Follow-up closed{% if item.action_close_note %} — “{{ item.action_close_note }}”{% endif %}
+        {% else %}⚠ Follow-up open{% if item.action_due %}, due {{ item.action_due }}{% endif %}{% endif %}
+        · <a href="/todo?status={{ 'done' if item.action_status == 'done' else 'open' }}">open the To-do page</a>
+      </p>
+      {% endif %}
     </section>
     {% endif %}
 
@@ -126,6 +133,7 @@
             {% if item.review_actionable %}checked{% endif %}> Yes</label>
           <label><input type="radio" name="actionable" value="no"
             {% if not item.review_actionable %}checked{% endif %}> No</label>
+          <p class="meta-dim small">Yes puts this on the team’s To-do page until someone closes it.</p>
         </fieldset>
         <label>Action taken / proposed
           <select name="action">
@@ -134,6 +142,18 @@
             <option value="{{ a }}" {% if item.review_action == a or (not item.review_action and suggestion == a) %}selected{% endif %}>{{ a }}</option>
             {% endfor %}
           </select>
+        </label>
+        <label>Assign follow-up to
+          <select name="action_owner">
+            {% for u in owners %}
+            <option value="{{ u.id }}"
+              {% if u.id == (item.action_owner or user.id) %}selected{% endif %}>
+              {{ u.display_name }}{% if u.role == 'superadmin' %} (super admin){% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Follow-up due (optional)
+          <input type="date" name="action_due" value="{{ item.action_due or '' }}">
         </label>
         <label>Notes
           <textarea name="notes" rows="3">{{ item.review_notes or '' }}</textarea>

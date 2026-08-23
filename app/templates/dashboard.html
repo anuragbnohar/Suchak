@@ -46,6 +46,12 @@
     <p class="tile-label">Awaiting review</p>
     <p class="tile-value">{{ stats.open_count }}</p>
   </a>
+  <a class="tile {% if stats.actions_overdue %}tile-serious{% else %}tile-accent{% endif %}"
+     href="/todo?status=open&entity={{ entity.id }}"
+     title="Follow-ups opened by reviews on this entity. Deliberately not limited to the {{ stats.days }}-day window -- an action opened earlier is still owed.">
+    <p class="tile-label">Open actions{% if stats.actions_overdue %} · {{ stats.actions_overdue }} overdue{% endif %}</p>
+    <p class="tile-value">{{ stats.actions_open }}</p>
+  </a>
 </div>
 
 <div class="dash-grid">

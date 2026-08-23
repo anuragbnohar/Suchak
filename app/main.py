@@ -117,6 +117,8 @@ def render(request: Request, name: str, **ctx):
     ctx.setdefault("msg", request.query_params.get("msg"))
     ctx["taxonomy"] = taxonomy
     ctx["request"] = request
+    if ctx.get("user") is not None and "todo_count" not in ctx:
+        ctx["todo_count"] = _open_action_count(ctx["user"])
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -335,6 +337,7 @@ def item_detail(request: Request, item_id: int):
 
         return render(request, "item.html", user=user, entity=entity,
                       item=prep_item(row), sources=sources,
+                      owners=_eligible_owners(db, row["entity_id"]),
                       similar=similar_prepped, suggestion=suggestion)
     finally:
         db.close()
@@ -369,9 +372,259 @@ async def item_review(request: Request, item_id: int):
           (status, user["id"], datetime.now(timezone.utc).isoformat(timespec="seconds"),
            relevant, severity, json.dumps(risk_areas), actionable, action,
            (form.get("notes") or "").strip() or None, item_id))
+
+        # The review decides whether follow-up is owed; the To-do page tracks
+        # whether it has happened. COALESCE keeps an existing action's state,
+        # so re-reviewing an item never silently reopens work already closed.
+        if actionable:
+            raw = (form.get("action_owner") or "").strip()
+            eligible = {str(u["id"]) for u in _eligible_owners(db, row["entity_id"])}
+            owner = int(raw) if raw in eligible else (row["action_owner"] or user["id"])
+            x(db, "UPDATE items SET action_status=COALESCE(action_status,'open'),"
+                  " action_owner=?, action_due=? WHERE id=?",
+              (owner, _valid_date(form.get("action_due")), item_id))
+        else:
+            x(db, "UPDATE items SET action_status=NULL, action_owner=NULL,"
+                  " action_due=NULL, action_closed_at=NULL, action_closed_by=NULL,"
+                  " action_close_note=NULL WHERE id=?", (item_id,))
     finally:
         db.close()
-    return RedirectResponse(f"/queue?msg=Review+saved", status_code=303)
+    msg = "Review+saved+—+follow-up+added+to+To-do" if actionable else "Review+saved"
+    return RedirectResponse(f"/queue?msg={msg}", status_code=303)
+
+
+# --- follow-up actions (the To-do page) -------------------------------------
+# Division of labour: a review answers "does this need follow-up?", and the
+# To-do page tracks whether that follow-up has happened. Keeping the two
+# apart means re-reading an item never disturbs work already closed on it.
+
+ACTION_ROW_SQL = """
+SELECT i.*, e.name AS entity_name,
+       ow.display_name AS owner_name,
+       rv.display_name AS reviewer_name,
+       cl.display_name AS closed_by_name
+FROM items i
+JOIN entities e ON e.id = i.entity_id
+LEFT JOIN users ow ON ow.id = i.action_owner
+LEFT JOIN users rv ON rv.id = i.reviewed_by
+LEFT JOIN users cl ON cl.id = i.action_closed_by
+WHERE i.action_status IS NOT NULL
+"""
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _valid_date(raw: str | None) -> str | None:
+    """Accept an ISO date from a <input type=date>, reject anything else."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        return None
+
+
+def _eligible_owners(db, entity_id):
+    """Who a follow-up on this entity may be assigned to: that entity's team,
+    plus superadmins, who work across entities."""
+    return q(db, "SELECT id, display_name, role FROM users"
+                 " WHERE entity_id = ? OR role = 'superadmin'"
+                 " ORDER BY (role = 'superadmin'), display_name", (entity_id,))
+
+
+def _can_close(user, row) -> bool:
+    if user["role"] == "superadmin":
+        return True
+    if row["entity_id"] != user["entity_id"]:
+        return False
+    return user["role"] == "lead" or row["action_owner"] == user["id"]
+
+
+def _can_assign(user, row) -> bool:
+    if user["role"] == "superadmin":
+        return True
+    return user["role"] == "lead" and row["entity_id"] == user["entity_id"]
+
+
+def prep_action(row, today: str) -> dict:
+    d = prep_item(row)
+    d["overdue"] = bool(d.get("action_due")) and d["action_status"] == "open" \
+        and d["action_due"] < today
+    d["due_today"] = d.get("action_due") == today and d["action_status"] == "open"
+    return d
+
+
+def _action_sort_key(d):
+    """Open before done, overdue before the rest, then by severity, then by
+    the nearest due date, then oldest review first."""
+    return (
+        0 if d["action_status"] == "open" else 1,
+        0 if d["overdue"] else 1,
+        taxonomy.SEVERITY_RANK.get(d["severity_shown"], 3),
+        d.get("action_due") or "9999-12-31",
+        d.get("reviewed_at") or "",
+    )
+
+
+def _open_action_count(user) -> int:
+    """Open follow-ups inside the signed-in user's scope, for the nav badge.
+    Opens its own short-lived connection so every page carries the badge
+    without threading a handle through every route."""
+    db = connect()
+    try:
+        if user["role"] == "superadmin":
+            row = one(db, "SELECT COUNT(*) AS n FROM items WHERE action_status = 'open'")
+        else:
+            row = one(db, "SELECT COUNT(*) AS n FROM items"
+                          " WHERE action_status = 'open' AND entity_id = ?",
+                      (user["entity_id"],))
+        return row["n"] if row else 0
+    finally:
+        db.close()
+
+
+def _action_or_404(db, item_id: int):
+    row = one(db, "SELECT * FROM items WHERE id = ?", (item_id,))
+    if not row:
+        raise HTTPException(404, "Item not found")
+    if row["action_status"] is None:
+        raise HTTPException(404, "This item has no follow-up recorded")
+    return row
+
+
+def _todo_back(form, msg: str) -> str:
+    """Return to the same filtered view the action was taken from."""
+    back = (form.get("back") or "").lstrip("?&")
+    return f"/todo?{back}{'&' if back else ''}msg={quote(msg)}"
+
+
+@app.get("/todo")
+def todo_page(request: Request):
+    db = connect()
+    try:
+        user = require_login(db, request)
+        entities = visible_entities(db, user)
+        params = request.query_params
+
+        status = params.get("status") or "open"
+        if status not in ("open", "done", "all"):
+            status = "open"
+        mine = params.get("owner") == "me"
+        overdue_only = params.get("overdue") == "1"
+        sev = params.get("sev")
+        risk = params.get("risk")
+        ent = params.get("entity")
+
+        sql, args = ACTION_ROW_SQL, []
+        if user["role"] != "superadmin":
+            sql += " AND i.entity_id = ?"
+            args.append(user["entity_id"])
+        elif ent and ent.isdigit():
+            sql += " AND i.entity_id = ?"
+            args.append(int(ent))
+
+        # Scope once, then count and filter in Python: severity_shown and the
+        # reviewer's risk-area override are computed in prep_item, so SQL
+        # cannot express them -- and deriving the tab counts from the same
+        # list the rows come from keeps every count equal to its drill-down.
+        today = _today()
+        scoped = [prep_action(r, today) for r in q(db, sql, tuple(args))]
+        counts = {
+            "open": sum(1 for r in scoped if r["action_status"] == "open"),
+            "done": sum(1 for r in scoped if r["action_status"] == "done"),
+            "all": len(scoped),
+            "overdue": sum(1 for r in scoped if r["overdue"]),
+            "mine": sum(1 for r in scoped
+                        if r["action_status"] == "open" and r["action_owner"] == user["id"]),
+        }
+
+        rows = scoped
+        if status != "all":
+            rows = [r for r in rows if r["action_status"] == status]
+        if mine:
+            rows = [r for r in rows if r["action_owner"] == user["id"]]
+        if overdue_only:
+            rows = [r for r in rows if r["overdue"]]
+        if sev in taxonomy.SEVERITIES:
+            rows = [r for r in rows if r["severity_shown"] == sev]
+        if risk:
+            rows = [r for r in rows if risk in (r["review_risk_areas"] or r["risk_areas"])]
+        rows.sort(key=_action_sort_key)
+        # Resolve per-row permissions here rather than in the template, where
+        # the role rules would be spread across several nested conditionals.
+        for r in rows:
+            r["can_close"] = _can_close(user, r)
+            r["can_assign"] = _can_assign(user, r)
+
+        owners = {e["id"]: _eligible_owners(db, e["id"]) for e in entities}
+        extras = {k: v for k, v in (
+            ("owner", "me" if mine else ""), ("overdue", "1" if overdue_only else ""),
+            ("sev", sev or ""), ("risk", risk or ""), ("entity", ent or "")) if v}
+        filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
+        back = f"status={status}" + filter_qs
+
+        return render(request, "todo.html", user=user, rows=rows, counts=counts,
+                      status=status, entities=entities, owners=owners,
+                      extras=extras, filter_qs=filter_qs, back=back,
+                      today=today, todo_count=counts["open"])
+    finally:
+        db.close()
+
+
+@app.post("/todo/{item_id}/done")
+async def todo_done(request: Request, item_id: int):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        row = _action_or_404(db, item_id)
+        if not _can_close(user, row):
+            raise HTTPException(403, "Only the owner or a team lead can close this")
+        x(db, "UPDATE items SET action_status='done', action_closed_at=?,"
+              " action_closed_by=?, action_close_note=? WHERE id=?",
+          (datetime.now(timezone.utc).isoformat(timespec="seconds"), user["id"],
+           (form.get("close_note") or "").strip() or None, item_id))
+    finally:
+        db.close()
+    return RedirectResponse(_todo_back(form, "Action closed"), status_code=303)
+
+
+@app.post("/todo/{item_id}/reopen")
+async def todo_reopen(request: Request, item_id: int):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        row = _action_or_404(db, item_id)
+        if not _can_close(user, row):
+            raise HTTPException(403, "Only the owner or a team lead can reopen this")
+        x(db, "UPDATE items SET action_status='open', action_closed_at=NULL,"
+              " action_closed_by=NULL, action_close_note=NULL WHERE id=?", (item_id,))
+    finally:
+        db.close()
+    return RedirectResponse(_todo_back(form, "Action reopened"), status_code=303)
+
+
+@app.post("/todo/{item_id}/assign")
+async def todo_assign(request: Request, item_id: int):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        row = _action_or_404(db, item_id)
+        if not _can_assign(user, row):
+            raise HTTPException(403, "Only a team lead can reassign this")
+        raw = (form.get("action_owner") or "").strip()
+        eligible = {str(u["id"]) for u in _eligible_owners(db, row["entity_id"])}
+        owner = int(raw) if raw in eligible else row["action_owner"]
+        x(db, "UPDATE items SET action_owner=?, action_due=? WHERE id=?",
+          (owner, _valid_date(form.get("action_due")), item_id))
+    finally:
+        db.close()
+    return RedirectResponse(_todo_back(form, "Action updated"), status_code=303)
 
 
 # --- dashboards -------------------------------------------------------------
@@ -412,6 +665,14 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
                          " status IN ('new','classified') AND gated_out = 0",
                      (entity_id,))["n"]
+    # Follow-ups are deliberately NOT windowed: an action opened five weeks
+    # ago is still owed today, and hiding it behind the window would be the
+    # one number on this page that understates the team's workload.
+    actions = one(db, "SELECT"
+                      " SUM(action_status='open') AS open,"
+                      " SUM(action_status='open' AND action_due IS NOT NULL"
+                      "     AND action_due < date('now')) AS overdue"
+                      " FROM items WHERE entity_id = ?", (entity_id,))
     high_recent = [prep_item(r) for r in q(
         db, "SELECT * FROM items WHERE entity_id=?"
             " AND COALESCE(review_severity, severity)='high' AND published_at >= ?"
@@ -427,6 +688,8 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
         "by_topic": by_topic.most_common(12),
         "trend": trend, "max_trend": max_trend,
         "open_count": open_count,
+        "actions_open": actions["open"] or 0,
+        "actions_overdue": actions["overdue"] or 0,
         "high_recent": high_recent,
         "linkages": [
             {"type": t, "name": n, "count": c}
