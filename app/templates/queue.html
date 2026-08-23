@@ -16,7 +16,7 @@
         {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
         <span class="meta-dim">{% if it.source_tier == 'trusted' %}<span class="ok-chip" title="trusted source">✓</span> {% endif %}{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }} more source{{ 's' if it.extra_sources > 1 }}{% endif %}</span>
         <span class="meta-dim">{{ it.published_at | timeago }}</span>
-        {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name }}</span>{% endif %}
+        {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name }}{% if it.review_count and it.review_count > 1 %} · {{ it.review_count }} reviews{% endif %}</span>{% endif %}
         {% if it.status == 'dismissed' %}<span class="meta-dim">✕ dismissed</span>{% endif %}
         {% if it.status == 'new' %}<span class="meta-dim">awaiting classification</span>{% endif %}
         {% if it.gated_out %}<span class="meta-dim">filtered: {{ it.gate_reason }}</span>{% endif %}

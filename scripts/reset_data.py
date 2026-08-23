@@ -35,6 +35,7 @@ def main() -> int:
             "items": n("SELECT COUNT(*) FROM items"),
             "extra sources": n("SELECT COUNT(*) FROM item_sources"),
             "reviews on items": n("SELECT COUNT(*) FROM items WHERE reviewed_at IS NOT NULL"),
+            "review history rows": n("SELECT COUNT(*) FROM reviews"),
             "entity-scoped factors": n("SELECT COUNT(*) FROM factors WHERE entity_id IS NOT NULL"),
             "fetch-log rows": n("SELECT COUNT(*) FROM fetch_log"),
         }
@@ -59,6 +60,7 @@ def main() -> int:
                 return 0
 
         with db:  # one transaction: all of it or none of it
+            db.execute("DELETE FROM reviews")
             db.execute("DELETE FROM item_sources")
             db.execute("DELETE FROM items")
             db.execute("DELETE FROM fetch_log")

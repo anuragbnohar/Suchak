@@ -59,18 +59,41 @@
   </div>
 
   <aside class="detail-side">
-    {% if item.status in ('reviewed', 'dismissed') %}
+    {% if history %}
     <section class="panel">
-      <h2>Review on record</h2>
-      <p><strong>{{ item.reviewer_name }}</strong> · {{ item.reviewed_at | timeago }}</p>
-      <p>{{ 'Relevant' if item.review_relevant else 'Not relevant' }} ·
-         {{ 'Actionable' if item.review_actionable else 'Not actionable' }}
-         {% if item.review_severity %} · severity: {{ item.review_severity }}{% endif %}</p>
-      {% if item.review_risk_areas %}
-      <div class="chip-row">{% for a in item.review_risk_areas %}<span class="area-chip">{{ a }}</span>{% endfor %}</div>
-      {% endif %}
-      {% if item.review_action %}<p>Action: <strong>{{ item.review_action }}</strong></p>{% endif %}
-      {% if item.review_notes %}<p class="meta-dim">“{{ item.review_notes }}”</p>{% endif %}
+      <h2>Review history</h2>
+      <p class="meta-dim small hist-count">{{ history | length }}
+        review{{ 's' if history | length != 1 }} on record, oldest first.
+        Every review is kept — a later reviewer never overwrites an earlier one.</p>
+      <ol class="rev-list">
+        {% for r in history %}
+        <li class="rev {% if loop.last %}rev-current{% endif %}">
+          <p class="rev-head">
+            <strong>{{ r.reviewer_name or 'Deleted user' }}</strong>
+            {% if r.reviewer_role %}<span class="role-chip role-{{ r.reviewer_role }}">{{ r.reviewer_role }}</span>{% endif %}
+            <span class="meta-dim small" title="{{ r.created_at }}">{{ r.created_at | timeago }}</span>
+            {% if loop.last %}<span class="rev-now">current</span>{% endif %}
+          </p>
+          <p class="rev-verdict">
+            {{ 'Relevant' if r.relevant else 'Not relevant' }} ·
+            {{ 'actionable' if r.actionable else 'not actionable' }}
+            {%- if r.severity %} · severity {{ r.severity }}{% endif %}
+          </p>
+          {% if r.risk_areas %}
+          <div class="chip-row rev-chips">{% for a in r.risk_areas %}<span class="area-chip">{{ a }}</span>{% endfor %}</div>
+          {% endif %}
+          {% if r.action %}<p class="rev-action">Action: <strong>{{ r.action }}</strong></p>{% endif %}
+          {% if not r.first %}
+            {% if r.changes %}
+            <p class="rev-changes">{% for c in r.changes %}<span class="rev-change">{{ c }}</span>{% endfor %}</p>
+            {% else %}
+            <p class="meta-dim small">Confirmed the previous verdict unchanged.</p>
+            {% endif %}
+          {% endif %}
+          {% if r.notes %}<p class="rev-note">“{{ r.notes }}”</p>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
       {% if item.action_status %}
       <p class="todo-state {% if item.overdue %}is-late{% endif %}">
         {% if item.action_status == 'done' %}✓ Follow-up closed{% if item.action_close_note %} — “{{ item.action_close_note }}”{% endif %}

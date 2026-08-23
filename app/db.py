@@ -84,6 +84,24 @@ CREATE INDEX IF NOT EXISTS idx_items_entity ON items(entity_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_items_entity_url ON items(entity_id, url);
 
+-- Every review ever recorded on an item, append-only. The review_* columns
+-- on items mirror the most recent row here: the whole app (queue order,
+-- severity override, dashboards, the learning loop) reads the current
+-- verdict from items, while this table keeps who said what, and when.
+CREATE TABLE IF NOT EXISTS reviews (
+    id         INTEGER PRIMARY KEY,
+    item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    relevant   INTEGER,
+    severity   TEXT,
+    risk_areas TEXT NOT NULL DEFAULT '[]',
+    actionable INTEGER,
+    action     TEXT,
+    notes      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_item ON reviews(item_id, id);
+
 -- additional outlets reporting the same underlying event
 CREATE TABLE IF NOT EXISTS item_sources (
     id           INTEGER PRIMARY KEY,
@@ -187,6 +205,26 @@ def _backfill_actions(con: sqlite3.Connection) -> None:
     )
 
 
+def _backfill_reviews(con: sqlite3.Connection) -> None:
+    """Seed the history with the one review each item already carried.
+
+    Reviews recorded before this table existed live only in the items
+    row, so without this an item reviewed last week would show an empty
+    history. Items that already have history rows are skipped, which
+    makes this safe to run on every start.
+    """
+    con.execute(
+        "INSERT INTO reviews (item_id, user_id, created_at, relevant, severity,"
+        " risk_areas, actionable, action, notes)"
+        " SELECT id, reviewed_by, reviewed_at, review_relevant, review_severity,"
+        "        COALESCE(review_risk_areas, '[]'), review_actionable, review_action,"
+        "        review_notes"
+        " FROM items"
+        " WHERE reviewed_at IS NOT NULL"
+        "   AND id NOT IN (SELECT item_id FROM reviews)"
+    )
+
+
 def init_db() -> None:
     con = connect()
     try:
@@ -195,6 +233,7 @@ def init_db() -> None:
         for stmt in POST_MIGRATION_INDEXES:
             con.execute(stmt)
         _backfill_actions(con)
+        _backfill_reviews(con)
         con.commit()
     finally:
         con.close()

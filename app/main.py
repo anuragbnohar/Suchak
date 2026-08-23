@@ -269,7 +269,8 @@ def queue(request: Request):
         rows = q(
             db,
             "SELECT i.*, u.display_name AS reviewer_name,"
-            " (SELECT COUNT(*) FROM item_sources s WHERE s.item_id = i.id) AS extra_sources"
+            " (SELECT COUNT(*) FROM item_sources s WHERE s.item_id = i.id) AS extra_sources,"
+            " (SELECT COUNT(*) FROM reviews r WHERE r.item_id = i.id) AS review_count"
             " FROM items i LEFT JOIN users u ON u.id = i.reviewed_by"
             f" WHERE {' AND '.join(where)}"
             " ORDER BY CASE COALESCE(i.review_severity, i.severity)"
@@ -313,6 +314,50 @@ def queue(request: Request):
         db.close()
 
 
+def _flag(v) -> str:
+    return "—" if v is None else ("yes" if v else "no")
+
+
+def _review_changes(prev: dict, cur: dict) -> list[str]:
+    """What this review altered relative to the one before it. The audit
+    question is normally 'what did this reviewer change?', not 'what did
+    they restate?'."""
+    out = []
+    if bool(prev["relevant"]) != bool(cur["relevant"]):
+        out.append(f"relevant {_flag(prev['relevant'])} → {_flag(cur['relevant'])}")
+    if (prev["severity"] or "") != (cur["severity"] or ""):
+        out.append(f"severity {prev['severity'] or 'none'} → {cur['severity'] or 'none'}")
+    if set(prev["risk_areas"]) != set(cur["risk_areas"]):
+        out.append("risk areas " + (", ".join(prev["risk_areas"]) or "none")
+                   + " → " + (", ".join(cur["risk_areas"]) or "none"))
+    if bool(prev["actionable"]) != bool(cur["actionable"]):
+        out.append(f"actionable {_flag(prev['actionable'])} → {_flag(cur['actionable'])}")
+    if (prev["action"] or "") != (cur["action"] or ""):
+        out.append(f"action {prev['action'] or 'none'} → {cur['action'] or 'none'}")
+    return out
+
+
+def _review_history(db, item_id: int) -> list[dict]:
+    """Every review recorded on an item, oldest first, each annotated with
+    what it changed. Ordered by id as well as time so two reviews saved in
+    the same second still read in the order they were made."""
+    rows = q(db, "SELECT r.*, u.display_name AS reviewer_name, u.role AS reviewer_role"
+                 " FROM reviews r LEFT JOIN users u ON u.id = r.user_id"
+                 " WHERE r.item_id = ? ORDER BY r.created_at, r.id", (item_id,))
+    out, prev = [], None
+    for row in rows:
+        d = dict(row)
+        try:
+            d["risk_areas"] = json.loads(d["risk_areas"] or "[]")
+        except (TypeError, ValueError):
+            d["risk_areas"] = []
+        d["changes"] = _review_changes(prev, d) if prev else []
+        d["first"] = prev is None
+        out.append(d)
+        prev = d
+    return out
+
+
 @app.get("/item/{item_id}")
 def item_detail(request: Request, item_id: int):
     db = connect()
@@ -338,6 +383,7 @@ def item_detail(request: Request, item_id: int):
         return render(request, "item.html", user=user, entity=entity,
                       item=prep_action(row, _today()), sources=sources,
                       owners=_eligible_owners(db, row["entity_id"]),
+                      history=_review_history(db, item_id),
                       similar=similar_prepped, suggestion=suggestion)
     finally:
         db.close()
@@ -365,13 +411,22 @@ async def item_review(request: Request, item_id: int):
         if action not in taxonomy.ACTIONS:
             action = None
         status = "reviewed" if relevant else "dismissed"
+        notes = (form.get("notes") or "").strip() or None
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         x(db, "UPDATE items SET status=?, reviewed_by=?, reviewed_at=?, review_relevant=?,"
               " review_severity=?, review_risk_areas=?, review_actionable=?, review_action=?,"
               " review_notes=? WHERE id=?",
-          (status, user["id"], datetime.now(timezone.utc).isoformat(timespec="seconds"),
-           relevant, severity, json.dumps(risk_areas), actionable, action,
-           (form.get("notes") or "").strip() or None, item_id))
+          (status, user["id"], now, relevant, severity, json.dumps(risk_areas),
+           actionable, action, notes, item_id))
+
+        # The items row holds the CURRENT verdict, which the queue, dashboards
+        # and learning loop read. This table holds every verdict ever recorded,
+        # so a later reviewer can never erase who said what before them.
+        x(db, "INSERT INTO reviews (item_id, user_id, created_at, relevant, severity,"
+              " risk_areas, actionable, action, notes) VALUES (?,?,?,?,?,?,?,?,?)",
+          (item_id, user["id"], now, relevant, severity, json.dumps(risk_areas),
+           actionable, action, notes))
 
         # The review decides whether follow-up is owed; the To-do page tracks
         # whether it has happened. COALESCE keeps an existing action's state,

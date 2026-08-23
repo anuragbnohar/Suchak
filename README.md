@@ -111,7 +111,19 @@ remember it fetches *every* loaded entity and bills for it unattended.
   team members confirm or correct the category **and the severity**, mark
   actionability, and record the action taken. A reviewer's severity
   correction wins everywhere — queue order, chips, dashboards — and the
-  classifier's original verdict stays on the audit line.
+  classifier's original verdict stays on the audit line. Reviews accumulate
+  rather than replace one another; see **Review history** below.
+- **Review history** — every review is kept, never overwritten. Each
+  submission is appended to a `reviews` table with its reviewer, role and
+  timestamp; the item's own `review_*` columns mirror the latest one, so the
+  queue, dashboards and learning loop still read a single current verdict.
+  The item page lists them oldest first on a timeline, each entry showing
+  what it *changed* from the one before it (`severity medium → high`,
+  `actionable no → yes`) rather than only what it restated, with the last
+  marked **current**. A re-review that alters nothing is labelled as
+  confirming the previous verdict. The queue flags items reviewed more than
+  once. Reviews recorded before this table existed are backfilled on first
+  start, so no history is lost.
 - **To-do** — answering *Actionable: Yes* on a review opens a follow-up on
   that item, and the To-do page is where the team closes it. Members and
   leads see their entity's follow-ups, the super admin sees every entity's.
@@ -328,7 +340,7 @@ Editing an entity's aliases in the UI is the lever for tuning this.
 ```
 app/
   main.py        FastAPI app + routes
-  db.py          SQLite schema and helpers
+  db.py          SQLite schema, migrations, backfills
   taxonomy.py    Risk areas, severities, actions — finalize with the team
   ingest.py      Pluggable sources (news, video, X) + dedup
   classify.py    Claude structured classification + keyword fallback + learning loop

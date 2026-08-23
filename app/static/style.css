@@ -342,3 +342,38 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--paper); bo
   .todo-card { grid-template-columns: 1fr; }
   .toolbar-filters { margin-left: 0; width: 100%; }
 }
+
+/* ── Review history ─────────────────────────────────────────────────────
+   An append-only trail: every reviewer who touched the item, oldest first,
+   each entry showing what it changed rather than only what it restated. */
+.hist-count { margin: -0.4rem 0 0.9rem; }
+.rev-list { list-style: none; margin: 0; padding: 0 0 0 1.1rem; position: relative; }
+.rev-list::before {
+  content: ""; position: absolute; left: 3px; top: 0.45rem; bottom: 0.45rem;
+  width: 2px; background: var(--line);
+}
+.rev { position: relative; padding-bottom: 1.05rem; }
+.rev:last-child { padding-bottom: 0; }
+.rev::before {
+  content: ""; position: absolute; left: -1.1rem; top: 0.4rem;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--line-strong);
+}
+.rev-current::before { background: var(--accent); border-color: var(--accent); }
+.rev-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0; }
+.rev-now {
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0.05rem 0.45rem;
+}
+.rev-verdict { margin: 0.25rem 0 0; font-size: 0.88rem; }
+.rev-chips { margin: 0.4rem 0 0; }
+.rev-action { margin: 0.35rem 0 0; font-size: 0.88rem; }
+.rev-changes { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.45rem 0 0; }
+.rev-change {
+  font-size: 0.74rem; background: var(--warning-soft); color: var(--warning);
+  border-radius: 4px; padding: 0.1rem 0.45rem;
+}
+.rev-note {
+  margin: 0.45rem 0 0; font-size: 0.84rem; color: var(--muted);
+  border-left: 2px solid var(--line); padding-left: 0.6rem;
+}
