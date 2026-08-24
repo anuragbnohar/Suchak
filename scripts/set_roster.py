@@ -41,9 +41,15 @@ ROSTER = [
       "SBI Securities"],
      ["en"]),
 
+    # The last two excludes are the long-form insurer spellings that the
+    # complaint forums use -- "HDFC Bank Standard Life Insurance Ltd",
+    # "HDFC Bank Life Insurance Company Limited". Both contain "HDFC Bank"
+    # and neither contains "HDFC Life", so without them the insurer's
+    # complaints would be attributed to the bank.
     ("HDFC Bank Ltd.", "Scheduled Commercial Bank",
      ["HDFC Bank"],
-     ["HDFC Life", "HDFC AMC", "HDFC Ergo", "HDFC Securities"],
+     ["HDFC Life", "HDFC AMC", "HDFC Ergo", "HDFC Securities",
+      "Standard Life", "Life Insurance Company"],
      ["en"]),
 
     ("ICICI Bank Ltd.", "Scheduled Commercial Bank",
