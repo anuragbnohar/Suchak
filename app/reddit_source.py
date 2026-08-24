@@ -26,7 +26,7 @@ from .matching import Registry, build_query
 
 log = logging.getLogger("suchak.reddit")
 
-BUILD = "2026-08-24.2-reddit-rss"
+BUILD = "2026-08-24.3-reddit-rss"
 
 # No credential, so this is on unless deliberately turned off.
 ENABLED = os.environ.get("SUCHAK_REDDIT", "1").strip().lower() not in ("0", "false", "no")
@@ -215,16 +215,24 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
             on_progress(label, f"{len(items) - before} new "
                                f"({len(_posts(payload))} returned)")
 
-    collect(SEARCH_URL,
-            {"q": query, "sort": "new", "limit": PER_REQUEST,
-             "t": window, "type": "link"},
-            "site-wide")
-
+    # The curated subreddits run first, deliberately. A site-wide search for
+    # a bank's name matches anything that happens to mention it -- a console
+    # restock thread where someone paid with an HDFC card ranks the same as
+    # a grievance -- and one such page fills the quota, which is exactly
+    # what happened when this ran site-wide first: one search, 100 posts,
+    # and the finance subreddits never queried at all. Searching the places
+    # where Indian banking complaints actually collect first means the
+    # site-wide pass only fills what is left over.
     for sub in SUBREDDITS:
         collect(SUB_SEARCH_URL.format(sub=sub),
                 {"q": query, "sort": "new", "limit": PER_REQUEST,
                  "t": window, "restrict_sr": 1},
                 f"r/{sub}")
+
+    collect(SEARCH_URL,
+            {"q": query, "sort": "new", "limit": PER_REQUEST,
+             "t": window, "type": "link"},
+            "site-wide")
 
     LAST_DIAGNOSIS.clear()
     LAST_DIAGNOSIS.update({

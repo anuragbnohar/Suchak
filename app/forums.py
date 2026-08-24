@@ -29,7 +29,7 @@ from .matching import Registry
 
 log = logging.getLogger("suchak.forums")
 
-BUILD = "2026-08-24.2-consumercomplaints"
+BUILD = "2026-08-24.3-consumercomplaints"
 
 ENABLED = os.environ.get("SUCHAK_FORUMS", "1").strip().lower() not in ("0", "false", "no")
 
@@ -52,6 +52,10 @@ TIMEOUT = 30
 # appends modifiers ("...__title is-read") to the same block.
 TITLE_CLASS = "complaint-box-results__title"
 TEXT_CLASS = "complaint-box-results__text"
+# The posting date, in its own element next to the author. A raw dump of
+# the live page showed the site uses this rather than <time datetime=...>,
+# which is why the first version of this parser found no dates at all.
+DATE_CLASS = "author-box__date"
 
 LAST_DIAGNOSIS: dict = {}
 
@@ -92,7 +96,7 @@ class _Results(html.parser.HTMLParser):
         if self._cur and self._cur.get("title"):
             bodies = self._cur.pop("bodies", [])
             self._cur["body"] = max(bodies, key=len) if bodies else ""
-            self._cur["region"] = " ".join(self._region)[:400]
+            self._cur["region"] = " ".join(self._region)[:1200]
             self.rows.append(self._cur)
         self._cur = None
         self._region = []
@@ -104,8 +108,12 @@ class _Results(html.parser.HTMLParser):
             return
         if self._has(a, TITLE_CLASS):
             self._flush()
-            self._cur = {"href": a.get("href") or "", "bodies": [], "date": ""}
+            self._cur = {"href": a.get("href") or "", "bodies": [],
+                         "date": "", "date_text": ""}
             self._capture, self._depth, self._buf = "title", 1, []
+            return
+        if self._cur is not None and self._has(a, DATE_CLASS):
+            self._capture, self._depth, self._buf = "date", 1, []
             return
         if self._cur is not None and self._has(a, TEXT_CLASS):
             self._capture, self._depth, self._buf = "text", 1, []
@@ -121,7 +129,10 @@ class _Results(html.parser.HTMLParser):
         if self._depth > 0:
             return
         text = " ".join("".join(self._buf).split())
-        if self._capture == "title":
+        if self._capture == "date":
+            if text and not self._cur.get("date_text"):
+                self._cur["date_text"] = text
+        elif self._capture == "title":
             # Titles read "Company Name — Complaint headline"; a leading
             # separator is noise, an internal one is part of the title.
             self._cur["title"] = re.sub(r"^[\s\u2014\u2013-]+", "", text)
@@ -259,6 +270,8 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
             if not row.get("title") or not href or url in seen:
                 continue
             published = (_parse_date(row.get("date"))
+                         or _parse_date(row.get("date_text"))
+                         or _date_from_region(row.get("date_text", ""))
                          or _date_from_region(row.get("region", "")))
             if cutoff and published:
                 try:
