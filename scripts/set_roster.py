@@ -21,7 +21,7 @@ import sys
 from app.db import connect, init_db, one, q, remove_entity, x
 from app.matching import Registry
 
-# name, kind, aliases, exclude terms
+# name, kind, aliases, exclude terms, news languages
 #
 # Aliases are chosen for precision, not recall: each one is a phrase that
 # identifies this institution and nothing else. "Shriram" alone would pull
@@ -32,15 +32,18 @@ ROSTER = [
     ("State Bank of India", "Scheduled Commercial Bank",
      ["State Bank of India", "SBI"],
      ["SBI Life", "SBI Cards", "SBI Mutual Fund", "SBI General Insurance",
-      "SBI Securities"]),
+      "SBI Securities"],
+     ["en"]),
 
     ("HDFC Bank Ltd.", "Scheduled Commercial Bank",
      ["HDFC Bank"],
-     ["HDFC Life", "HDFC AMC", "HDFC Ergo", "HDFC Securities"]),
+     ["HDFC Life", "HDFC AMC", "HDFC Ergo", "HDFC Securities"],
+     ["en"]),
 
     ("ICICI Bank Ltd.", "Scheduled Commercial Bank",
      ["ICICI Bank"],
-     ["ICICI Lombard", "ICICI Prudential", "ICICI Securities"]),
+     ["ICICI Lombard", "ICICI Prudential", "ICICI Securities"],
+     ["en"]),
 
     # NBFC, not a bank -- listed, so exchange filings route to it as well as
     # news. "Shriram Transport Finance" is the pre-2022 name of this same
@@ -49,20 +52,24 @@ ROSTER = [
     ("Shriram Finance Ltd.", "NBFC",
      ["Shriram Finance", "Shriram Transport Finance"],
      ["Shriram Life Insurance", "Shriram General Insurance",
-      "Shriram Housing Finance", "Shriram Properties", "Shriram Pistons"]),
+      "Shriram Housing Finance", "Shriram Properties", "Shriram Pistons"],
+     ["en"]),
 
-    # Urban cooperative bank. Expect little national press: for an entity
-    # this size the signal arrives through RBI press releases -- penalties,
-    # directions, supersession orders -- which the broadcast feed routes by
-    # mention, not through Google News.
+    # Urban cooperative bank in Maharashtra, and the only entity here
+    # searched in a second language. A bank this size is written about in
+    # the Marathi press well before the national English papers, so the
+    # Devanagari alias is not decoration -- attribution is a regex over the
+    # alias list, and without it a Marathi headline is dropped before any
+    # model sees it. RBI press releases about it stay in English.
     ("Nagpur Nagrik Sahakari Bank Ltd.", "Urban Cooperative Bank",
-     ["Nagpur Nagrik Sahakari Bank"],
-     []),
+     ["Nagpur Nagrik Sahakari Bank", "नागपूर नागरिक सहकारी बँक"],
+     [],
+     ["en", "mr"]),
 ]
 
 
 def _plan(db):
-    wanted = {name: (kind, aliases, excludes) for name, kind, aliases, excludes in ROSTER}
+    wanted = {r[0]: r[1:] for r in ROSTER}
     present = {e["name"]: e for e in q(db, "SELECT * FROM entities ORDER BY name")}
     add = [n for n in wanted if n not in present]
     keep = [n for n in wanted if n in present]
@@ -92,7 +99,7 @@ def main() -> int:
 
         print(f"Target roster: {len(ROSTER)} entities\n")
         for name in sorted(keep):
-            kind, aliases, excludes = wanted[name]
+            kind, aliases, excludes, langs = wanted[name]
             have = json.loads(present[name]["aliases"])
             note = ""
             if have != aliases:
@@ -101,8 +108,9 @@ def main() -> int:
                          else "  -- will be replaced]"))
             print(f"  keep    {name}{note}")
         for name in sorted(add):
-            kind, aliases, _ = wanted[name]
-            print(f"  ADD     {name}  ({kind}; {', '.join(aliases)})")
+            kind, aliases, _, langs = wanted[name]
+            print(f"  ADD     {name}  ({kind}; {', '.join(aliases)}"
+                  f"; news in {', '.join(langs)})")
 
         losses = 0
         for name in sorted(drop):
@@ -110,8 +118,13 @@ def main() -> int:
             losses += reviews
             print(f"  REMOVE  {name}  -- deletes {items} item(s) and {reviews} review(s)")
 
-        if not add and not drop and not (args.sync_aliases and any(
-                json.loads(present[n]["aliases"]) != wanted[n][1] for n in keep)):
+        def differs(n):
+            e = present[n]
+            return (json.loads(e["aliases"]) != wanted[n][1]
+                    or json.loads(e["exclude_terms"] or "[]") != wanted[n][2]
+                    or json.loads(e["languages"] or '["en"]') != wanted[n][3])
+
+        if not add and not drop and not (args.sync_aliases and any(differs(n) for n in keep)):
             print("\nNothing to do -- the roster already matches.")
             return 0
         if args.dry_run:
@@ -130,15 +143,17 @@ def main() -> int:
                 return 0
 
         for name in add:
-            kind, aliases, excludes = wanted[name]
-            x(db, "INSERT INTO entities (name, kind, aliases, exclude_terms)"
-                  " VALUES (?,?,?,?)",
-              (name, kind, json.dumps(aliases), json.dumps(excludes)))
+            kind, aliases, excludes, langs = wanted[name]
+            x(db, "INSERT INTO entities (name, kind, aliases, exclude_terms, languages)"
+                  " VALUES (?,?,?,?,?)",
+              (name, kind, json.dumps(aliases), json.dumps(excludes), json.dumps(langs)))
         if args.sync_aliases:
             for name in keep:
-                kind, aliases, excludes = wanted[name]
-                x(db, "UPDATE entities SET aliases = ?, exclude_terms = ? WHERE id = ?",
-                  (json.dumps(aliases), json.dumps(excludes), present[name]["id"]))
+                kind, aliases, excludes, langs = wanted[name]
+                x(db, "UPDATE entities SET aliases = ?, exclude_terms = ?, languages = ?"
+                      " WHERE id = ?",
+                  (json.dumps(aliases), json.dumps(excludes), json.dumps(langs),
+                   present[name]["id"]))
         for name in drop:
             remove_entity(db, present[name]["id"])
         db.commit()
@@ -151,8 +166,9 @@ def main() -> int:
         print("\nRoster now:")
         for e in rows:
             rivals = registry.competitors_of(e["id"])
+            langs = ", ".join(json.loads(e["languages"] or '["en"]'))
             extra = f"   (query excludes {', '.join(rivals)})" if rivals else ""
-            print(f"  {e['name']:<34} {e['kind']}{extra}")
+            print(f"  {e['name']:<34} {e['kind']:<28} news: {langs}{extra}")
         orphans = one(db, "SELECT COUNT(*) n FROM users"
                           " WHERE entity_id IS NULL AND role IN ('lead','member')")["n"]
         if orphans:

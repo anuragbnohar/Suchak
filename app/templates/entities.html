@@ -26,6 +26,7 @@
         <th scope="col">Entity</th>
         <th scope="col">Kind</th>
         <th scope="col">Aliases</th>
+        <th scope="col">News in</th>
         <th scope="col" class="num">Items</th>
         <th scope="col">Last fetch</th>
         {% if user.role in ('lead','superadmin') %}<th scope="col"></th>{% endif %}
@@ -34,14 +35,19 @@
       <tr>
         <td><strong>{{ r.entity.name }}</strong></td>
         <td class="meta-dim">{{ r.entity.kind }}</td>
-        <td>
-          {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
+        {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
+        <td colspan="2">
           <form method="post" action="/entities/{{ r.entity.id }}/aliases" class="inline-form">
             <input name="aliases" value="{{ r.aliases | join(', ') }}">
+            <input name="languages" value="{{ r.languages | join(', ') }}"
+                   class="lang-input" title="Google News language codes, e.g. en, mr">
             <button type="submit" class="btn btn-small">Save</button>
           </form>
-          {% else %}{{ r.aliases | join(', ') }}{% endif %}
         </td>
+        {% else %}
+        <td>{{ r.aliases | join(', ') }}</td>
+        <td class="meta-dim">{{ r.languages | join(', ') }}</td>
+        {% endif %}
         <td class="num">{{ r.items }}</td>
         <td class="meta-dim small">
           {% if r.last_fetch %}
@@ -68,7 +74,11 @@
       </tr>
       {% endfor %}
     </table>
-    <p class="meta-dim small">Per-entity sources: Google News RSS (free, no key)
+    <p class="meta-dim small">Per-entity sources: Google News RSS (free, no key),
+      one feed per language listed above — <code>en</code>, <code>mr</code>,
+      <code>hi</code>, <code>gu</code>, <code>bn</code>, <code>ta</code>,
+      <code>te</code>, <code>kn</code>, <code>ml</code>. A language only helps
+      if the entity also has an alias written in that script
       {%- if broadcast %} · Regulator &amp; exchange feeds:
       {% for b in broadcast %}<strong>{{ b.source }}</strong> — {{ b.found }} fetched,
         {{ b.note or 'ok' }} ({{ b.ran_at | timeago }}){{ ' · ' if not loop.last }}{% endfor %}
@@ -90,6 +100,9 @@
       </label>
       <label>Aliases (comma-separated)
         <input name="aliases" placeholder="State Bank of India, SBI">
+      </label>
+      <label>News languages (comma-separated codes)
+        <input name="languages" placeholder="en" value="en">
       </label>
       <button type="submit" class="btn btn-primary">Add entity</button>
     </form>

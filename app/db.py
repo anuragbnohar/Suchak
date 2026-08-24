@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS entities (
     kind       TEXT NOT NULL,
     aliases    TEXT NOT NULL DEFAULT '[]',
     exclude_terms TEXT NOT NULL DEFAULT '[]',
+    -- news languages to search for this entity, as Google News edition
+    -- codes. Per entity on purpose: a Nagpur cooperative bank is covered in
+    -- Marathi, a national bank is not, and fetching every language for
+    -- every entity multiplies volume and cost for nothing.
+    languages     TEXT NOT NULL DEFAULT '["en"]',
     x_handle   TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -171,6 +176,7 @@ MIGRATIONS = [
     ("items", "action_closed_at", "TEXT"),
     ("items", "action_closed_by", "INTEGER REFERENCES users(id)"),
     ("items", "action_close_note", "TEXT"),
+    ("entities", "languages", "TEXT NOT NULL DEFAULT '[\"en\"]'"),
 ]
 
 

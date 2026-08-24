@@ -20,6 +20,18 @@ from .db import get_setting, q
 TRUSTED_SOURCES_KEY = "trusted_sources"
 
 DEFAULT_TRUSTED_SOURCES = "\n".join([
+    # Marathi press. A Maharashtra cooperative bank is covered here long
+    # before it reaches the national English papers, so these have to be
+    # trusted or the only items about it would rank below everything.
+    "Lokmat",
+    "Sakal",
+    "Loksatta",
+    "Maharashtra Times",
+    "Tarun Bharat",
+    "Pudhari",
+    "Divya Marathi",
+    "ABP Majha",
+    "TV9 Marathi",
     "Economic Times",
     "Times of India",
     "Livemint",

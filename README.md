@@ -52,7 +52,16 @@ remember it fetches *every* loaded entity and bills for it unattended.
   re-reports merges into the item it duplicates. Re-pressing Fetch therefore
   classifies — and bills for — only what is genuinely new.
   - *Google News RSS* — free, no key. An aggregator, so one query per entity
-    reaches the whole Indian financial press.
+    reaches the whole Indian financial press. **One feed per language
+    configured on the entity** (`en`, `hi`, `mr`, `gu`, `bn`, `ta`, `te`,
+    `kn`, `ml`), because Google News publishes a separate edition per
+    language. Languages are per entity on purpose: a Maharashtra cooperative
+    bank is covered in Marathi, a national bank is not, and fetching every
+    language for every entity multiplies volume and cost for nothing. A
+    language edition that fails is logged and skipped rather than losing the
+    ones that worked, and the per-entity item cap applies to the combined
+    result, so adding a language never raises the ceiling that bounds
+    classification spend.
   - *YouTube Data API v3* — video coverage per entity. Needs a free API key
     in `SUCHAK_YOUTUBE_KEY`; skipped silently when unset.
   - *X/Twitter recent search* — customer complaints only. **The one paid
@@ -80,6 +89,21 @@ remember it fetches *every* loaded entity and bills for it unattended.
 
   Adding a source means adding one function and one entry in `SOURCES`;
   everything downstream is source-agnostic.
+- **Work in more than one language** — a regional entity is reported in the
+  regional press first. Two things have to line up, and only together:
+  the entity needs the language in its list (which feed is fetched) *and* an
+  alias written in that script (whether the item is attributed to it).
+  Attribution is a regex over the alias list and runs before any model, so a
+  Marathi headline with only a Latin alias is dropped silently and never
+  reaches the classifier. Devanagari aliases match inflected forms for free —
+  `नागपूर नागरिक सहकारी बँक` matches `…बँकेवर` and `…बँकेला` — because
+  Marathi case suffixes attach as combining marks, which fall outside the
+  word boundary. Both models read the source language and are instructed to
+  write every verdict field in English, so one queue stays scannable by the
+  whole team. The Marathi press (Lokmat, Sakal, Loksatta, Maharashtra Times,
+  Pudhari, Tarun Bharat, Divya Marathi, ABP Majha, TV9 Marathi) is in the
+  trusted-source list, so regional coverage of a regional entity does not
+  rank below the national English papers that never mention it.
 - **Disambiguate** — names that contain other names ("Bank of India" inside
   "State Bank of India") are resolved by longest match across the whole
   entity registry, with word boundaries, so a story about one bank is never
@@ -332,8 +356,9 @@ python -m scripts.set_roster --yes           # no prompt
 python -m scripts.set_roster --sync-aliases  # also align existing aliases/excludes
 ```
 
-Entities already present keep their aliases untouched unless
-`--sync-aliases` is given, because those are tuned by hand on the Entities
+Each roster entry carries a name, a kind, aliases, exclude terms and news
+languages. Entities already present keep their aliases, exclude terms and
+languages untouched unless `--sync-aliases` is given, because those are tuned by hand on the Entities
 page. Removal deletes the entity's items **and its review history**; the plan
 counts both before anything happens, and asks before acting.
 
@@ -350,6 +375,10 @@ also runs insurance, housing-finance and properties arms. Exclude terms are
 subtracted from the search query *and* from entity attribution, so
 "SBI Life Insurance posts Q1 profit" resolves to no entity at all rather than
 being filed under State Bank of India and paying for a screen to reject it.
+
+Languages are also editable on the Entities page, in the same inline form as
+the aliases — enter comma-separated codes. Unknown codes are dropped on save
+rather than stored and silently ignored at fetch time.
 
 To remove a single entity from the UI instead: **Entities → Remove**
 (super admin only), which shows what will be deleted and asks you to type the

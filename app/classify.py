@@ -135,7 +135,9 @@ def _gate(entity, title: str, source: str | None,
         model=GATE_MODEL,
         max_tokens=256,
         system=(
-            "You screen Indian banking news for a supervisory team. Two checks.\n"
+            "You screen Indian banking news for a supervisory team. Headlines "
+            "may be in English or in an Indian language such as Marathi or "
+            "Hindi; judge them the same way either way. Two checks.\n"
             "1. about_entity: is the headline about one specific regulated entity?\n"
             f"Entity: {entity['name']} ({entity['kind']}). Known as: {aliases}.\n"
             "Answer false when the headline is about a DIFFERENT institution "
@@ -214,6 +216,15 @@ def _build_system(entity, factors, examples,
         "",
         f"Regulated entity under supervision: {entity['name']} ({entity['kind']}).",
         f"Known aliases: {', '.join(json.loads(entity['aliases']))}.",
+        "",
+        # Regional entities are covered in the regional press, so items can
+        # arrive in Marathi, Hindi or another Indian language. The reviewer
+        # queue has to stay scannable by one team, so the verdict is always
+        # written in English whatever the source language.
+        "Items may be in English or in an Indian language such as Marathi or "
+        "Hindi. Read the item in whatever language it is written, but always "
+        "write the summary and every other text field in English. Do not "
+        "translate the entity's name; leave proper nouns as they are.",
         "",
         "Risk areas (choose zero or more that genuinely apply): "
         + "; ".join(taxonomy.RISK_AREAS) + ".",

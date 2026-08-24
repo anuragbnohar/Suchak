@@ -47,7 +47,22 @@ from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
 
-GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
+GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl={hl}&gl={gl}&ceid={ceid}"
+# Google News publishes a separate edition per language, and an entity is
+# searched in each language configured on it. Codes not listed here are
+# skipped with a warning rather than guessed at.
+NEWS_EDITIONS = {
+    "en": ("en-IN", "IN", "IN:en"),
+    "hi": ("hi", "IN", "IN:hi"),
+    "mr": ("mr", "IN", "IN:mr"),
+    "gu": ("gu", "IN", "IN:gu"),
+    "bn": ("bn", "IN", "IN:bn"),
+    "ta": ("ta", "IN", "IN:ta"),
+    "te": ("te", "IN", "IN:te"),
+    "kn": ("kn", "IN", "IN:kn"),
+    "ml": ("ml", "IN", "IN:ml"),
+}
+DEFAULT_LANGUAGES = ["en"]
 # Google News returns at most ~100 results per query, so this is the ceiling
 # rather than a throttle.
 MAX_ENTRIES_PER_FEED = int(os.environ.get("SUCHAK_MAX_ENTRIES", "100"))
@@ -130,11 +145,28 @@ def load_registry(db) -> Registry:
     return Registry(q(db, "SELECT * FROM entities"))
 
 
-def google_news_url(registry: Registry, entity_id: int) -> str:
-    """Feed URL for one entity: its aliases, minus the longer names that
-    contain them, limited to the lookback window."""
+def entity_languages(entity) -> list[str]:
+    """Languages configured on this entity, falling back to English. Unknown
+    codes are dropped here so one bad value cannot break a whole sweep."""
+    try:
+        raw = json.loads(entity["languages"] or "[]")
+    except (KeyError, IndexError, TypeError, ValueError):
+        raw = []
+    langs = [c for c in raw if c in NEWS_EDITIONS]
+    for c in raw:
+        if c not in NEWS_EDITIONS:
+            log.warning("Unknown news language %r on %s -- skipped",
+                        c, entity["name"])
+    return langs or DEFAULT_LANGUAGES
+
+
+def google_news_url(registry: Registry, entity_id: int, lang: str = "en") -> str:
+    """Feed URL for one entity in one language: its aliases, minus the longer
+    names that contain them, limited to the lookback window."""
     query = build_query(registry, entity_id, days=LOOKBACK_DAYS or None)
-    return GOOGLE_NEWS_RSS.format(query=urllib.parse.quote(query))
+    hl, gl, ceid = NEWS_EDITIONS.get(lang, NEWS_EDITIONS["en"])
+    return GOOGLE_NEWS_RSS.format(query=urllib.parse.quote(query),
+                                  hl=hl, gl=gl, ceid=ceid)
 
 
 def _strip_html(text: str) -> str:
@@ -159,28 +191,42 @@ def _entry_source(entry, link: str) -> str:
 
 
 def fetch_google_news(registry: Registry, entity) -> list[dict]:
-    """Google News RSS: free, no key, aggregates the Indian press."""
-    url = google_news_url(registry, entity["id"])
-    resp = httpx.get(url, timeout=20, follow_redirects=True,
-                     headers={"User-Agent": "Suchak/0.1 (supervisory prototype)"})
-    resp.raise_for_status()
-    feed = feedparser.parse(resp.text)
+    """Google News RSS: free, no key, aggregates the Indian press.
 
-    items = []
-    for entry in feed.entries[:MAX_ENTRIES_PER_FEED]:
-        title = _strip_html(entry.get("title", ""))
-        link = entry.get("link", "")
-        if not title or not link:
+    One feed per language configured on the entity. A language edition that
+    fails is logged and skipped rather than losing the languages that
+    worked. MAX_ENTRIES_PER_FEED caps the entity's combined result, not each
+    edition, so adding a language never raises the per-entity ceiling that
+    bounds classification spend.
+    """
+    items, seen = [], set()
+    for n, lang in enumerate(entity_languages(entity)):
+        if n and FETCH_DELAY_SECONDS:
+            time.sleep(FETCH_DELAY_SECONDS)
+        url = google_news_url(registry, entity["id"], lang)
+        try:
+            resp = httpx.get(url, timeout=20, follow_redirects=True,
+                             headers={"User-Agent": "Suchak/0.1 (supervisory prototype)"})
+            resp.raise_for_status()
+        except Exception as exc:
+            log.warning("Google News (%s) failed for %s: %s: %s",
+                        lang, entity["name"], type(exc).__name__, exc)
             continue
-        items.append({
-            "title": title,
-            "url": link,
-            "source_name": _entry_source(entry, link),
-            "snippet": _strip_html(entry.get("summary", "")),
-            "published_at": _entry_published(entry),
-            "source_type": "news",
-        })
-    return items
+        for entry in feedparser.parse(resp.text).entries:
+            title = _strip_html(entry.get("title", ""))
+            link = entry.get("link", "")
+            if not title or not link or link in seen:
+                continue
+            seen.add(link)
+            items.append({
+                "title": title,
+                "url": link,
+                "source_name": _entry_source(entry, link),
+                "snippet": _strip_html(entry.get("summary", "")),
+                "published_at": _entry_published(entry),
+                "source_type": "news",
+            })
+    return items[:MAX_ENTRIES_PER_FEED]
 
 
 def fetch_youtube(registry: Registry, entity) -> list[dict]:

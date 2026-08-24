@@ -24,7 +24,7 @@ from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
                        similar_reviewed, suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
-from .ingest import run_cycle
+from .ingest import NEWS_EDITIONS, run_cycle
 from .seed import seed_if_empty
 from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
                     recompute_source_tiers)
@@ -954,6 +954,7 @@ def entities_page(request: Request):
             last_fetch = one(db, "SELECT * FROM fetch_log WHERE entity_id=?"
                                  " ORDER BY id DESC LIMIT 1", (e["id"],))
             rows.append({"entity": e, "aliases": json.loads(e["aliases"]),
+                         "languages": json.loads(e["languages"] or '["en"]'),
                          "items": n_items, "last_fetch": last_fetch})
         # latest status per broadcast feed (RBI, NSE, BSE) -- logged with a
         # NULL entity because one fetch serves every entity
@@ -967,6 +968,19 @@ def entities_page(request: Request):
                       broadcast=broadcast, fetch_minutes=FETCH_MINUTES)
     finally:
         db.close()
+
+
+def _parse_languages(raw: str | None) -> list[str]:
+    """Comma-separated codes, keeping only editions Google News publishes and
+    the order given. Always at least English -- an entity with no language
+    would silently fetch nothing."""
+    codes, seen = [], set()
+    for c in (raw or "").replace(";", ",").split(","):
+        c = c.strip().lower()
+        if c in NEWS_EDITIONS and c not in seen:
+            seen.add(c)
+            codes.append(c)
+    return codes or ["en"]
 
 
 @app.post("/entities")
@@ -985,8 +999,9 @@ async def entities_add(request: Request):
             aliases.insert(0, name)
         if kind not in taxonomy.ENTITY_KINDS:
             raise HTTPException(400, "Unknown entity kind")
-        x(db, "INSERT INTO entities (name, kind, aliases) VALUES (?,?,?)",
-          (name, kind, json.dumps(aliases)))
+        x(db, "INSERT INTO entities (name, kind, aliases, languages) VALUES (?,?,?,?)",
+          (name, kind, json.dumps(aliases),
+           json.dumps(_parse_languages(form.get("languages")))))
     finally:
         db.close()
     return RedirectResponse("/entities?msg=Entity+added", status_code=303)
@@ -1066,8 +1081,12 @@ async def entities_aliases(request: Request, entity_id: int):
         aliases = [a.strip() for a in (form.get("aliases") or "").split(",") if a.strip()]
         if not aliases:
             raise HTTPException(400, "At least one alias is required")
-        x(db, "UPDATE entities SET aliases = ? WHERE id = ?",
-          (json.dumps(aliases), entity_id))
+        # The form posts both fields together; when it omits languages, keep
+        # whatever the entity already had rather than resetting it to English.
+        langs = (_parse_languages(form.get("languages")) if form.get("languages") is not None
+                 else json.loads(e["languages"] or '["en"]'))
+        x(db, "UPDATE entities SET aliases = ?, languages = ? WHERE id = ?",
+          (json.dumps(aliases), json.dumps(langs), entity_id))
     finally:
         db.close()
     return RedirectResponse("/entities?msg=Aliases+updated", status_code=303)
