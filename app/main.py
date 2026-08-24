@@ -736,6 +736,8 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
                          " status IN ('new','classified') AND gated_out = 0",
                      (entity_id,))["n"]
+    total_all = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id = ?"
+                        " AND gated_out = 0", (entity_id,))["n"]
     # Follow-ups are deliberately NOT windowed: an action opened five weeks
     # ago is still owed today, and hiding it behind the window would be the
     # one number on this page that understates the team's workload.
@@ -759,6 +761,8 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
         "by_topic": by_topic.most_common(12),
         "trend": trend, "max_trend": max_trend,
         "open_count": open_count,
+        "total_all": total_all,
+        "older": total_all - len(rows),
         "actions_open": actions["open"] or 0,
         "actions_overdue": actions["overdue"] or 0,
         "high_recent": high_recent,
@@ -803,9 +807,17 @@ def overview(request: Request):
                              (e["id"],))["n"]
             last = one(db, "SELECT MAX(published_at) m FROM items WHERE entity_id=?",
                        (e["id"],))["m"]
+            # Items older than the window still exist and are still reviewable.
+            # Without this the row reads as a contradiction -- 0 items beside 4
+            # awaiting review -- when the truth is simply that the coverage is
+            # older than seven days, which for a small entity is normal.
+            total_all = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=?"
+                                " AND gated_out = 0", (e["id"],))["n"]
             rows.append({
                 "entity": e,
                 "total7": len(items),
+                "total_all": total_all,
+                "older": total_all - len(items),
                 "high7": sum(1 for it in items if it["severity_shown"] == "high"),
                 "open": open_count,
                 "top_risk": top_risk[0][0] if top_risk else "—",

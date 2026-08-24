@@ -14,7 +14,7 @@
     <th scope="col">Kind</th>
     <th scope="col" class="num">Items (7d)</th>
     <th scope="col" class="num">High severity (7d)</th>
-    <th scope="col" class="num">Awaiting review</th>
+    <th scope="col" class="num">Awaiting review<br><span class="th-note">all time</span></th>
     <th scope="col">Top risk area (7d)</th>
     <th scope="col">Latest item</th>
     <th scope="col"></th>
@@ -23,7 +23,12 @@
   <tr class="{% if r.high7 %}row-serious{% endif %}">
     <td><strong>{{ r.entity.name }}</strong></td>
     <td class="meta-dim">{{ r.entity.kind }}</td>
-    <td class="num"><a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7">{{ r.total7 }}</a></td>
+    <td class="num">
+      <a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7">{{ r.total7 }}</a>
+      {% if r.older %}<br><a class="older-note"
+         href="/queue?entity={{ r.entity.id }}&amp;status=all"
+         title="Items published before this window — still collected, still reviewable">+{{ r.older }} older</a>{% endif %}
+    </td>
     <td class="num">{% if r.high7 %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7&amp;sev=high"><span class="sev-chip sev-chip-high">{{ r.high7 }} high</span></a>{% else %}0{% endif %}</td>
     <td class="num"><a href="/queue?entity={{ r.entity.id }}&amp;status=open">{{ r.open }}</a></td>
     <td>{% if r.top_risk != '—' %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7&amp;risk={{ r.top_risk | urlencode }}">{{ r.top_risk }}</a>{% else %}—{% endif %}</td>

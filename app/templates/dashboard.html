@@ -24,6 +24,7 @@
   <a class="tile" href="{{ base }}">
     <p class="tile-label">Items ({{ stats.days }}d)</p>
     <p class="tile-value">{{ stats.total }}</p>
+    {% if stats.older %}<p class="tile-note tile-note-quiet">+{{ stats.older }} older</p>{% endif %}
   </a>
   <a class="tile tile-serious" href="{{ base }}&sev=high">
     <p class="tile-label">High severity</p>
@@ -43,7 +44,7 @@
     <p class="tile-value">{{ stats.complaints_total }}</p>
   </a>
   <a class="tile tile-accent" href="/queue?entity={{ entity.id }}&status=open">
-    <p class="tile-label">Awaiting review</p>
+    <p class="tile-label">Awaiting review · all time</p>
     <p class="tile-value">{{ stats.open_count }}</p>
   </a>
   <a class="tile {% if stats.actions_overdue %}tile-serious{% else %}tile-accent{% endif %}"

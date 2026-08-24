@@ -210,9 +210,12 @@ X recent search is capped at 7 days by its API regardless.
   sub-count) into the To-do page, daily volume trend, factor hits, and
   extracted organization linkages — every figure is a drill-down into the
   exact items it counts; a cross-entity overview for the super admin.
-  One deliberate exception to the day window: *Awaiting review* and
-  *Open actions* are all-time, because a follow-up opened five weeks ago is
-  still owed today.
+  Two deliberate exceptions to the day window: *Awaiting review* and *Open
+  actions* are all-time, because an item unread or a follow-up owed five weeks
+  ago is still work today. Both are labelled as such, and where an entity has
+  items published outside the window the count carries a `+N older` link to
+  the unwindowed queue — otherwise a quiet entity reads as a contradiction,
+  nothing in the last seven days sitting beside four awaiting review.
 
 ## Configuration
 
