@@ -443,6 +443,27 @@ for precision -- ambiguous abbreviations (BoB, TMB) are deliberately omitted,
 since a bad alias costs money and fills the queue with another bank's news.
 Editing an entity's aliases in the UI is the lever for tuning this.
 
+## Testing the browser collector
+
+`scripts/probe_x.py` runs the X browser collector on its own — nothing is
+stored, classified or billed — so a failure is attributable rather than
+mixed into a fetch.
+
+```bash
+python -m scripts.probe_x --login-only --show-browser   # sign in once
+python -m scripts.probe_x --entity HDFC --max 10        # probe one handle
+```
+
+It distinguishes the two outcomes that matter: **could not run** (session
+expired, rate limit, markup changed) prints why and exits non-zero, while
+**ran and found nothing** says so explicitly. Those look identical in a
+normal fetch, and confusing them is how a broken collector gets read as a
+quiet week.
+
+Selectors live in `_EXTRACT` in `app/x_scrape.py` — one JS pass over the
+timeline, deliberately kept in a single place, because X's markup is not an
+interface and that block is what needs repairing when it changes.
+
 ## When an entity returns nothing
 
 ```bash
