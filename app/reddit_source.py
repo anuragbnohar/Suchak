@@ -26,7 +26,7 @@ from .matching import Registry, build_query
 
 log = logging.getLogger("suchak.reddit")
 
-BUILD = "2026-08-24.3-reddit-rss"
+BUILD = "2026-08-24.4-reddit-rss"
 
 # No credential, so this is on unless deliberately turned off.
 ENABLED = os.environ.get("SUCHAK_REDDIT", "1").strip().lower() not in ("0", "false", "no")
@@ -171,8 +171,7 @@ def _to_item(entry) -> dict | None:
 
 def search(registry: Registry, entity_id: int, days: int | None = None,
            limit: int = MAX_POSTS, on_progress=None) -> list[dict]:
-    """Posts naming this entity, site-wide and in the Indian finance
-    subreddits, newest first and deduplicated by permalink.
+    """Posts naming this entity, taken fairly from every configured source.
 
     `on_progress(label, outcome)` is called around each search. Seven
     requests with a pause between them take long enough that a caller
@@ -184,60 +183,78 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
     query = build_query(registry, entity_id, max_aliases=4, or_token="OR")
     window = _window(days)
     seen: set[str] = set()
-    items: list[dict] = []
+    buckets: dict[str, list[dict]] = {}
     errors: list[str] = []
     passes = 0
 
     def collect(url: str, params: dict, label: str) -> None:
         nonlocal passes
-        if len(items) >= limit:
-            return
         if passes:
             time.sleep(PAUSE_SECONDS)
         passes += 1
         if on_progress:
             on_progress(label, "searching")
         try:
-            payload = _get(url, params)
+            feed = _get(url, params)
         except RedditUnavailable as exc:
             errors.append(f"{label}: {exc}")
             if on_progress:
                 on_progress(label, f"FAILED -- {exc}")
             return
-        before = len(items)
-        for post in _posts(payload):
-            item = _to_item(post)
+        fresh: list[dict] = []
+        entries = _posts(feed)
+        for entry in entries:
+            item = _to_item(entry)
             if not item or item["url"] in seen:
                 continue
             seen.add(item["url"])
-            items.append(item)
+            fresh.append(item)
+        buckets[label] = fresh
         if on_progress:
-            on_progress(label, f"{len(items) - before} new "
-                               f"({len(_posts(payload))} returned)")
+            on_progress(label, f"{len(fresh)} new ({len(entries)} returned)")
 
-    # The curated subreddits run first, deliberately. A site-wide search for
-    # a bank's name matches anything that happens to mention it -- a console
-    # restock thread where someone paid with an HDFC card ranks the same as
-    # a grievance -- and one such page fills the quota, which is exactly
-    # what happened when this ran site-wide first: one search, 100 posts,
-    # and the finance subreddits never queried at all. Searching the places
-    # where Indian banking complaints actually collect first means the
-    # site-wide pass only fills what is left over.
+    # Every search runs. Stopping early once the quota was full meant one
+    # busy source consumed it and the rest were never queried -- first
+    # site-wide, then r/personalfinanceindia -- which defeats the point of
+    # curating the subreddits at all.
+    labels = [f"r/{sub}" for sub in SUBREDDITS]
     for sub in SUBREDDITS:
         collect(SUB_SEARCH_URL.format(sub=sub),
                 {"q": query, "sort": "new", "limit": PER_REQUEST,
                  "t": window, "restrict_sr": 1},
                 f"r/{sub}")
 
+    # Site-wide matches anything that merely mentions the bank -- a console
+    # restock thread where someone paid with an HDFC card -- so it is
+    # searched last and takes its turn like any other source.
     collect(SEARCH_URL,
             {"q": query, "sort": "new", "limit": PER_REQUEST,
              "t": window, "type": "link"},
             "site-wide")
+    labels.append("site-wide")
+
+    # Round-robin across the sources, so a subreddit that returned three
+    # posts is still represented next to one that returned a hundred.
+    items: list[dict] = []
+    pools = [buckets.get(label, []) for label in labels]
+    depth = 0
+    while len(items) < limit:
+        added = False
+        for pool in pools:
+            if depth < len(pool):
+                items.append(pool[depth])
+                added = True
+                if len(items) >= limit:
+                    break
+        if not added:
+            break
+        depth += 1
 
     LAST_DIAGNOSIS.clear()
     LAST_DIAGNOSIS.update({
         "query": query, "window": window, "passes": passes,
         "found": len(items), "errors": errors,
+        "per_source": {label: len(buckets.get(label, [])) for label in labels},
     })
 
     # Every pass failing is a collector failure, not a quiet week. Reporting
@@ -250,4 +267,4 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
                     len(errors), passes, entity_id)
 
     items.sort(key=lambda r: r["published_at"] or "", reverse=True)
-    return items[:limit]
+    return items

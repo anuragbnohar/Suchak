@@ -218,9 +218,13 @@ def _probe_forum_parser(reg: Registry, ent) -> None:
 
 
 def _dump_raw(term: str) -> None:
-    """Print the markup around the first result, so a parser can be written
-    or corrected against what the site actually sends."""
-    print(f"\n\n=== RAW MARKUP around the first complaint (term {term!r})")
+    """Print the markup of a result the parser could not date.
+
+    Dumping the first result is close to useless: the first ones are the
+    ones that already work. The interesting row is one the parser read but
+    found no date on, so that is the one this looks for.
+    """
+    print(f"\n\n=== RAW MARKUP of an undated result (term {term!r})")
     try:
         r = httpx.get("https://www.consumercomplaints.in/",
                       params={"search": term},
@@ -229,13 +233,33 @@ def _dump_raw(term: str) -> None:
     except httpx.HTTPError as exc:
         print(f"    UNREACHABLE: {exc}")
         return
-    i = r.text.find("complaint-box-results__title")
-    if i < 0:
-        print("    marker class not present -- the layout has changed.")
-        print("    first 600 bytes of body:")
-        print("   ", r.text[:600].replace("\n", " ")[:600])
+
+    parser = forums._Results()
+    parser.feed(r.text)
+    parser.close()
+    if not parser.rows:
+        i = r.text.find(forums.TITLE_CLASS)
+        if i < 0:
+            print("    marker class not present -- the layout has changed.")
+            print("   ", r.text[:600].replace("\n", " "))
+        else:
+            print(r.text[max(0, i - 700): i + 900])
         return
-    print(r.text[max(0, i - 700): i + 900])
+
+    undated = [row for row in parser.rows
+               if not row.get("date") and not row.get("date_text")]
+    print(f"    {len(parser.rows)} rows parsed, {len(undated)} without a date")
+    row = (undated or parser.rows)[0]
+    print(f"    showing: {row.get('title', '')[:70]!r}")
+    print(f"    href   : {row.get('href')}")
+
+    # Anchor on this row's own link so the right block is shown.
+    i = r.text.find(row.get("href") or "")
+    if i < 0:
+        print("    could not locate that row in the raw page.")
+        return
+    print()
+    print(r.text[max(0, i - 400): i + 2200])
 
 
 def _probe_reddit(reg: Registry, ent, days: int) -> None:
@@ -264,6 +288,9 @@ def _probe_reddit(reg: Registry, ent, days: int) -> None:
     print(f"    query      : {d.get('query')}")
     print(f"    searches   : {d.get('passes')}  "
           f"failed: {len(d.get('errors') or [])}")
+    per = d.get("per_source") or {}
+    if per:
+        print("    per source : " + ", ".join(f"{k} {v}" for k, v in per.items()))
     for err in (d.get("errors") or [])[:3]:
         print(f"      ! {err[:150]}")
     print(f"\n    {len(items)} post(s) found\n")
