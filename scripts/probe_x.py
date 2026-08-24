@@ -43,6 +43,35 @@ def main() -> int:
           f" verify {'set' if x_scrape.VERIFY else 'unset'}")
     print(f"browser      : {'visible' if not x_scrape.HEADLESS else 'headless'}\n")
 
+    # --login-only signs in and stops; it needs no entity and no handle, so
+    # it has to be handled before either is demanded.
+    if args.login_only:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            print("Playwright is not installed:\n"
+                  "  pip install playwright\n  python -m playwright install chromium")
+            return 1
+        if not (x_scrape.USER and x_scrape.PASS):
+            print("Set SUCHAK_X_USER and SUCHAK_X_PASS before signing in.")
+            return 1
+        with sync_playwright() as pw:
+            browser = x_scrape._launch(pw)
+            try:
+                context, reused = x_scrape._new_context(browser)
+                if reused:
+                    print("A saved session already exists and looks usable.\n"
+                          f"Delete {x_scrape.STATE_PATH} to force a fresh login.")
+                else:
+                    x_scrape._login(context)
+                    print("Signed in. Session saved.")
+            except x_scrape.ScrapeUnavailable as exc:
+                print(f"COULD NOT SIGN IN: {exc}")
+                return 2
+            finally:
+                browser.close()
+        return 0
+
     handle = args.handle
     if not handle:
         if not args.entity:
@@ -67,27 +96,6 @@ def main() -> int:
             print(f"entity       : {match[0]['name']}")
         finally:
             db.close()
-
-    if args.login_only:
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError:
-            print("Playwright is not installed:\n"
-                  "  pip install playwright\n  python -m playwright install chromium")
-            return 1
-        with sync_playwright() as pw:
-            browser = x_scrape._launch(pw)
-            try:
-                context, reused = x_scrape._new_context(browser)
-                if reused:
-                    print("A saved session already exists; delete the file above to "
-                          "force a fresh login.")
-                else:
-                    x_scrape._login(context)
-                    print("Signed in, session saved.")
-            finally:
-                browser.close()
-        return 0
 
     query = f"to:{handle} -filter:retweets"
     print(f"query        : {query}\nmax posts    : {args.max}\n\ncollecting...\n")
