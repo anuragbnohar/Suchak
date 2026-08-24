@@ -26,7 +26,7 @@ from .matching import Registry, build_query
 
 log = logging.getLogger("suchak.reddit")
 
-BUILD = "2026-08-24.5-reddit-backoff"
+BUILD = "2026-08-24.6-subreddit-check"
 
 # No credential, so this is on unless deliberately turned off.
 ENABLED = os.environ.get("SUCHAK_REDDIT", "1").strip().lower() not in ("0", "false", "no")
@@ -207,7 +207,10 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
     errors: list[str] = []
     passes = 0
 
-    def collect(url: str, params: dict, label: str) -> None:
+    strayed: dict[str, int] = {}
+
+    def collect(url: str, params: dict, label: str,
+                only_sub: str | None = None) -> None:
         nonlocal passes
         if passes:
             time.sleep(PAUSE_SECONDS)
@@ -223,15 +226,31 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
             return
         fresh: list[dict] = []
         entries = _posts(feed)
+        stray = 0
         for entry in entries:
             item = _to_item(entry)
-            if not item or item["url"] in seen:
+            if not item:
+                continue
+            # restrict_sr is not honoured on the Atom endpoint. Proof: a
+            # run whose site-wide search was rate-limited to zero still
+            # returned r/PS5restock and r/SliceBank posts -- they can only
+            # have come through the r/india and r/personalfinanceindia
+            # searches. Each post names its subreddit in its own URL, so
+            # membership is checked here rather than trusted to the query.
+            if only_sub and item["source_name"].lower() != f"r/{only_sub.lower()}":
+                stray += 1
+                continue
+            if item["url"] in seen:
                 continue
             seen.add(item["url"])
             fresh.append(item)
         buckets[label] = fresh
+        if stray:
+            strayed[label] = stray
         if on_progress:
-            on_progress(label, f"{len(fresh)} new ({len(entries)} returned)")
+            note = f"{len(fresh)} new ({len(entries)} returned"
+            note += f", {stray} from other subreddits)" if stray else ")"
+            on_progress(label, note)
 
     # Every search runs. Stopping early once the quota was full meant one
     # busy source consumed it and the rest were never queried -- first
@@ -242,7 +261,7 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
         collect(SUB_SEARCH_URL.format(sub=sub),
                 {"q": query, "sort": "new", "limit": PER_REQUEST,
                  "t": window, "restrict_sr": 1},
-                f"r/{sub}")
+                f"r/{sub}", only_sub=sub)
 
     # Site-wide matches anything that merely mentions the bank -- a console
     # restock thread where someone paid with an HDFC card -- so it is
@@ -275,6 +294,7 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
         "query": query, "window": window, "passes": passes,
         "found": len(items), "errors": errors,
         "per_source": {label: len(buckets.get(label, [])) for label in labels},
+        "strayed": strayed,
     })
 
     # Every pass failing is a collector failure, not a quiet week. Reporting
