@@ -414,6 +414,34 @@ for precision -- ambiguous abbreviations (BoB, TMB) are deliberately omitted,
 since a bad alias costs money and fills the queue with another bank's news.
 Editing an entity's aliases in the UI is the lever for tuning this.
 
+## When an entity returns nothing
+
+```bash
+python -m scripts.probe_entity --entity Nagpur --days 365
+```
+
+Prints every headline the feed returned and whether attribution kept it, and
+for each rejection names which alias words were present and which were
+absent. It stores nothing, classifies nothing and bills nothing.
+
+The fetch log's *"N rejected as another entity's news"* says attribution
+refused the results but not what they were. This answers that — and the
+answer is usually the alias list, not the window.
+
+Attribution is a contiguous phrase match, which is what makes it precise and
+also what makes it brittle against how the press actually writes a name. A
+cooperative bank is the clear case: the same institution appears as *Nagpur
+Nagarik Sahakari Bank*, *Nagpur Nagarik Sah Bank* and *Nagpur Nagarik Bank*
+across three outlets, and neither transliteration of नागरिक is canonical.
+None of the shortened forms match an alias holding the full name, so **every
+form the press uses has to be listed**. Rejections are logged with their
+headline, so a running server answers the same question in its console.
+
+`SUCHAK_QUERY_ALIASES` (default 6) sets how many of an entity's aliases go
+into each search query; the rest are still used for attribution. Aliases are
+ordered per edition, so a Marathi feed is queried with the Devanagari
+spellings and an English feed with the Latin ones.
+
 ## Layout
 
 ```
