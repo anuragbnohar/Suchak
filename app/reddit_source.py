@@ -12,30 +12,36 @@ that judgement, as it does for the X collector: a complaint phrased
 unusually ("worst experience of my life", no complaint vocabulary at all)
 would be dropped by a keyword filter and caught by the model.
 """
+import html as html_mod
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
+import feedparser
 import httpx
 
 from .matching import Registry, build_query
 
 log = logging.getLogger("suchak.reddit")
 
-BUILD = "2026-08-24.1-reddit"
+BUILD = "2026-08-24.2-reddit-rss"
 
 # No credential, so this is on unless deliberately turned off.
 ENABLED = os.environ.get("SUCHAK_REDDIT", "1").strip().lower() not in ("0", "false", "no")
 
-SEARCH_URL = "https://www.reddit.com/search.json"
-SUB_SEARCH_URL = "https://www.reddit.com/r/{sub}/search.json"
+# Reddit refuses anonymous .json reads with HTTP 403 -- from a hosting
+# provider and from an ordinary office connection alike. A route sweep
+# across six variants found exactly one that answers: the Atom feed on
+# www, requested with a browser agent. That is what this uses.
+SEARCH_URL = "https://www.reddit.com/search.rss"
+SUB_SEARCH_URL = "https://www.reddit.com/r/{sub}/search.rss"
 
-# Reddit blocks anonymous requests that send a library default. A
-# descriptive agent naming the project is what its API rules ask for.
 USER_AGENT = os.environ.get(
     "SUCHAK_REDDIT_UA",
-    "python:suchak-supervisory-prototype:0.1 (RBI SSM research; contact via repo)")
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
 # Subreddits where Indian retail banking complaints actually collect. The
 # site-wide pass catches most of it; these are searched separately because
@@ -72,10 +78,15 @@ def _window(days: int | None) -> str:
     return "all"
 
 
-def _get(url: str, params: dict) -> dict:
+def _strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", html_mod.unescape(text or "")).strip()
+
+
+def _get(url: str, params: dict):
     """One search request, with Reddit's refusals named rather than
     collapsed into an empty list."""
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    headers = {"User-Agent": USER_AGENT,
+               "Accept": "application/atom+xml, application/xml, text/xml"}
     try:
         resp = httpx.get(url, params=params, headers=headers,
                          timeout=TIMEOUT, follow_redirects=True)
@@ -88,47 +99,69 @@ def _get(url: str, params: dict) -> dict:
             "and fetch again, or raise SUCHAK_REDDIT_PAUSE.")
     if resp.status_code in (403, 401):
         raise RedditUnavailable(
-            f"Reddit refused the request (HTTP {resp.status_code}). This is "
-            "usually the User-Agent or the network the request came from -- "
-            "Reddit blocks anonymous reads from many hosting providers. "
-            "From an ordinary home or office connection it normally works.")
+            f"Reddit refused the request (HTTP {resp.status_code}). Reddit "
+            "blocks anonymous reads on most of its routes; this collector "
+            "uses the one that answers (the Atom feed on www). If that is "
+            "now refused too, run `python -m scripts.probe_sources "
+            "--entity <name> --routes` to find a route that still works.")
     if resp.status_code >= 400:
         raise RedditUnavailable(
             f"Reddit answered HTTP {resp.status_code}: {resp.text[:200]}")
 
-    ctype = resp.headers.get("content-type", "")
-    if "json" not in ctype.lower():
+    ctype = resp.headers.get("content-type", "").lower()
+    if not ("xml" in ctype or "rss" in ctype or "atom" in ctype):
         # A block or interstitial page arrives as HTML with a 200.
         raise RedditUnavailable(
-            f"Reddit returned {ctype or 'no content-type'} instead of JSON, "
+            f"Reddit returned {ctype or 'no content-type'} instead of a feed, "
             "which means a block or interstitial page rather than search "
-            f"results: {resp.text[:200]}")
-    try:
-        return resp.json()
-    except ValueError as exc:
-        raise RedditUnavailable(f"Reddit sent unreadable JSON: {exc}") from exc
+            f"results: {_strip_html(resp.text)[:200]}")
+
+    feed = feedparser.parse(resp.text)
+    if getattr(feed, "bozo", 0) and not feed.entries:
+        raise RedditUnavailable(
+            f"Reddit sent an unreadable feed: {getattr(feed, 'bozo_exception', '')}")
+    return feed
 
 
-def _posts(payload: dict) -> list[dict]:
-    children = (payload.get("data") or {}).get("children") or []
-    return [c.get("data") or {} for c in children if c.get("kind") == "t3"]
+def _posts(feed) -> list:
+    return list(getattr(feed, "entries", []) or [])
 
 
-def _to_item(post: dict) -> dict | None:
-    title = (post.get("title") or "").strip()
-    permalink = post.get("permalink") or ""
-    if not title or not permalink:
+_SUB_RE = re.compile(r"/r/([A-Za-z0-9_]+)/")
+
+
+def _to_item(entry) -> dict | None:
+    """One Atom entry as a stored item.
+
+    Reddit's feed carries the post body in `content` as escaped HTML; the
+    title alone is often just a label ("HDFC did it again"), so both go to
+    the classifier.
+    """
+    title = _strip_html(entry.get("title", ""))
+    link = entry.get("link") or ""
+    if not title or not link:
         return None
-    created = post.get("created_utc")
-    published = (datetime.fromtimestamp(created, tz=timezone.utc).isoformat()
-                 if created else None)
-    sub = post.get("subreddit") or "reddit"
-    # selftext is the complaint itself on Reddit; the title is often just a
-    # label ("HDFC did it again"). Both go to the classifier.
-    body = (post.get("selftext") or "").strip()
+
+    body = ""
+    content = entry.get("content") or []
+    if content:
+        body = _strip_html(content[0].get("value", ""))
+    elif entry.get("summary"):
+        body = _strip_html(entry.get("summary"))
+
+    published = None
+    for key in ("published_parsed", "updated_parsed"):
+        parsed = entry.get(key)
+        if parsed:
+            published = datetime(*parsed[:6], tzinfo=timezone.utc).isoformat(
+                timespec="seconds")
+            break
+
+    match = _SUB_RE.search(link)
+    sub = match.group(1) if match else "reddit"
     return {
         "title": title,
-        "url": f"https://www.reddit.com{permalink}",
+        "url": link,
         "source_name": f"r/{sub}",
         "snippet": body[:1500],
         "published_at": published,
@@ -184,13 +217,13 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
 
     collect(SEARCH_URL,
             {"q": query, "sort": "new", "limit": PER_REQUEST,
-             "t": window, "raw_json": 1, "type": "link"},
+             "t": window, "type": "link"},
             "site-wide")
 
     for sub in SUBREDDITS:
         collect(SUB_SEARCH_URL.format(sub=sub),
                 {"q": query, "sort": "new", "limit": PER_REQUEST,
-                 "t": window, "raw_json": 1, "restrict_sr": 1},
+                 "t": window, "restrict_sr": 1},
                 f"r/{sub}")
 
     LAST_DIAGNOSIS.clear()

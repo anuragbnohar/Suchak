@@ -29,7 +29,7 @@ from .matching import Registry
 
 log = logging.getLogger("suchak.forums")
 
-BUILD = "2026-08-24.1-consumercomplaints"
+BUILD = "2026-08-24.2-consumercomplaints"
 
 ENABLED = os.environ.get("SUCHAK_FORUMS", "1").strip().lower() not in ("0", "false", "no")
 
@@ -63,74 +63,101 @@ class ForumUnavailable(RuntimeError):
 
 
 class _Results(html.parser.HTMLParser):
-    """Pull (title, href, body) triples out of the results list.
+    """Pull (title, href, body, date) out of the results list.
 
-    The site emits each result as a titled anchor followed by a text
-    block, so the two are paired in document order rather than by walking
-    a container -- that survives the wrapper markup changing around them.
+    Each result is a titled anchor followed by its text; the two are paired
+    in document order rather than by walking a container, so the wrapper
+    markup changing around them does not break it.
+
+    The site puts more than one element under the results-text class -- a
+    short type label ("(complaint)") as well as the complaint itself -- so
+    every candidate between one title and the next is collected and the
+    longest wins. A label cannot outrun a grievance.
     """
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.rows: list[dict] = []
-        self._title_depth = 0
-        self._text_depth = 0
+        self._cur: dict | None = None
+        self._capture: str | None = None
+        self._depth = 0
         self._buf: list[str] = []
-        self._href = ""
-        self._pending: dict | None = None
-        self._dates: list[str] = []
-        self._in_time = False
+        self._region: list[str] = []
 
     @staticmethod
     def _has(attrs: dict, prefix: str) -> bool:
         return any(c.startswith(prefix) for c in (attrs.get("class") or "").split())
 
+    def _flush(self) -> None:
+        if self._cur and self._cur.get("title"):
+            bodies = self._cur.pop("bodies", [])
+            self._cur["body"] = max(bodies, key=len) if bodies else ""
+            self._cur["region"] = " ".join(self._region)[:400]
+            self.rows.append(self._cur)
+        self._cur = None
+        self._region = []
+
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
-        if self._title_depth:
-            self._title_depth += 1
-        elif self._has(a, TITLE_CLASS):
-            self._title_depth = 1
-            self._buf = []
-            self._href = a.get("href") or ""
-        elif self._text_depth:
-            self._text_depth += 1
-        elif self._has(a, TEXT_CLASS):
-            self._text_depth = 1
-            self._buf = []
-        # The site marks the posting date with <time datetime="...">, which
-        # is the only machine-readable date on the page.
-        if tag == "time":
-            self._in_time = True
-            if a.get("datetime"):
-                self._dates.append(a["datetime"])
+        if self._capture:
+            self._depth += 1
+            return
+        if self._has(a, TITLE_CLASS):
+            self._flush()
+            self._cur = {"href": a.get("href") or "", "bodies": [], "date": ""}
+            self._capture, self._depth, self._buf = "title", 1, []
+            return
+        if self._cur is not None and self._has(a, TEXT_CLASS):
+            self._capture, self._depth, self._buf = "text", 1, []
+            return
+        # <time datetime="..."> is the only machine-readable date, when present.
+        if tag == "time" and self._cur is not None and a.get("datetime"):
+            self._cur["date"] = a["datetime"]
 
     def handle_endtag(self, tag):
-        if tag == "time":
-            self._in_time = False
-        if self._title_depth:
-            self._title_depth -= 1
-            if self._title_depth == 0:
-                title = " ".join("".join(self._buf).split())
-                # Titles arrive prefixed with an em dash separator.
-                title = re.sub(r"^[\s—–-]+", "", title)
-                self._pending = {"title": title, "href": self._href}
-                self._buf = []
-        elif self._text_depth:
-            self._text_depth -= 1
-            if self._text_depth == 0:
-                body = " ".join("".join(self._buf).split())
-                if self._pending:
-                    self._pending["body"] = body
-                    self.rows.append(self._pending)
-                    self._pending = None
-                self._buf = []
+        if not self._capture:
+            return
+        self._depth -= 1
+        if self._depth > 0:
+            return
+        text = " ".join("".join(self._buf).split())
+        if self._capture == "title":
+            # Titles read "Company Name — Complaint headline"; a leading
+            # separator is noise, an internal one is part of the title.
+            self._cur["title"] = re.sub(r"^[\s\u2014\u2013-]+", "", text)
+        elif text:
+            self._cur["bodies"].append(text)
+        self._capture, self._buf = None, []
 
     def handle_data(self, data):
-        if self._title_depth or self._text_depth:
+        if self._capture:
             self._buf.append(data)
-        elif self._in_time:
-            self._dates.append(data.strip())
+        elif self._cur is not None:
+            chunk = " ".join(data.split())
+            if chunk:
+                self._region.append(chunk)
+
+    def close(self):
+        super().close()
+        self._flush()
+
+
+# Dates the site renders as text rather than in a <time> element.
+_DATE_PATTERNS = [
+    re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b"),
+    re.compile(r"\b(\d{1,2}\s+[A-Z][a-z]{2,8},?\s+20\d{2})\b"),
+    re.compile(r"\b([A-Z][a-z]{2,8}\s+\d{1,2},\s*20\d{2})\b"),
+]
+
+
+def _date_from_region(text: str) -> str | None:
+    for pattern in _DATE_PATTERNS:
+        match = pattern.search(text or "")
+        if match:
+            parsed = _parse_date(match.group(1).replace(",", ", ").replace("  ", " "))
+            if parsed:
+                return parsed
+    return None
 
 
 def _fetch(params: dict) -> str:
@@ -224,14 +251,15 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
 
         parser = _Results()
         parser.feed(body)
-        dates = [d for d in (_parse_date(d) for d in parser._dates) if d]
+        parser.close()
         before = len(items)
-        for i, row in enumerate(parser.rows):
+        for row in parser.rows:
             href = row.get("href") or ""
             url = href if href.startswith("http") else urllib.parse.urljoin(BASE, href)
             if not row.get("title") or not href or url in seen:
                 continue
-            published = dates[i] if i < len(dates) else None
+            published = (_parse_date(row.get("date"))
+                         or _date_from_region(row.get("region", "")))
             if cutoff and published:
                 try:
                     if datetime.fromisoformat(published) < cutoff:
