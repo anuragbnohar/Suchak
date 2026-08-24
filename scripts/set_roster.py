@@ -16,7 +16,13 @@ counts both before anything happens, and removal needs confirmation.
 """
 import argparse
 import json
+
+# Runnable either as `python -m scripts.set_roster` or `python scripts/set_roster.py`.
+# The second form puts scripts/ on the import path instead of the project
+# root, so add the root here and let `app` import the same way in both.
+import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import connect, init_db, one, q, remove_entity, x
 from app.matching import Registry

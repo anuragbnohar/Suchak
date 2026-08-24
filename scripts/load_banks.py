@@ -1,6 +1,6 @@
 """Load India's scheduled commercial banks as regulated entities.
 
-    python -m scripts.load_banks                       # all 33
+    python -m scripts.load_banks --yes                 # all 33
     python -m scripts.load_banks --only "SBI,HDFC,ICICI"
 
 Aliases are chosen for precision: abbreviations that are ambiguous in news
@@ -10,8 +10,15 @@ other banks' names -- "Bank of India", "Indian Bank" -- need no special
 handling: app.matching resolves those by longest match across the whole
 registry, and excludes the rival names from each search query.
 """
+import argparse
 import json
+
+# Runnable either as `python -m scripts.load_banks` or `python scripts/load_banks.py`.
+# The second form puts scripts/ on the import path instead of the project
+# root, so add the root here and let `app` import the same way in both.
+import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import connect, init_db, one, x
 from app.matching import Registry, build_query
@@ -133,16 +140,38 @@ def main(dry_run: bool = False, team: str | None = None,
         db.close()
 
 
-def _flag_value(args: list[str], flag: str) -> str | None:
-    if flag in args:
-        i = args.index(flag)
-        return args[i + 1] if i + 1 < len(args) else None
-    return None
-
-
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    only_raw = _flag_value(args, "--only")
-    main(dry_run="--dry-run" in args,
-         team=_flag_value(args, "--team"),
-         only=only_raw.split(",") if only_raw else None)
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--only", help="comma-separated names or aliases to load")
+    ap.add_argument("--team", help="entity the lead/member accounts supervise")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="show what would be added, write nothing")
+    ap.add_argument("--yes", action="store_true", help="skip the confirmation")
+    args = ap.parse_args()
+
+    # This script adds banks to whatever roster already exists; it never
+    # removes. On a deliberately small roster that is still destructive in
+    # effect -- 30-odd entities appear alongside the curated ones and each
+    # has to be deleted by hand. So it confirms first, like set_roster and
+    # reset_data do, rather than running on a stray invocation.
+    if not args.dry_run and not args.yes:
+        init_db()
+        db = connect()
+        try:
+            existing = one(db, "SELECT COUNT(*) AS n FROM entities")["n"]
+        finally:
+            db.close()
+        picked = _selected(args.only.split(",") if args.only else None)
+        print(f"About to add up to {len(picked)} banks to a roster that "
+              f"currently holds {existing}.")
+        print("Banks already present by name are skipped; nothing is removed.")
+        try:
+            answer = input("Type 'yes' to continue: ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() != "yes":
+            print("Cancelled. Nothing loaded.")
+            sys.exit(1)
+
+    main(dry_run=args.dry_run, team=args.team,
+         only=args.only.split(",") if args.only else None)

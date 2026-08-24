@@ -15,7 +15,13 @@ reviewed items is left untouched and reported.
 """
 import argparse
 import json
+
+# Runnable either as `python -m scripts.re_dedup` or `python scripts/re_dedup.py`.
+# The second form puts scripts/ on the import path instead of the project
+# root, so add the root here and let `app` import the same way in both.
+import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import connect, init_db, q, x
 from app.ingest import DUP_MIN_SHARED, DUP_THRESHOLD

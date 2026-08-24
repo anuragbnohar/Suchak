@@ -15,7 +15,13 @@ Read-only: nothing is stored, nothing is classified, nothing is billed.
 import argparse
 import json
 import re
+
+# Runnable either as `python -m scripts.probe_entity` or `python scripts/probe_entity.py`.
+# The second form puts scripts/ on the import path instead of the project
+# root, so add the root here and let `app` import the same way in both.
+import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import connect, init_db, q
 from app.ingest import (LOOKBACK_CHOICES, entity_languages, fetch_google_news,

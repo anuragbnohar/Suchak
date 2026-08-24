@@ -15,8 +15,14 @@ Human reviews are never touched: reviewed items are skipped by default,
 and a reviewer's severity correction outranks any machine verdict anyway.
 """
 import argparse
-import sys
 import time
+
+# Runnable either as `python -m scripts.reclassify` or `python scripts/reclassify.py`.
+# The second form puts scripts/ on the import path instead of the project
+# root, so add the root here and let `app` import the same way in both.
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.classify import GATE_MODEL, MODEL, classify_item
 from app.db import connect, init_db, one, q, x

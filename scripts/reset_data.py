@@ -14,7 +14,13 @@ NOT re-seed demo data on the next start.
 This is permanent. Copy suchak.db somewhere first if in doubt.
 """
 import argparse
+
+# Runnable either as `python -m scripts.reset_data` or `python scripts/reset_data.py`.
+# The second form puts scripts/ on the import path instead of the project
+# root, so add the root here and let `app` import the same way in both.
+import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import connect, init_db, one, set_setting
 

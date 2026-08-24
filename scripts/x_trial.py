@@ -8,7 +8,13 @@ confirmation before spending anything. One request, never paginated: the
 bill cannot exceed --max posts.
 """
 import argparse
+
+# Runnable either as `python -m scripts.x_trial` or `python scripts/x_trial.py`.
+# The second form puts scripts/ on the import path instead of the project
+# root, so add the root here and let `app` import the same way in both.
+import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import ingest
 from app.db import connect, init_db, one, x
