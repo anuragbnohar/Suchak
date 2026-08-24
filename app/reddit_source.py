@@ -26,7 +26,7 @@ from .matching import Registry, build_query
 
 log = logging.getLogger("suchak.reddit")
 
-BUILD = "2026-08-24.6-subreddit-check"
+BUILD = "2026-08-24.7-verified"
 
 # No credential, so this is on unless deliberately turned off.
 ENABLED = os.environ.get("SUCHAK_REDDIT", "1").strip().lower() not in ("0", "false", "no")
@@ -231,12 +231,14 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
             item = _to_item(entry)
             if not item:
                 continue
-            # restrict_sr is not honoured on the Atom endpoint. Proof: a
-            # run whose site-wide search was rate-limited to zero still
-            # returned r/PS5restock and r/SliceBank posts -- they can only
-            # have come through the r/india and r/personalfinanceindia
-            # searches. Each post names its subreddit in its own URL, so
-            # membership is checked here rather than trusted to the query.
+            # A guard, not a bug fix. This check was added on a claim that
+            # restrict_sr is ignored on the Atom endpoint; a live run then
+            # found zero strays across all six subreddits, so the claim was
+            # wrong -- the off-topic posts had come from the site-wide
+            # search, which may return anything. The check stays because it
+            # is free and the feed's behaviour is undocumented: if Reddit
+            # ever does loosen the restriction, the stray count surfaces in
+            # the diagnosis instead of polluting a curated bucket silently.
             if only_sub and item["source_name"].lower() != f"r/{only_sub.lower()}":
                 stray += 1
                 continue

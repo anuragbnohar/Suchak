@@ -299,11 +299,25 @@ def _probe_reddit(reg: Registry, ent, days: int) -> None:
     for err in (d.get("errors") or [])[:3]:
         print(f"      ! {err[:150]}")
     print(f"\n    {len(items)} post(s) found\n")
-    for it in items[:10]:
-        when = (it["published_at"] or "")[:10]
-        print(f"      [{when}] {it['source_name']}  {it['title'][:80]}")
-        if it["snippet"]:
-            print(f"                 {it['snippet'][:110]}")
+    # Grouped by source, a couple each. Sorted globally by date, the newest
+    # posts are always the site-wide ones -- so the display was ten of
+    # those, which made a healthy run look like the curated subreddits had
+    # returned junk. What they actually returned is what matters here.
+    by_source: dict[str, list] = {}
+    for it in items:
+        by_source.setdefault(it["source_name"], []).append(it)
+    curated = [f"r/{s}" for s in reddit_source.SUBREDDITS]
+    ordered = ([s for s in curated if s in by_source]
+               + sorted(k for k in by_source if k not in curated))
+    for src in ordered:
+        posts = by_source[src]
+        tag = "" if src in curated else "  (via site-wide)"
+        print(f"      {src} -- {len(posts)} of the {len(items)}{tag}")
+        for it in posts[:2]:
+            when = (it["published_at"] or "no date")[:10]
+            print(f"        [{when}] {it['title'][:78]}")
+            if it["snippet"]:
+                print(f"                     {it['snippet'][:105]}")
     if not items:
         print("      (Reddit answered normally but matched nothing. Widen "
               "--days, or the entity may simply not be discussed there.)")
