@@ -43,7 +43,7 @@ from .db import connect, one, q, x
 from .matching import Registry, build_query
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
                          strip_publisher)
-from . import reddit_source, x_scrape
+from . import forums, reddit_source, x_scrape
 from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
@@ -548,12 +548,25 @@ def fetch_reddit(registry: Registry, entity, days: int | None = None) -> list[di
                                 reddit_source.MAX_POSTS)
 
 
+def fetch_forums(registry: Registry, entity, days: int | None = None) -> list[dict]:
+    """Complaints filed against the entity on consumercomplaints.in.
+
+    Every entry there is already a grievance, so this is the densest
+    complaint source the app has -- but the classifier still decides
+    severity and topic, and the matcher still checks attribution.
+    """
+    if not forums.ENABLED:
+        return []
+    return forums.search(registry, entity["id"], days, forums.MAX_ITEMS)
+
+
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
     "x": fetch_x,
     "x_scrape": fetch_x_scrape,
     "reddit": fetch_reddit,
+    "forums": fetch_forums,
 }
 
 BROADCAST_SOURCES = {
@@ -630,6 +643,11 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 # collector return nothing, which is indistinguishable from a
                 # quiet week unless the count is stated every time.
                 notes.append(f"{len(got)} from X (browser)")
+            elif name == "forums" and forums.ENABLED:
+                # Stated even at zero, like Reddit: the collector raises
+                # when it read nothing, so a zero really is "searched and
+                # matched nothing".
+                notes.append(f"{len(got)} from consumercomplaints.in")
             elif name == "reddit" and reddit_source.ENABLED:
                 # Stated even at zero. Reddit raises when it could not read
                 # anything, so a zero here really does mean "searched and

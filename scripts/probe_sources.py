@@ -15,6 +15,7 @@ worth doing, and what to write it against.
 """
 import argparse
 import collections
+import time
 import html.parser
 import json
 import urllib.parse
@@ -28,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import httpx
 
-from app import reddit_source
+from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
 
@@ -37,11 +38,12 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 # Indian consumer-complaint sites that carry retail banking grievances.
 # The {q} slot is the entity search term.
+# grahakseva.com and complaintboard.in were dropped after a probe run from
+# a real connection: neither domain resolves any more. mouthshut.com answers
+# only with a redirect loop on this URL shape. consumercomplaints.in is the
+# one that serves results, and it is the one with a parser.
 FORUMS = [
     ("consumercomplaints.in", "https://www.consumercomplaints.in/?search={q}"),
-    ("grahakseva.com",        "https://www.grahakseva.com/search?q={q}"),
-    ("mouthshut.com",         "https://www.mouthshut.com/search?q={q}"),
-    ("complaintboard.in",     "https://www.complaintboard.in/search?q={q}"),
 ]
 
 
@@ -132,6 +134,110 @@ def _probe_forum(name: str, template: str, term: str) -> None:
             print(f"          | {s}")
 
 
+REDDIT_VARIANTS = [
+    ("www + project UA",   "https://www.reddit.com/search.json", None),
+    ("www + browser UA",   "https://www.reddit.com/search.json", BROWSER_UA),
+    ("old + browser UA",   "https://old.reddit.com/search.json", BROWSER_UA),
+    ("www RSS + browser",  "https://www.reddit.com/search.rss",  BROWSER_UA),
+    ("old RSS + browser",  "https://old.reddit.com/search.rss",  BROWSER_UA),
+    ("r/india .json",      "https://www.reddit.com/r/india/search.json", BROWSER_UA),
+]
+
+
+def _probe_reddit_variants(term: str) -> None:
+    """Reddit refuses some routes and not others. Try each and report which
+    answers, so the collector can be pointed at one that works instead of
+    guessing at the User-Agent."""
+    print(f"\n\n=== REDDIT ROUTES -- which ones answer at all? (term {term!r})")
+    print("    (a 200 with JSON or XML means this route is usable)")
+    working = []
+    for label, url, ua in REDDIT_VARIANTS:
+        headers = {"User-Agent": ua or reddit_source.USER_AGENT}
+        params = {"q": term, "limit": 5, "raw_json": 1}
+        try:
+            r = httpx.get(url, params=params, headers=headers,
+                          timeout=25, follow_redirects=True)
+        except httpx.HTTPError as exc:
+            print(f"    {label:<20} UNREACHABLE {type(exc).__name__}")
+            continue
+        ctype = r.headers.get("content-type", "?").split(";")[0]
+        note = ""
+        if r.status_code == 200:
+            if "json" in ctype:
+                try:
+                    n = len((r.json().get("data") or {}).get("children") or [])
+                    note = f"  {n} post(s)"
+                    if n:
+                        working.append(label)
+                except ValueError:
+                    note = "  (unreadable JSON)"
+            elif "xml" in ctype or "rss" in ctype:
+                n = r.text.count("<entry")
+                note = f"  {n} entr(ies)"
+                if n:
+                    working.append(label)
+        print(f"    {label:<20} http {r.status_code}  {ctype}{note}")
+        time.sleep(1.5)
+    print()
+    if working:
+        print(f"    USABLE: {', '.join(working)}")
+    else:
+        print("    No route answered with data. Reddit is blocking this "
+              "network for anonymous reads.")
+
+
+def _probe_forum_parser(reg: Registry, ent) -> None:
+    """Run the real parser against the live site, so the probe reports what
+    the app would actually collect rather than page structure."""
+    print(f"\n\n=== CONSUMERCOMPLAINTS.IN PARSER -- {ent['name']}")
+    print(f"    build {forums.BUILD}")
+
+    def progress(label, outcome):
+        if outcome == "searching":
+            print(f"      {label:<10} ...", end="", flush=True)
+        else:
+            print(f" {outcome}", flush=True)
+
+    try:
+        items = forums.search(reg, ent["id"], None, on_progress=progress)
+    except forums.ForumUnavailable as exc:
+        print(f"\n    COULD NOT RUN: {exc}")
+        print(f"    diagnosis: {json.dumps(forums.LAST_DIAGNOSIS)[:300]}")
+        return
+    print(f"\n    search term: {forums.LAST_DIAGNOSIS.get('term')!r}")
+    print(f"    {len(items)} complaint(s) parsed\n")
+    undated = sum(1 for i in items if not i["published_at"])
+    for it in items[:8]:
+        print(f"      [{(it['published_at'] or 'no date')[:10]}] {it['title'][:74]}")
+        if it["snippet"]:
+            print(f"                   {it['snippet'][:100]}")
+    if undated:
+        print(f"\n    {undated} of {len(items)} carry no date. If that is all "
+              "of them the date element differs from <time datetime=...>; "
+              "run with --dump to show the raw markup of one complaint.")
+
+
+def _dump_raw(term: str) -> None:
+    """Print the markup around the first result, so a parser can be written
+    or corrected against what the site actually sends."""
+    print(f"\n\n=== RAW MARKUP around the first complaint (term {term!r})")
+    try:
+        r = httpx.get("https://www.consumercomplaints.in/",
+                      params={"search": term},
+                      headers={"User-Agent": BROWSER_UA},
+                      timeout=30, follow_redirects=True)
+    except httpx.HTTPError as exc:
+        print(f"    UNREACHABLE: {exc}")
+        return
+    i = r.text.find("complaint-box-results__title")
+    if i < 0:
+        print("    marker class not present -- the layout has changed.")
+        print("    first 600 bytes of body:")
+        print("   ", r.text[:600].replace("\n", " ")[:600])
+        return
+    print(r.text[max(0, i - 700): i + 900])
+
+
 def _probe_reddit(reg: Registry, ent, days: int) -> None:
     print(f"\n=== REDDIT -- {ent['name']} (last {days} days)")
     print(f"    user-agent : {reddit_source.USER_AGENT[:70]}")
@@ -177,9 +283,16 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=365)
     ap.add_argument("--reddit-only", action="store_true")
     ap.add_argument("--forums-only", action="store_true")
+    ap.add_argument("--routes", action="store_true",
+                    help="try every Reddit route and report which answer")
+    ap.add_argument("--dump", action="store_true",
+                    help="print raw markup around the first forum result")
+    ap.add_argument("--structure", action="store_true",
+                    help="scan page structure instead of running the parser")
     args = ap.parse_args()
 
-    print(f"build        : reddit_source {reddit_source.BUILD}")
+    print(f"build        : reddit_source {reddit_source.BUILD}  |  "
+          f"forums {forums.BUILD}")
 
     init_db()
     db = connect()
@@ -198,19 +311,37 @@ def main() -> int:
                 for r in rows:
                     print(f"  {r['name']}")
                 return 1
-        elif not args.forums_only:
-            print("\nGive --entity to test Reddit (or --forums-only).")
+        elif args.structure or args.dump:
+            # These two only need a search term, not a roster entry.
+            pass
+        else:
+            print("\nGive --entity. On the roster:")
+            for r in rows:
+                print(f"  {r['name']}")
             return 1
 
+        reg = Registry(rows)
+        term = "HDFC Bank"
+        if ent:
+            # The site indexes companies by common name, so the first alias
+            # finds the page where the legal name ("... Ltd.") may not.
+            names = json.loads(ent["aliases"] or "[]") or [ent["name"]]
+            term = names[0]
+
         if not args.forums_only:
-            _probe_reddit(Registry(rows), ent, args.days)
+            _probe_reddit(reg, ent, args.days)
+            if args.routes:
+                _probe_reddit_variants(term)
 
         if not args.reddit_only:
-            term = (ent["name"] if ent else "hdfc bank")
-            print(f"\n\n=== INDIAN COMPLAINT FORUMS -- searching for {term!r}")
-            print("    (structure only -- no parser is written for these yet)")
-            for name, template in FORUMS:
-                _probe_forum(name, template, term)
+            if args.structure:
+                print(f"\n\n=== FORUM STRUCTURE -- searching for {term!r}")
+                for name, template in FORUMS:
+                    _probe_forum(name, template, term)
+            elif ent:
+                _probe_forum_parser(reg, ent)
+            if args.dump:
+                _dump_raw(term)
         return 0
     finally:
         db.close()
