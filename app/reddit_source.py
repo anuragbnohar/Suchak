@@ -137,9 +137,14 @@ def _to_item(post: dict) -> dict | None:
 
 
 def search(registry: Registry, entity_id: int, days: int | None = None,
-           limit: int = MAX_POSTS) -> list[dict]:
+           limit: int = MAX_POSTS, on_progress=None) -> list[dict]:
     """Posts naming this entity, site-wide and in the Indian finance
-    subreddits, newest first and deduplicated by permalink."""
+    subreddits, newest first and deduplicated by permalink.
+
+    `on_progress(label, outcome)` is called around each search. Seven
+    requests with a pause between them take long enough that a caller
+    printing nothing until the end looks hung, so it can report as it goes.
+    """
     # Reddit understands the same quoted-OR-with-exclusions syntax Google
     # News does, so the entity's aliases and its rivals' exclusions carry
     # over unchanged.
@@ -157,17 +162,25 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
         if passes:
             time.sleep(PAUSE_SECONDS)
         passes += 1
+        if on_progress:
+            on_progress(label, "searching")
         try:
             payload = _get(url, params)
         except RedditUnavailable as exc:
             errors.append(f"{label}: {exc}")
+            if on_progress:
+                on_progress(label, f"FAILED -- {exc}")
             return
+        before = len(items)
         for post in _posts(payload):
             item = _to_item(post)
             if not item or item["url"] in seen:
                 continue
             seen.add(item["url"])
             items.append(item)
+        if on_progress:
+            on_progress(label, f"{len(items) - before} new "
+                               f"({len(_posts(payload))} returned)")
 
     collect(SEARCH_URL,
             {"q": query, "sort": "new", "limit": PER_REQUEST,

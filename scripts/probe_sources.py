@@ -136,8 +136,18 @@ def _probe_reddit(reg: Registry, ent, days: int) -> None:
     print(f"\n=== REDDIT -- {ent['name']} (last {days} days)")
     print(f"    user-agent : {reddit_source.USER_AGENT[:70]}")
     print(f"    subreddits : {', '.join(reddit_source.SUBREDDITS)}")
+    print(f"    {reddit_source.PAUSE_SECONDS:.0f}s pause between searches, "
+          f"{len(reddit_source.SUBREDDITS) + 1} searches -- about "
+          f"{int((len(reddit_source.SUBREDDITS) + 1) * (reddit_source.PAUSE_SECONDS + 2))}s\n")
+
+    def progress(label, outcome):
+        if outcome == "searching":
+            print(f"      {label:<22} ...", end="", flush=True)
+        else:
+            print(f" {outcome}", flush=True)
+
     try:
-        items = reddit_source.search(reg, ent["id"], days)
+        items = reddit_source.search(reg, ent["id"], days, on_progress=progress)
     except reddit_source.RedditUnavailable as exc:
         print(f"\n    COULD NOT RUN: {exc}")
         if reddit_source.LAST_DIAGNOSIS:
