@@ -46,6 +46,12 @@ NAV_TIMEOUT_MS = 45_000
 
 SEARCH_URL = "https://x.com/search?q={query}&f=live"
 
+# Filled whenever a search returns nothing. "Found nothing" and "extraction
+# is broken" look identical from the outside, and the difference decides
+# whether a supervisor should act on the silence -- so the empty case records
+# what the page actually contained instead of leaving it to be guessed.
+LAST_DIAGNOSIS: dict = {}
+
 
 class ScrapeUnavailable(RuntimeError):
     """Raised when the collector cannot run at all, as opposed to running
@@ -152,6 +158,36 @@ def _first_visible(page, selectors, timeout_ms: int):
                 pass
         page.wait_for_timeout(400)
     return None
+
+
+def _diagnose(page) -> dict:
+    """What the results page held when nothing was extracted."""
+    def count(sel):
+        try:
+            return page.locator(sel).count()
+        except Exception:
+            return -1
+    try:
+        body = " ".join(page.inner_text("body").split())[:400]
+    except Exception:
+        body = "(unreadable)"
+    shot = ""
+    try:
+        page.screenshot(path=DEBUG_SHOT, full_page=False)
+        shot = DEBUG_SHOT
+    except Exception:
+        pass
+    return {
+        "url": page.url,
+        "signed_in": _signed_in(page),
+        "articles_any": count("article"),
+        "articles_tweet": count('article[data-testid="tweet"]'),
+        "timeline_cells": count('[data-testid="cellInnerDiv"]'),
+        "tweet_text_nodes": count('div[data-testid="tweetText"]'),
+        "login_prompt": count('a[href="/login"]') + count('a[href="/i/flow/login"]'),
+        "body_start": body,
+        "screenshot": shot,
+    }
 
 
 def _page_summary(page) -> str:
@@ -314,12 +350,25 @@ def scrape_query(query: str, max_posts: int = MAX_POSTS) -> list[dict]:
                     f"Delete {STATE_PATH} and run again to sign in fresh.")
 
             try:
-                page.wait_for_selector('article[data-testid="tweet"]', timeout=20_000)
+                page.wait_for_selector('article[data-testid="tweet"]', timeout=25_000)
             except Exception:
-                body = (page.inner_text("body")[:400] if page.locator("body").count() else "")
-                if re.search(r"rate limit|try again|unusual", body, re.I):
-                    raise ScrapeUnavailable(f"X returned a rate-limit or block page: {body[:160]}")
-                # No posts and no block page: a genuinely empty search.
+                diag = _diagnose(page)
+                LAST_DIAGNOSIS.clear(); LAST_DIAGNOSIS.update(diag)
+                if re.search(r"rate limit|try again|unusual|something went wrong",
+                             diag["body_start"], re.I):
+                    raise ScrapeUnavailable(
+                        f"X returned a rate-limit or block page: {diag['body_start'][:200]}")
+                if not diag["signed_in"] or diag["login_prompt"]:
+                    raise ScrapeUnavailable(
+                        "The search page is not authenticated -- the saved session "
+                        f"carries no usable login. Delete {STATE_PATH} and sign in "
+                        "again with --login-only --show-browser. " + _page_summary(page))
+                if diag["articles_any"] or diag["timeline_cells"]:
+                    raise ScrapeUnavailable(
+                        "The page rendered a timeline but no element matched "
+                        f"article[data-testid=\"tweet\"] ({diag['articles_any']} articles, "
+                        f"{diag['timeline_cells']} cells). X has changed its markup; "
+                        "the selectors are in _EXTRACT in app/x_scrape.py.")
                 log.info("No posts for %r", query)
                 return []
 
@@ -342,6 +391,9 @@ def scrape_query(query: str, max_posts: int = MAX_POSTS) -> list[dict]:
         finally:
             browser.close()
 
+    if not out:
+        LAST_DIAGNOSIS.clear()
+        LAST_DIAGNOSIS.update({"note": "articles were present but yielded no text/href"})
     return [_as_candidate(t) for t in out[:max_posts]]
 
 

@@ -23,6 +23,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--entity", help="name or alias substring; uses that entity's handle")
     ap.add_argument("--handle", help="probe a handle directly, without an entity")
+    ap.add_argument("--query", help="run this exact search string, bypassing to:handle")
     ap.add_argument("--max", type=int, default=10, help="posts to collect (default 10)")
     ap.add_argument("--login-only", action="store_true",
                     help="sign in and save the session, collect nothing")
@@ -73,6 +74,8 @@ def main() -> int:
         return 0
 
     handle = args.handle
+    if args.query:
+        handle = handle or "(explicit query)"
     if not handle:
         if not args.entity:
             print("Give --entity or --handle. Use --login-only to just sign in.")
@@ -97,7 +100,7 @@ def main() -> int:
         finally:
             db.close()
 
-    query = f"to:{handle} -filter:retweets"
+    query = args.query or f"to:{handle} -filter:retweets"
     print(f"query        : {query}\nmax posts    : {args.max}\n\ncollecting...\n")
     try:
         posts = x_scrape.scrape_query(query, args.max)
@@ -113,10 +116,22 @@ def main() -> int:
         return 3
 
     if not posts:
-        print("Ran successfully and found nothing.\n")
-        print("Either the handle genuinely has no recent replies, or extraction is\n"
-              "broken and silently returning zero. Re-run with --show-browser: if\n"
-              "you can see posts on screen and this prints none, it is extraction.")
+        print("Ran and found nothing. What the page actually held:\n")
+        d = x_scrape.LAST_DIAGNOSIS
+        if not d:
+            print("  (no diagnosis captured)")
+        for k in ("url", "signed_in", "articles_any", "articles_tweet",
+                  "timeline_cells", "tweet_text_nodes", "login_prompt",
+                  "screenshot", "note"):
+            if k in d:
+                print(f"  {k:16} {d[k]}")
+        if d.get("body_start"):
+            print(f"\n  page text: {d['body_start'][:240]}")
+        print("\nReading it: signed_in False means the session is not really logged\n"
+              "in. Articles present but articles_tweet zero means X changed its\n"
+              "markup. Everything zero on a busy handle usually means the search\n"
+              "itself returned nothing -- try --query \"to:HDFCBank_Cares\" to drop\n"
+              "the retweet filter, or a plain keyword to prove search works at all.")
         return 0
 
     print(f"{len(posts)} post(s):\n")
