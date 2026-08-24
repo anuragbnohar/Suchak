@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import taxonomy
+from . import forums, reddit_source, taxonomy, x_scrape
 from .auth import get_user, require_login, require_role, verify_password
 from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
                        EXCLUSION_RULES_KEY, SEVERITY_DEFS_KEY,
