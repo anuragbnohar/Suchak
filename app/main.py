@@ -774,7 +774,9 @@ def social_page(request: Request):
                       total_grievances=len(grievances),
                       not_grievances=len(rows) - len(grievances),
                       collected=len(rows), handles=handles,
-                      x_enabled=X_ENABLED, x_configured=bool(X_BEARER),
+                      x_enabled=X_ENABLED or x_scrape.ENABLED,
+                      any_source=(reddit_source.ENABLED or forums.ENABLED
+                                  or X_ENABLED or x_scrape.ENABLED),
                       x_cap=X_MAX_POSTS)
     finally:
         db.close()

@@ -4,8 +4,9 @@
 <div class="page-head">
   <div>
     <h1>Social media</h1>
-    <p class="page-sub">Customer grievances posted to
-      {% if entity %}{{ entity.name }}'s handle{% else %}your entities' handles{% endif %} on X,
+    <p class="page-sub">Customer grievances about
+      {% if entity %}{{ entity.name }}{% else %}your entities{% endif %}
+      from Reddit and consumercomplaints.in{% if x_enabled %} and X{% endif %},
       grouped by what the complaint is about.</p>
   </div>
   {% if entities|length > 1 %}
@@ -20,16 +21,14 @@
   {% endif %}
 </div>
 
-{% if not x_enabled %}
-<p class="warn-note">Collection from X is switched off. Set <code>SUCHAK_X_ENABLED=1</code>
-  and <code>SUCHAK_X_BEARER</code>, give each entity its grievance handle on the
-  <a href="/entities">Entities</a> page, then press Fetch.
-  {% if not x_configured %}No bearer token is configured.{% endif %}
-  This is the only paid source — at most {{ x_cap }} posts per entity per fetch.</p>
-{% elif not handles %}
-<p class="warn-note">No entity has a grievance handle yet. Add one on the
-  <a href="/entities">Entities</a> page — complaints are collected from posts
-  addressed to it.</p>
+{% if not any_source %}
+<p class="warn-note">Every social source is switched off
+  (<code>SUCHAK_REDDIT=0</code> and <code>SUCHAK_FORUMS=0</code>, and X is not
+  configured). Nothing will be collected until one is enabled.</p>
+{% elif x_enabled and not handles %}
+<p class="warn-note">X is enabled but no entity has a grievance handle yet. Add one
+  on the <a href="/entities">Entities</a> page — Reddit and consumercomplaints.in
+  need no handle and are collected regardless.</p>
 {% endif %}
 
 <div class="toolbar">
@@ -75,7 +74,9 @@
   {{ collected }} post{{ 's' if collected != 1 }} collected in total ·
   {{ total_grievances }} judged a grievance ·
   {{ not_grievances }} not shown here because the classifier found no complaint in them.
-  Posts are collected from replies addressed to each entity's grievance handle, capped at
-  {{ x_cap }} per entity per fetch. Use the lookback picker on the
-  <a href="/entities">Entities</a> page to widen the period.</p>
+  Posts come from Reddit and consumercomplaints.in{% if x_enabled %} and from replies
+  to each entity's X handle{% endif %}, roughly {{ x_cap }} per source per entity per
+  fetch. Old consumercomplaints entries carry no date — the site publishes none for
+  them. Use the lookback picker on the <a href="/entities">Entities</a> page to widen
+  the period.</p>
 {% endblock %}
