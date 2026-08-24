@@ -32,6 +32,11 @@ from pathlib import Path
 
 log = logging.getLogger("suchak.x_scrape")
 
+# Bumped whenever this module changes. Printed by scripts/probe_x.py so any
+# output pasted into a bug report names the build that produced it -- three
+# debugging rounds were lost to output from a stale copy of this file.
+BUILD = "2026-08-24.5-diagnose"
+
 ENABLED = os.environ.get("SUCHAK_X_SCRAPE", "").strip().lower() in ("1", "true", "yes")
 USER = os.environ.get("SUCHAK_X_USER", "")
 PASS = os.environ.get("SUCHAK_X_PASS", "")

@@ -37,6 +37,7 @@ def main() -> int:
     # switched on for fetches, because that is the point of testing it.
     x_scrape.ENABLED = True
 
+    print(f"build        : x_scrape {x_scrape.BUILD}")
     print(f"session file : {x_scrape.STATE_PATH}"
           f"  ({'present' if os.path.exists(x_scrape.STATE_PATH) else 'none yet'})")
     print(f"credentials  : user {'set' if x_scrape.USER else 'MISSING'},"
