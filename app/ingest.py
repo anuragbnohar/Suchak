@@ -63,6 +63,8 @@ NEWS_EDITIONS = {
     "ml": ("ml", "IN", "IN:ml"),
 }
 DEFAULT_LANGUAGES = ["en"]
+# How many of an entity's aliases go into the search query.
+NEWS_QUERY_ALIASES = int(os.environ.get("SUCHAK_QUERY_ALIASES", "6"))
 # Google News returns at most ~100 results per query, so this is the ceiling
 # rather than a throttle.
 MAX_ENTRIES_PER_FEED = int(os.environ.get("SUCHAK_MAX_ENTRIES", "100"))
@@ -169,11 +171,27 @@ def entity_languages(entity) -> list[str]:
     return langs or DEFAULT_LANGUAGES
 
 
+def aliases_for_language(aliases: list[str], lang: str) -> list[str]:
+    """Put the spellings that suit this edition first. Only the first few
+    aliases reach the query, so an entity carrying both Latin and Devanagari
+    forms would otherwise send Latin ones to the Marathi edition and never
+    search in the script that edition indexes."""
+    native = [a for a in aliases if not a.isascii()]
+    latin = [a for a in aliases if a.isascii()]
+    return latin + native if lang == "en" else native + latin
+
+
 def google_news_url(registry: Registry, entity_id: int, lang: str = "en",
                     days: int | None = None) -> str:
     """Feed URL for one entity in one language: its aliases, minus the longer
     names that contain them, limited to the lookback window."""
-    query = build_query(registry, entity_id, days=effective_days(days) or None)
+    # max_aliases is 3 by default. An entity the press names several ways --
+    # "Nagpur Nagarik Bank", "Nagpur Nagarik Sah Bank" -- needs more than
+    # three in the query, or the feed never returns the headline that
+    # attribution would have accepted.
+    ordered = aliases_for_language(registry.entities[entity_id]["aliases"], lang)
+    query = build_query(registry, entity_id, days=effective_days(days) or None,
+                        max_aliases=NEWS_QUERY_ALIASES, aliases=ordered)
     hl, gl, ceid = NEWS_EDITIONS.get(lang, NEWS_EDITIONS["en"])
     return GOOGLE_NEWS_RSS.format(query=urllib.parse.quote(query),
                                   hl=hl, gl=gl, ceid=ceid)
@@ -590,6 +608,11 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         if not cand.get("attribution_confident") and \
                 not registry.mentions(entity["id"], f"{title} {cand['snippet']}"):
             result["rejected"] += 1
+            # The count alone cannot be acted on. Naming the headline turns
+            # "6 rejected" into a question someone can answer -- usually
+            # "the press spells the name differently from the alias".
+            log.info("Rejected for %s (no alias match): %r",
+                     entity["name"], title[:120])
             continue
 
         if one(db, "SELECT 1 FROM items WHERE entity_id=? AND url=?", (entity["id"], link)):

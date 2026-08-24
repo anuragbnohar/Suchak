@@ -130,7 +130,8 @@ class Registry:
 
 
 def build_query(registry: Registry, entity_id: int, days: int | None = None,
-                max_aliases: int = 3, or_token: str = "OR") -> str:
+                max_aliases: int = 3, or_token: str = "OR",
+                aliases: list[str] | None = None) -> str:
     """Search string: this entity's aliases, minus the longer names that
     contain them, optionally limited to a recent window.
 
@@ -138,7 +139,9 @@ def build_query(registry: Registry, entity_id: int, days: int | None = None,
     which spell the boolean the same idea two different ways.
     """
     ent = registry.entities[entity_id]
-    aliases = ent["aliases"][:max_aliases]
+    # `aliases` lets the caller decide which spellings matter for this feed --
+    # a Marathi edition wants the Devanagari forms, not the Latin ones.
+    aliases = (aliases if aliases is not None else ent["aliases"])[:max_aliases]
     query = f" {or_token} ".join(f'"{a}"' for a in aliases)
     if len(aliases) > 1:
         query = f"({query})"

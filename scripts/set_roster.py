@@ -62,7 +62,22 @@ ROSTER = [
     # alias list, and without it a Marathi headline is dropped before any
     # model sees it. RBI press releases about it stay in English.
     ("Nagpur Nagrik Sahakari Bank Ltd.", "Urban Cooperative Bank",
-     ["Nagpur Nagrik Sahakari Bank", "नागपूर नागरिक सहकारी बँक"],
+     # Every form the press actually prints, taken from real headlines: the
+     # Hitavada writes "Nagpur Nagarik Bank", Indian Cooperative writes
+     # "Nagpur Nagarik Sah Bank", and both transliterations of नागरिक are in
+     # use. Attribution is a contiguous phrase match, so "Nagpur Nagarik
+     # Sahakari Bank" does not match a headline that drops or abbreviates
+     # Sahakari -- each form has to be listed. Short forms come first because
+     # only the first few aliases go into the search query, and the shortest
+     # phrase is the one that finds the most.
+     ["Nagpur Nagarik Bank", "Nagpur Nagrik Bank",
+      "Nagpur Nagarik Sah Bank", "Nagpur Nagrik Sah Bank",
+      "Nagpur Nagarik Sahakari Bank", "Nagpur Nagrik Sahakari Bank",
+      "नागपूर नागरिक बँक", "नागपूर नागरीक बँक",
+      "नागपूर नागरिक सहकारी बँक", "नागपूर नागरीक सहकारी बँक",
+      # The bank's own signage. Distinctive enough to be worth carrying, and
+      # the cheap screen rejects a false match for a fraction of a verdict.
+      "NNSB"],
      [],
      ["en", "mr"]),
 ]
