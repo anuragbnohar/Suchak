@@ -212,59 +212,83 @@ def _probe_forum_parser(reg: Registry, ent) -> None:
         if it["snippet"]:
             print(f"                   {it['snippet'][:100]}")
     if undated:
-        bycompany = sum(1 for i in items
-                        if not i["published_at"] and "/bycompany/" in i["url"])
+        info = forums.LAST_DIAGNOSIS.get("undated") or {}
         print(f"\n    {undated} of {len(items)} carry no date.")
+        if info.get("kinds"):
+            kinds = ", ".join(f"{k}: {n}" for k, n in
+                              sorted(info["kinds"].items(), key=lambda x: -x[1]))
+            print(f"    undated by type : {kinds}")
+        bycompany = info.get("bycompany", 0)
         if bycompany:
-            print(f"    {bycompany} of those are /bycompany/ listings, which "
-                  "the site publishes with no date at all -- its own page "
-                  "leaves the element empty. They are collected anyway and "
-                  "the lookback window never excludes them.")
+            print(f"    {bycompany} are /bycompany/ listings, whose date slot "
+                  "the site leaves empty on the results page.")
+        unexplained = undated - bycompany
+        if unexplained > 0:
+            print(f"    {unexplained} are NOT explained yet -- the site shows "
+                  "a date below the complainant's name for rows like these. "
+                  "Run with --dump to capture their markup.")
 
 
 def _dump_raw(term: str) -> None:
-    """Print the markup of a result the parser could not date.
+    """Print the full markup of rows the parser could not date.
 
-    Dumping the first result is close to useless: the first ones are the
-    ones that already work. The interesting row is one the parser read but
-    found no date on, so that is the one this looks for.
+    Prefers rows that are NOT /bycompany/ listings: those are already
+    explained (their date slot is empty on the results page). What needs
+    seeing is a row that shows a date in the browser while the parser
+    finds none. Both result pages are fetched, since page 2 held most of
+    the undated rows.
     """
-    print(f"\n\n=== RAW MARKUP of an undated result (term {term!r})")
-    try:
-        r = httpx.get("https://www.consumercomplaints.in/",
-                      params={"search": term},
-                      headers={"User-Agent": BROWSER_UA},
-                      timeout=30, follow_redirects=True)
-    except httpx.HTTPError as exc:
-        print(f"    UNREACHABLE: {exc}")
-        return
+    print(f"\n\n=== RAW MARKUP of undated results (term {term!r})")
+    chosen: list[tuple[int, dict, str]] = []
+    for page in (1, 2):
+        if len(chosen) >= 3:
+            break
+        params = {"search": term}
+        if page > 1:
+            params["page"] = page
+            time.sleep(1.5)
+        try:
+            r = httpx.get("https://www.consumercomplaints.in/", params=params,
+                          headers={"User-Agent": BROWSER_UA},
+                          timeout=30, follow_redirects=True)
+        except httpx.HTTPError as exc:
+            print(f"    page {page} UNREACHABLE: {exc}")
+            continue
+        parser = forums._Results()
+        parser.feed(r.text)
+        parser.close()
+        undated = [row for row in parser.rows
+                   if not row.get("date") and not row.get("date_text")
+                   and not forums._date_from_region(row.get("region", ""))]
+        preferred = ([row for row in undated if "/bycompany/" not in (row.get("href") or "")]
+                     or undated)
+        print(f"    page {page}: {len(parser.rows)} rows, {len(undated)} undated, "
+              f"{len(preferred)} of interest")
+        for row in preferred:
+            if len(chosen) >= 3:
+                break
+            chosen.append((page, row, r.text))
 
-    parser = forums._Results()
-    parser.feed(r.text)
-    parser.close()
-    if not parser.rows:
-        i = r.text.find(forums.TITLE_CLASS)
+    if not chosen:
+        print("    nothing to dump: every parsed row carries a date.")
+        return
+    for page, row, text in chosen:
+        href = row.get("href") or ""
+        print(f"\n    --- page {page} | kind {row.get('kind') or '?'} | "
+              f"{row.get('title', '')[:64]!r}")
+        i = text.find(href)
         if i < 0:
-            print("    marker class not present -- the layout has changed.")
-            print("   ", r.text[:600].replace("\n", " "))
-        else:
-            print(r.text[max(0, i - 700): i + 900])
-        return
-
-    undated = [row for row in parser.rows
-               if not row.get("date") and not row.get("date_text")]
-    print(f"    {len(parser.rows)} rows parsed, {len(undated)} without a date")
-    row = (undated or parser.rows)[0]
-    print(f"    showing: {row.get('title', '')[:70]!r}")
-    print(f"    href   : {row.get('href')}")
-
-    # Anchor on this row's own link so the right block is shown.
-    i = r.text.find(row.get("href") or "")
-    if i < 0:
-        print("    could not locate that row in the raw page.")
-        return
-    print()
-    print(r.text[max(0, i - 400): i + 2200])
+            print("        (row not locatable in the raw page)")
+            continue
+        # The row's own container opens at the nearest id="s..." marker;
+        # the next one closes it. That is the complete complaint block.
+        start_i = text.rfind('<div id="s', 0, i)
+        if start_i < 0:
+            start_i = max(0, i - 500)
+        end_i = text.find('<div id="s', i + 1)
+        if end_i < 0:
+            end_i = i + 2400
+        print(text[start_i:min(end_i, start_i + 2600)])
 
 
 def _probe_reddit(reg: Registry, ent, days: int) -> None:

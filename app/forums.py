@@ -29,7 +29,7 @@ from .matching import Registry
 
 log = logging.getLogger("suchak.forums")
 
-BUILD = "2026-08-24.4-consumercomplaints"
+BUILD = "2026-08-24.5-consumercomplaints"
 
 ENABLED = os.environ.get("SUCHAK_FORUMS", "1").strip().lower() not in ("0", "false", "no")
 
@@ -95,7 +95,13 @@ class _Results(html.parser.HTMLParser):
     def _flush(self) -> None:
         if self._cur and self._cur.get("title"):
             bodies = self._cur.pop("bodies", [])
-            self._cur["body"] = max(bodies, key=len) if bodies else ""
+            # The header carries a short type label under the same class as
+            # the body -- "(complaint)", "(review)". Keep it as the row's
+            # kind: if undated rows cluster by kind, that names the cause.
+            labels = [b for b in bodies if re.fullmatch(r"\(\w+\)", b)]
+            real = [b for b in bodies if b not in labels]
+            self._cur["kind"] = labels[0].strip("()") if labels else ""
+            self._cur["body"] = max(real, key=len) if real else ""
             self._cur["region"] = " ".join(self._region)[:1200]
             self.rows.append(self._cur)
         self._cur = None
@@ -237,6 +243,7 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
     seen: set[str] = set()
     items: list[dict] = []
     errors: list[str] = []
+    undated_info = {"total": 0, "bycompany": 0, "kinds": {}}
     pages = 0
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)) if days else None
 
@@ -285,6 +292,12 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
                         continue
                 except ValueError:
                     pass
+            if published is None:
+                undated_info["total"] += 1
+                if "/bycompany/" in url:
+                    undated_info["bycompany"] += 1
+                kind = row.get("kind") or "untyped"
+                undated_info["kinds"][kind] = undated_info["kinds"].get(kind, 0) + 1
             seen.add(url)
             items.append({
                 "title": row["title"],
@@ -302,7 +315,7 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
 
     LAST_DIAGNOSIS.clear()
     LAST_DIAGNOSIS.update({"term": term, "pages": pages, "found": len(items),
-                           "errors": errors})
+                           "errors": errors, "undated": undated_info})
 
     if errors and not items:
         raise ForumUnavailable(errors[0].split(": ", 1)[-1])
