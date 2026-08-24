@@ -91,9 +91,51 @@ PASSWORD_SELECTORS = ('input[name="password"]', 'input[type="password"]',
                       'input[autocomplete="current-password"]')
 CHALLENGE_SELECTORS = ('input[data-testid="ocfEnterTextTextInput"]',
                        'input[data-testid="challenge_response"]')
+# In a visible run the operator can finish the login by hand -- solve a
+# CAPTCHA, approve a device, or just sign in. The collector's job then is to
+# notice and capture the session, not to insist on driving every keystroke.
+MANUAL_LOGIN_MS = int(os.environ.get("SUCHAK_X_MANUAL_LOGIN_SECONDS", "240")) * 1000
+HOME_MARKERS = ('[data-testid="SideNav_AccountSwitcher_Button"]',
+                '[data-testid="AppTabBar_Home_Link"]',
+                '[data-testid="primaryColumn"]')
 DEBUG_SHOT = os.environ.get(
     "SUCHAK_X_DEBUG_SHOT",
     str(Path(__file__).resolve().parent.parent / ".x_login_debug.png"))
+
+
+def _signed_in(page) -> bool:
+    """Already authenticated? A logged-in session lands on the timeline, and
+    /i/flow/login redirects there rather than showing a form."""
+    try:
+        if re.search(r"https://(x|twitter)\.com/home", page.url):
+            return True
+        return any(page.locator(sel).first.count() for sel in HOME_MARKERS)
+    except Exception:
+        return False
+
+
+def _await_step(page, selectors, timeout_ms: int):
+    """Wait for whichever comes first: the session becoming authenticated, or
+    one of these fields appearing. Returns ("home", None), ("field", locator)
+    or ("none", None).
+
+    Written as a race rather than a wait on one selector because the login
+    can complete without this code touching it -- the operator finishing it
+    in a visible window is a supported path, not an anomaly.
+    """
+    deadline = time.time() + timeout_ms / 1000
+    while time.time() < deadline:
+        if _signed_in(page):
+            return "home", None
+        for sel in selectors:
+            loc = page.locator(sel).first
+            try:
+                if loc.count() and loc.is_visible():
+                    return "field", loc
+            except Exception:
+                pass
+        page.wait_for_timeout(500)
+    return ("home", None) if _signed_in(page) else ("none", None)
 
 
 def _first_visible(page, selectors, timeout_ms: int):
@@ -127,61 +169,89 @@ def _page_summary(page) -> str:
 
 
 def _login(context) -> None:
-    if not (USER and PASS):
-        raise ScrapeUnavailable(
-            "No saved session and no credentials: set SUCHAK_X_USER and SUCHAK_X_PASS")
+    """Establish a session, however it gets established.
+
+    Driving the form is the fast path, not the only one: X may already
+    recognise the browser, and in a visible run the operator may complete the
+    login by hand. Both end with a session worth saving, so every step here
+    checks for that before insisting on the next field.
+    """
     page = context.new_page()
     page.set_default_timeout(NAV_TIMEOUT_MS)
+    manual_ok = not HEADLESS
     try:
         page.goto("https://x.com/i/flow/login", wait_until="domcontentloaded")
         try:
-            page.wait_for_load_state("networkidle", timeout=20_000)
+            page.wait_for_load_state("networkidle", timeout=15_000)
         except Exception:
-            pass                      # a busy page is fine; the field check decides
-        _sleep(1.5, 2.5)
+            pass
+        _sleep(1.0, 2.0)
 
-        field = _first_visible(page, USERNAME_SELECTORS, 25_000)
-        if field is None:
+        if _signed_in(page):
+            context.storage_state(path=STATE_PATH)
+            log.info("Already signed in; session saved to %s", STATE_PATH)
+            return
+
+        if not (USER and PASS) and not manual_ok:
             raise ScrapeUnavailable(
-                "The login page never showed a username field. X may be serving a "
+                "No saved session and no credentials: set SUCHAK_X_USER and "
+                "SUCHAK_X_PASS, or run with SUCHAK_X_HEADLESS=0 and sign in by hand")
+
+        wait_ms = MANUAL_LOGIN_MS if manual_ok else 25_000
+        state, field = _await_step(page, USERNAME_SELECTORS, wait_ms)
+        if state == "home":
+            context.storage_state(path=STATE_PATH)
+            log.info("Signed in (completed outside this script); session saved")
+            return
+        if state == "none":
+            raise ScrapeUnavailable(
+                "No username field and no signed-in session. X may be serving a "
                 "consent, error or bot-check page, or it has renamed the field. "
-                "Re-run with SUCHAK_X_HEADLESS=0 to watch it. " + _page_summary(page))
+                + _page_summary(page))
+        if not USER:
+            raise ScrapeUnavailable(
+                "A login form is showing but SUCHAK_X_USER is not set. Either set "
+                "the credentials, or sign in by hand in this window.")
         field.fill(USER)
         page.keyboard.press("Enter")
         _sleep()
 
-        # X inserts an identity challenge when it does not recognise the device.
-        challenge = _first_visible(page, CHALLENGE_SELECTORS, 6_000)
-        if challenge is not None:
+        state, challenge = _await_step(page, CHALLENGE_SELECTORS, 6_000)
+        if state == "home":
+            context.storage_state(path=STATE_PATH)
+            return
+        if state == "field":
             if not VERIFY:
                 raise ScrapeUnavailable(
                     "X asked to verify the account (usually the email or phone on "
-                    "it). Set SUCHAK_X_VERIFY to that value. " + _page_summary(page))
+                    "it). Set SUCHAK_X_VERIFY to that value, or type it in this "
+                    "window. " + _page_summary(page))
             challenge.fill(VERIFY)
             page.keyboard.press("Enter")
             _sleep()
 
-        pwd = _first_visible(page, PASSWORD_SELECTORS, 25_000)
-        if pwd is None:
+        state, pwd = _await_step(page, PASSWORD_SELECTORS, wait_ms)
+        if state == "home":
+            context.storage_state(path=STATE_PATH)
+            return
+        if state == "none":
             raise ScrapeUnavailable(
-                "The password field never appeared. The username step may have "
-                "been rejected, or a challenge is on screen. " + _page_summary(page))
+                "The password field never appeared and the session is not signed "
+                "in. The username step may have been rejected. " + _page_summary(page))
         pwd.fill(PASS)
         page.keyboard.press("Enter")
 
-        try:
-            page.wait_for_url(re.compile(r"https://(x|twitter)\.com/home"),
-                              timeout=NAV_TIMEOUT_MS)
-        except Exception:
-            if _first_visible(page, PASSWORD_SELECTORS, 2_000) is not None:
-                raise ScrapeUnavailable(
-                    "Still on the password step: the credentials were rejected, or "
-                    "X is asking for another factor. " + _page_summary(page))
+        state, _ = _await_step(page, PASSWORD_SELECTORS, wait_ms)
+        if state == "home":
+            _sleep(1.0, 2.0)
+            context.storage_state(path=STATE_PATH)
+            log.info("X session saved to %s", STATE_PATH)
+            return
+        if state == "field":
             raise ScrapeUnavailable(
-                "Login did not reach the timeline. " + _page_summary(page))
-        _sleep(1.0, 2.0)
-        context.storage_state(path=STATE_PATH)
-        log.info("X session saved to %s", STATE_PATH)
+                "Still on the password step: the credentials were rejected, or X "
+                "wants another factor. " + _page_summary(page))
+        raise ScrapeUnavailable("Login did not reach the timeline. " + _page_summary(page))
     finally:
         page.close()
 

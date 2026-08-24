@@ -454,6 +454,13 @@ python -m scripts.probe_x --login-only --show-browser   # sign in once
 python -m scripts.probe_x --entity HDFC --max 10        # probe one handle
 ```
 
+Signing in by hand is a supported path, not a fallback. With
+`--show-browser` the collector waits (default 4 minutes,
+`SUCHAK_X_MANUAL_LOGIN_SECONDS`) for the session to become authenticated
+however that happens — you solving a CAPTCHA, approving a device, or simply
+logging in yourself — and saves it. It also recognises a browser X already
+trusts and skips the form entirely.
+
 It distinguishes the two outcomes that matter: **could not run** (session
 expired, rate limit, markup changed) prints why and exits non-zero, while
 **ran and found nothing** says so explicitly. Those look identical in a
