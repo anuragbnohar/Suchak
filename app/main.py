@@ -152,9 +152,19 @@ def visible_entities(db, user) -> list:
 
 
 def resolve_entity(db, user, requested: str | None):
+    """The entity a page is scoped to, or None for "every entity I can see".
+
+    Only the super admin has a cross-entity scope, and it exists so the
+    severity and risk views can hand a total somewhere to open: a count of
+    high-severity items across the portfolio has no single entity behind it.
+    """
     entities = visible_entities(db, user)
     if not entities:
         raise HTTPException(404, "No entities configured")
+    if requested == "all":
+        if user["role"] != "superadmin":
+            raise HTTPException(403, "Cross-entity view is for the super admin")
+        return None, entities
     if requested:
         for e in entities:
             if str(e["id"]) == str(requested):
@@ -233,7 +243,12 @@ def queue(request: Request):
         except ValueError:
             days = 0
 
-        where, params = ["i.entity_id = ?"], [entity["id"]]
+        if entity is None:
+            ids = [e["id"] for e in entities]
+            where = [f"i.entity_id IN ({','.join('?' * len(ids))})"]
+            params = list(ids)
+        else:
+            where, params = ["i.entity_id = ?"], [entity["id"]]
         if status == "open":
             where.append("i.status IN ('new','classified') AND i.gated_out = 0")
         elif status == "filtered":
@@ -276,8 +291,10 @@ def queue(request: Request):
             db,
             "SELECT i.*, u.display_name AS reviewer_name,"
             " (SELECT COUNT(*) FROM item_sources s WHERE s.item_id = i.id) AS extra_sources,"
-            " (SELECT COUNT(*) FROM reviews r WHERE r.item_id = i.id) AS review_count"
-            " FROM items i LEFT JOIN users u ON u.id = i.reviewed_by"
+            " (SELECT COUNT(*) FROM reviews r WHERE r.item_id = i.id) AS review_count,"
+            " e.name AS entity_name"
+            " FROM items i JOIN entities e ON e.id = i.entity_id"
+            " LEFT JOIN users u ON u.id = i.reviewed_by"
             f" WHERE {' AND '.join(where)}"
             " ORDER BY CASE COALESCE(i.review_severity, i.severity)"
             "   WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
@@ -288,11 +305,17 @@ def queue(request: Request):
             " i.relevance DESC, i.published_at DESC LIMIT 200",
             params,
         )
+        if entity is None:
+            scope_sql, scope_args = (
+                f"entity_id IN ({','.join('?' * len(entities))})",
+                [e["id"] for e in entities])
+        else:
+            scope_sql, scope_args = "entity_id = ?", [entity["id"]]
         counts = {r["s"]: r["n"] for r in q(
             db, "SELECT CASE WHEN gated_out = 1 THEN 'filtered'"
                 "        WHEN status IN ('new','classified') THEN 'open'"
                 "        ELSE status END s,"
-                " COUNT(*) n FROM items WHERE entity_id = ? GROUP BY s", (entity["id"],))}
+                f" COUNT(*) n FROM items WHERE {scope_sql} GROUP BY s", tuple(scope_args))}
         prepped = [prep_item(r) for r in rows]
 
         # the Complaints tile leads here: group by each item's primary topic
@@ -313,6 +336,7 @@ def queue(request: Request):
             ("complaints", "1" if complaints else ""), ("topic", topic)) if v}
         filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
         return render(request, "queue.html", user=user, entity=entity,
+                      entity_qs="all" if entity is None else entity["id"],
                       entities=entities, items=prepped, grouped=grouped,
                       status=status, risk=risk, counts=counts,
                       extras=extras, filter_qs=filter_qs)

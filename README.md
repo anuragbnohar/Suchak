@@ -217,9 +217,15 @@ X recent search is capped at 7 days by its API regardless.
   as clickable chips: the queue is per entity, so a cross-entity total nobody
   could open would break the rule that every figure is a drill-down. A
   reviewer's severity *and* risk-area corrections drive the grouping, not the
-  classifier's original verdict. Items still awaiting classification are
-  excluded and counted in a footnote — they carry no verdict, and including
-  them would file every one under *low*.
+  classifier's original verdict — on every surface, not just here. Items still
+  awaiting classification are excluded and counted in a footnote: they carry
+  no verdict, and including them would file every one under *low*.
+
+  Every figure in these views opens the items behind it. Totals and
+  awaiting-review counts lead to a **cross-entity queue** (`?entity=all`,
+  super admin only), which labels each row with the entity it belongs to; the
+  per-entity chips lead to that entity's own filtered queue. A number a
+  supervisor cannot open is not a drill-down.
   Two deliberate exceptions to the day window: *Awaiting review* and *Open
   actions* are all-time, because an item unread or a follow-up owed five weeks
   ago is still work today. Both are labelled as such, and where an entity has

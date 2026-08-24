@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Queue · {{ entity.name }} · Suchak{% endblock %}
+{% block title %}Queue · {{ entity.name if entity else "All entities" }} · Suchak{% endblock %}
 
 {% macro item_row(it) %}
   <li class="item-row sev-{{ it.severity_shown }}">
@@ -10,13 +10,14 @@
         {% if it.source_type_label %}<span class="type-chip">{{ it.source_type_label }}</span>{% endif %}
       </div>
       <div class="item-meta">
+        {% if not entity %}<span class="entity-chip">{{ it.entity_name }}</span>{% endif %}
         <span class="meta-action">{{ it.actionability_label }}</span>
-        {% for area in it.risk_areas %}<span class="area-chip">{{ area }}</span>{% endfor %}
+        {% for area in it.risk_areas_shown %}<span class="area-chip">{{ area }}</span>{% endfor %}
         {% for t in it.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
         {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
         <span class="meta-dim">{% if it.source_tier == 'trusted' %}<span class="ok-chip" title="trusted source">✓</span> {% endif %}{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }} more source{{ 's' if it.extra_sources > 1 }}{% endif %}</span>
         <span class="meta-dim">{{ it.published_at | timeago }}</span>
-        {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name }}{% if it.review_count and it.review_count > 1 %} · {{ it.review_count }} reviews{% endif %}</span>{% endif %}
+        {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name or "a removed user" }}{% if it.review_count and it.review_count > 1 %} · {{ it.review_count }} reviews{% endif %}</span>{% endif %}
         {% if it.status == 'dismissed' %}<span class="meta-dim">✕ dismissed</span>{% endif %}
         {% if it.status == 'new' %}<span class="meta-dim">awaiting classification</span>{% endif %}
         {% if it.gated_out %}<span class="meta-dim">filtered: {{ it.gate_reason }}</span>{% endif %}
@@ -29,15 +30,14 @@
 <div class="page-head">
   <div>
     <h1>Review queue</h1>
-    <p class="page-sub">{{ entity.name }} · {{ entity.kind }}</p>
+    <p class="page-sub">{% if entity %}{{ entity.name }} · {{ entity.kind }}{% else %}Every entity you supervise{% endif %}</p>
   </div>
   {% if entities|length > 1 %}
   <form method="get" action="/queue" class="entity-picker">
     <label>Entity
       <select name="entity" onchange="this.form.submit()">
-        {% for e in entities %}
-        <option value="{{ e.id }}" {% if e.id == entity.id %}selected{% endif %}>{{ e.name }}</option>
-        {% endfor %}
+        {% if user.role == 'superadmin' %}<option value="all" {% if not entity %}selected{% endif %}>All entities</option>{% endif %}
+        {% for e in entities %}<option value="{{ e.id }}" {% if entity and e.id == entity.id %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
       </select>
     </label>
   </form>
@@ -48,14 +48,14 @@
   <nav class="tabs">
     {% for s, label in [('open','To review'), ('reviewed','Reviewed'), ('dismissed','Dismissed'), ('filtered','Filtered out'), ('all','All')] %}
     <a class="tab {% if status == s %}active{% endif %}"
-       href="/queue?entity={{ entity.id }}&amp;status={{ s }}{{ filter_qs }}">
+       href="/queue?entity={{ entity_qs }}&amp;status={{ s }}{{ filter_qs }}">
       {{ label }}
       {% if s != 'all' and counts.get(s) %}<span class="tab-count">{{ counts.get(s) }}</span>{% endif %}
     </a>
     {% endfor %}
   </nav>
   <form method="get" action="/queue" class="risk-filter">
-    <input type="hidden" name="entity" value="{{ entity.id }}">
+    <input type="hidden" name="entity" value="{{ entity_qs }}">
     <input type="hidden" name="status" value="{{ status }}">
     {% for k, v in extras.items() if k not in ('risk', 'src') %}
     <input type="hidden" name="{{ k }}" value="{{ v }}">
@@ -90,14 +90,14 @@
     {%- else %}{{ k }}: {{ v }}{% endif -%}
   </span>
   {% endfor %}
-  <a href="/queue?entity={{ entity.id }}&amp;status={{ status }}">✕ clear filters</a>
+  <a href="/queue?entity={{ entity_qs }}&amp;status={{ status }}">✕ clear filters</a>
 </div>
 {% endif %}
 {% if grouped %}
   {% for g in grouped %}
   <section class="topic-group">
     <h2 class="topic-head">
-      <a href="/queue?entity={{ entity.id }}&amp;status={{ status }}{{ filter_qs }}&amp;topic={{ g.topic | urlencode }}">{{ g.topic }}</a>
+      <a href="/queue?entity={{ entity_qs }}&amp;status={{ status }}{{ filter_qs }}&amp;topic={{ g.topic | urlencode }}">{{ g.topic }}</a>
       <span class="tab-count">{{ g.entries | length }}</span>
     </h2>
     <ul class="item-list">

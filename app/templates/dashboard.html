@@ -114,7 +114,7 @@
       <li>
         <a href="/item/{{ it.id }}">{{ it.title }}</a>
         <p class="meta-dim small">{{ it.published_at | timeago }} ·
-          {{ it.risk_areas | join(', ') if it.risk_areas else 'uncategorized' }}</p>
+          {{ it.risk_areas_shown | join(', ') if it.risk_areas_shown else 'uncategorized' }}</p>
       </li>
       {% endfor %}
     </ul>

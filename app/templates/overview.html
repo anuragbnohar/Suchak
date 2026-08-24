@@ -76,11 +76,13 @@
     <th scope="col">Latest item</th>
   </tr>
   {% for r in sev_rows %}
+  {% set sev_qs = '&sev=' ~ r.category %}
   <tr class="{% if r.category == 'high' and r.total %}row-serious{% endif %}">
-    <td><span class="sev-chip sev-chip-{{ r.category }}">{{ r.category }}</span></td>
-    <td class="num">{{ r.total }}</td>
-    <td class="num">{{ r.open }}</td>
-    <td>{{ entity_split(r, '&sev=' ~ r.category) }}</td>
+    <td><a href="/queue?entity=all&amp;status=all&amp;days={{ days }}{{ sev_qs }}"
+           class="cat-link"><span class="sev-chip sev-chip-{{ r.category }}">{{ r.category }}</span></a></td>
+    <td class="num"><a href="/queue?entity=all&amp;status=all&amp;days={{ days }}{{ sev_qs }}">{{ r.total }}</a></td>
+    <td class="num"><a href="/queue?entity=all&amp;status=open{{ sev_qs }}">{{ r.open }}</a></td>
+    <td>{{ entity_split(r, sev_qs) }}</td>
     <td class="meta-dim">{{ r.last | timeago }}</td>
   </tr>
   {% endfor %}
@@ -98,12 +100,14 @@
     <th scope="col">Latest item</th>
   </tr>
   {% for r in risk_rows %}
+  {% set risk_qs = '&risk=' ~ (r.category | urlencode) %}
+  {% set risk_base = '/queue?entity=all&amp;status=all&amp;days=' ~ days ~ risk_qs %}
   <tr class="{% if r.high %}row-serious{% endif %}">
-    <td><strong>{{ r.category }}</strong></td>
-    <td class="num">{{ r.total }}</td>
-    <td class="num">{% if r.high %}<span class="sev-chip sev-chip-high">{{ r.high }} high</span>{% else %}0{% endif %}</td>
-    <td class="num">{{ r.open }}</td>
-    <td>{{ entity_split(r, '&risk=' ~ (r.category | urlencode)) }}</td>
+    <td><a href="{{ risk_base }}" class="cat-link"><strong>{{ r.category }}</strong></a></td>
+    <td class="num"><a href="{{ risk_base }}">{{ r.total }}</a></td>
+    <td class="num"><a href="{{ risk_base }}&amp;sev=high">{% if r.high %}<span class="sev-chip sev-chip-high">{{ r.high }} high</span>{% else %}0{% endif %}</a></td>
+    <td class="num"><a href="/queue?entity=all&amp;status=open{{ risk_qs }}">{{ r.open }}</a></td>
+    <td>{{ entity_split(r, risk_qs) }}</td>
     <td class="meta-dim">{{ r.last | timeago }}</td>
   </tr>
   {% endfor %}

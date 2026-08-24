@@ -421,3 +421,13 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--paper); bo
 .split-chip span { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
 .split-chip:hover { border-color: var(--accent); text-decoration: none; }
 .view-note { margin-top: 1rem; }
+.cat-link { color: inherit; }
+.cat-link:hover { text-decoration: none; color: var(--accent); }
+.overview-table td.num a { color: var(--accent); }
+/* in a cross-entity list the entity is not just another tag: it says which
+   bank this is, so it must not read as a risk area */
+.entity-chip {
+  font-size: 0.75rem; font-weight: 700; color: var(--paper);
+  background: var(--ink); border-radius: 4px; padding: 0.1rem 0.5rem;
+  white-space: nowrap;
+}
