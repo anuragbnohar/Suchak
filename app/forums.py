@@ -29,7 +29,7 @@ from .matching import Registry
 
 log = logging.getLogger("suchak.forums")
 
-BUILD = "2026-08-24.3-consumercomplaints"
+BUILD = "2026-08-24.4-consumercomplaints"
 
 ENABLED = os.environ.get("SUCHAK_FORUMS", "1").strip().lower() not in ("0", "false", "no")
 
@@ -269,6 +269,12 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
             url = href if href.startswith("http") else urllib.parse.urljoin(BASE, href)
             if not row.get("title") or not href or url in seen:
                 continue
+            # Complaints listed under a company page (/bycompany/...) are
+            # published with no date: the site renders the date element
+            # empty for them, so there is nothing to read. A dated
+            # complaint can be excluded by the lookback window; an undated
+            # one is kept, because dropping a real grievance for lacking a
+            # timestamp the site never published would lose it silently.
             published = (_parse_date(row.get("date"))
                          or _parse_date(row.get("date_text"))
                          or _date_from_region(row.get("date_text", ""))

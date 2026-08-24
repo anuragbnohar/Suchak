@@ -26,7 +26,7 @@ from .matching import Registry, build_query
 
 log = logging.getLogger("suchak.reddit")
 
-BUILD = "2026-08-24.4-reddit-rss"
+BUILD = "2026-08-24.5-reddit-backoff"
 
 # No credential, so this is on unless deliberately turned off.
 ENABLED = os.environ.get("SUCHAK_REDDIT", "1").strip().lower() not in ("0", "false", "no")
@@ -54,7 +54,12 @@ SUBREDDITS = [s.strip() for s in os.environ.get(
 
 MAX_POSTS = max(10, min(int(os.environ.get("SUCHAK_REDDIT_MAX", "50")), 200))
 PER_REQUEST = 100          # Reddit's ceiling for one search page
-PAUSE_SECONDS = float(os.environ.get("SUCHAK_REDDIT_PAUSE", "2"))
+# Seven searches two seconds apart is faster than Reddit tolerates for an
+# anonymous reader: it served the first two and rate-limited the rest.
+PAUSE_SECONDS = float(os.environ.get("SUCHAK_REDDIT_PAUSE", "5"))
+# Waits after a 429, in order. Reddit's own Retry-After wins when it sends
+# one. Three tries and then the search is reported as failed.
+RETRY_WAITS = (15.0, 45.0)
 TIMEOUT = 25
 
 LAST_DIAGNOSIS: dict = {}
@@ -83,44 +88,59 @@ def _strip_html(text: str) -> str:
 
 
 def _get(url: str, params: dict):
-    """One search request, with Reddit's refusals named rather than
-    collapsed into an empty list."""
+    """One search request, retried through rate-limiting, with Reddit's
+    refusals named rather than collapsed into an empty list."""
     headers = {"User-Agent": USER_AGENT,
                "Accept": "application/atom+xml, application/xml, text/xml"}
-    try:
-        resp = httpx.get(url, params=params, headers=headers,
-                         timeout=TIMEOUT, follow_redirects=True)
-    except httpx.HTTPError as exc:
-        raise RedditUnavailable(f"Could not reach Reddit: {exc}") from exc
+    for attempt in range(len(RETRY_WAITS) + 1):
+        try:
+            resp = httpx.get(url, params=params, headers=headers,
+                             timeout=TIMEOUT, follow_redirects=True)
+        except httpx.HTTPError as exc:
+            raise RedditUnavailable(f"Could not reach Reddit: {exc}") from exc
 
-    if resp.status_code == 429:
-        raise RedditUnavailable(
-            "Reddit rate-limited the request (HTTP 429). Wait a few minutes "
-            "and fetch again, or raise SUCHAK_REDDIT_PAUSE.")
-    if resp.status_code in (403, 401):
-        raise RedditUnavailable(
-            f"Reddit refused the request (HTTP {resp.status_code}). Reddit "
-            "blocks anonymous reads on most of its routes; this collector "
-            "uses the one that answers (the Atom feed on www). If that is "
-            "now refused too, run `python -m scripts.probe_sources "
-            "--entity <name> --routes` to find a route that still works.")
-    if resp.status_code >= 400:
-        raise RedditUnavailable(
-            f"Reddit answered HTTP {resp.status_code}: {resp.text[:200]}")
+        if resp.status_code == 429:
+            if attempt >= len(RETRY_WAITS):
+                raise RedditUnavailable(
+                    "Reddit rate-limited the request (HTTP 429) and was still "
+                    "limiting after "
+                    f"{int(sum(RETRY_WAITS))}s of waiting. Fetch again later, "
+                    "or raise SUCHAK_REDDIT_PAUSE.")
+            # Reddit states how long to wait when it feels like it; its
+            # own number beats a guess.
+            try:
+                wait = float(resp.headers.get("retry-after", ""))
+            except ValueError:
+                wait = RETRY_WAITS[attempt]
+            time.sleep(max(wait, RETRY_WAITS[attempt]))
+            continue
 
-    ctype = resp.headers.get("content-type", "").lower()
-    if not ("xml" in ctype or "rss" in ctype or "atom" in ctype):
-        # A block or interstitial page arrives as HTML with a 200.
-        raise RedditUnavailable(
-            f"Reddit returned {ctype or 'no content-type'} instead of a feed, "
-            "which means a block or interstitial page rather than search "
-            f"results: {_strip_html(resp.text)[:200]}")
+        if resp.status_code in (403, 401):
+            raise RedditUnavailable(
+                f"Reddit refused the request (HTTP {resp.status_code}). Reddit "
+                "blocks anonymous reads on most of its routes; this collector "
+                "uses the one that answers (the Atom feed on www). If that is "
+                "now refused too, run `python -m scripts.probe_sources "
+                "--entity <name> --routes` to find a route that still works.")
+        if resp.status_code >= 400:
+            raise RedditUnavailable(
+                f"Reddit answered HTTP {resp.status_code}: {resp.text[:200]}")
 
-    feed = feedparser.parse(resp.text)
-    if getattr(feed, "bozo", 0) and not feed.entries:
-        raise RedditUnavailable(
-            f"Reddit sent an unreadable feed: {getattr(feed, 'bozo_exception', '')}")
-    return feed
+        ctype = resp.headers.get("content-type", "").lower()
+        if not ("xml" in ctype or "rss" in ctype or "atom" in ctype):
+            # A block or interstitial page arrives as HTML with a 200.
+            raise RedditUnavailable(
+                f"Reddit returned {ctype or 'no content-type'} instead of a "
+                "feed, which means a block or interstitial page rather than "
+                f"search results: {_strip_html(resp.text)[:200]}")
+
+        feed = feedparser.parse(resp.text)
+        if getattr(feed, "bozo", 0) and not feed.entries:
+            raise RedditUnavailable(
+                f"Reddit sent an unreadable feed: "
+                f"{getattr(feed, 'bozo_exception', '')}")
+        return feed
+    raise RedditUnavailable("Reddit did not answer.")
 
 
 def _posts(feed) -> list:

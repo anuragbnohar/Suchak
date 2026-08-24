@@ -212,9 +212,14 @@ def _probe_forum_parser(reg: Registry, ent) -> None:
         if it["snippet"]:
             print(f"                   {it['snippet'][:100]}")
     if undated:
-        print(f"\n    {undated} of {len(items)} carry no date. If that is all "
-              "of them the date element differs from <time datetime=...>; "
-              "run with --dump to show the raw markup of one complaint.")
+        bycompany = sum(1 for i in items
+                        if not i["published_at"] and "/bycompany/" in i["url"])
+        print(f"\n    {undated} of {len(items)} carry no date.")
+        if bycompany:
+            print(f"    {bycompany} of those are /bycompany/ listings, which "
+                  "the site publishes with no date at all -- its own page "
+                  "leaves the element empty. They are collected anyway and "
+                  "the lookback window never excludes them.")
 
 
 def _dump_raw(term: str) -> None:
