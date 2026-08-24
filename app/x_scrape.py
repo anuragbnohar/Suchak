@@ -35,7 +35,7 @@ log = logging.getLogger("suchak.x_scrape")
 # Bumped whenever this module changes. Printed by scripts/probe_x.py so any
 # output pasted into a bug report names the build that produced it -- three
 # debugging rounds were lost to output from a stale copy of this file.
-BUILD = "2026-08-24.5-diagnose"
+BUILD = "2026-08-24.6-results-scope"
 
 ENABLED = os.environ.get("SUCHAK_X_SCRAPE", "").strip().lower() in ("1", "true", "yes")
 USER = os.environ.get("SUCHAK_X_USER", "")
@@ -176,6 +176,18 @@ def _diagnose(page) -> dict:
         body = " ".join(page.inner_text("body").split())[:400]
     except Exception:
         body = "(unreadable)"
+    # The results column only. The sidebar says "Home Explore Notifications"
+    # on every signed-in page, and scanning it for trouble words made a
+    # perfectly healthy page look like a block.
+    results = ""
+    for sel in ('[data-testid="primaryColumn"]', 'main[role="main"]'):
+        try:
+            loc = page.locator(sel).first
+            if loc.count():
+                results = " ".join(loc.inner_text().split())[:400]
+                break
+        except Exception:
+            pass
     shot = ""
     try:
         page.screenshot(path=DEBUG_SHOT, full_page=False)
@@ -185,6 +197,10 @@ def _diagnose(page) -> dict:
     return {
         "url": page.url,
         "signed_in": _signed_in(page),
+        "results_text": results,
+        "results_error": bool(re.search(
+            r"something went wrong|rate limit|try again|unusual traffic|"
+            r"caption unavailable|couldn.t (?:load|find)", results, re.I)),
         "articles_any": count("article"),
         "articles_tweet": count('article[data-testid="tweet"]'),
         "timeline_cells": count('[data-testid="cellInnerDiv"]'),
@@ -355,14 +371,13 @@ def scrape_query(query: str, max_posts: int = MAX_POSTS) -> list[dict]:
                     f"Delete {STATE_PATH} and run again to sign in fresh.")
 
             try:
-                page.wait_for_selector('article[data-testid="tweet"]', timeout=25_000)
+                page.mouse.wheel(0, 600)      # some result sets only load on interaction
+                page.wait_for_selector('article[data-testid="tweet"]', timeout=35_000)
             except Exception:
                 diag = _diagnose(page)
                 LAST_DIAGNOSIS.clear(); LAST_DIAGNOSIS.update(diag)
-                if re.search(r"rate limit|try again|unusual|something went wrong",
-                             diag["body_start"], re.I):
-                    raise ScrapeUnavailable(
-                        f"X returned a rate-limit or block page: {diag['body_start'][:200]}")
+                # Order matters. Structure is evidence; page text is a guess,
+                # so it only gets a say once structure has nothing to offer.
                 if not diag["signed_in"] or diag["login_prompt"]:
                     raise ScrapeUnavailable(
                         "The search page is not authenticated -- the saved session "
@@ -374,6 +389,10 @@ def scrape_query(query: str, max_posts: int = MAX_POSTS) -> list[dict]:
                         f"article[data-testid=\"tweet\"] ({diag['articles_any']} articles, "
                         f"{diag['timeline_cells']} cells). X has changed its markup; "
                         "the selectors are in _EXTRACT in app/x_scrape.py.")
+                if diag["results_error"]:
+                    raise ScrapeUnavailable(
+                        "X reported an error in the results area: "
+                        f"{diag['results_text'][:200]}")
                 log.info("No posts for %r", query)
                 return []
 

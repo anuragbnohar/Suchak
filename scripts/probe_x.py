@@ -19,6 +19,22 @@ from app.db import connect, init_db, one, q
 from app import x_scrape
 
 
+def _print_diagnosis() -> None:
+    d = x_scrape.LAST_DIAGNOSIS
+    if not d:
+        print("  (no diagnosis captured)")
+        return
+    for k in ("url", "signed_in", "articles_any", "articles_tweet",
+              "timeline_cells", "tweet_text_nodes", "login_prompt",
+              "results_error", "screenshot", "note"):
+        if k in d:
+            print(f"  {k:16} {d[k]}")
+    if d.get("results_text"):
+        print(f"\n  results column: {d['results_text'][:300]}")
+    if d.get("body_start"):
+        print(f"\n  whole page    : {d['body_start'][:300]}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--entity", help="name or alias substring; uses that entity's handle")
@@ -107,7 +123,8 @@ def main() -> int:
         posts = x_scrape.scrape_query(query, args.max)
     except x_scrape.ScrapeUnavailable as exc:
         print(f"COULD NOT RUN: {exc}\n")
-        print("This is the collector failing, not an empty search. Nothing was\n"
+        _print_diagnosis()
+        print("\nThis is the collector failing, not an empty search. Nothing was\n"
               "collected and nothing should be read into the silence.")
         return 2
     except Exception as exc:
@@ -118,16 +135,7 @@ def main() -> int:
 
     if not posts:
         print("Ran and found nothing. What the page actually held:\n")
-        d = x_scrape.LAST_DIAGNOSIS
-        if not d:
-            print("  (no diagnosis captured)")
-        for k in ("url", "signed_in", "articles_any", "articles_tweet",
-                  "timeline_cells", "tweet_text_nodes", "login_prompt",
-                  "screenshot", "note"):
-            if k in d:
-                print(f"  {k:16} {d[k]}")
-        if d.get("body_start"):
-            print(f"\n  page text: {d['body_start'][:240]}")
+        _print_diagnosis()
         print("\nReading it: signed_in False means the session is not really logged\n"
               "in. Articles present but articles_tweet zero means X changed its\n"
               "markup. Everything zero on a busy handle usually means the search\n"
