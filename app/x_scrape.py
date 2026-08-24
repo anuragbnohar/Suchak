@@ -35,7 +35,7 @@ log = logging.getLogger("suchak.x_scrape")
 # Bumped whenever this module changes. Printed by scripts/probe_x.py so any
 # output pasted into a bug report names the build that produced it -- three
 # debugging rounds were lost to output from a stale copy of this file.
-BUILD = "2026-08-24.6-results-scope"
+BUILD = "2026-08-24.7-account-check"
 
 ENABLED = os.environ.get("SUCHAK_X_SCRAPE", "").strip().lower() in ("1", "true", "yes")
 USER = os.environ.get("SUCHAK_X_USER", "")
@@ -393,8 +393,20 @@ def scrape_query(query: str, max_posts: int = MAX_POSTS) -> list[dict]:
                     raise ScrapeUnavailable(
                         "X reported an error in the results area: "
                         f"{diag['results_text'][:200]}")
-                log.info("No posts for %r", query)
-                return []
+                # Signed in, results column rendered, nothing in it. On a busy
+                # grievance handle that is far more likely to be the account
+                # than the week: X restricts search for new or flagged
+                # accounts and returns an empty result rather than an error.
+                # Saying "no complaints" here would be a false negative a
+                # supervisor could act on, so it is reported as unproven.
+                raise ScrapeUnavailable(
+                    "Signed in and the results page rendered, but it contained no "
+                    "posts at all. X restricts search for new or flagged accounts "
+                    "and returns nothing rather than an error, so this cannot be "
+                    "read as 'no complaints'. Confirm by opening the same search "
+                    "in a normal browser signed in as the same account: if it is "
+                    "empty there too, the account is the limit, not this collector. "
+                    + _page_summary(page))
 
             stalled = 0
             for _ in range(MAX_SCROLLS):
