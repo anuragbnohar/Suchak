@@ -44,11 +44,24 @@ own Fetch button, and nothing is collected until you press one. Set
 `SUCHAK_FETCH_MINUTES` to a positive number to add an automatic sweep;
 remember it fetches *every* loaded entity and bills for it unattended.
 
+Each Fetch button has a **lookback picker** (7 / 30 / 90 / 365 days) applying
+to that fetch alone — nothing standing changes and no restart is needed. Use
+it when an entity comes back empty: a small cooperative bank can go months
+without press coverage, and a standing 7-day window cannot tell you that.
+Re-fetching is incremental, so a wider window only classifies — and only
+bills for — what is not already stored. `SUCHAK_LOOKBACK_DAYS` still sets the
+standing default for every entity.
+
+Broadcast feeds (RBI, exchanges) keep their own window: one fetch serves
+every entity, so widening them on one entity's behalf would re-scan the lot.
+X recent search is capped at 7 days by its API regardless.
+
 ## What it does
 
 - **Ingest** — pluggable sources, one normalized item shape. Every fetch is
-  **incremental over a rolling window** (7 days by default, up to 100 items
-  per feed): URLs already stored are skipped, and a story another outlet
+  **incremental over a rolling window** (7 days by default, widenable to 30,
+  90 or 365 for one fetch from the picker beside each Fetch button; up to 100
+  items per entity): URLs already stored are skipped, and a story another outlet
   re-reports merges into the item it duplicates. Re-pressing Fetch therefore
   classifies — and bills for — only what is genuinely new.
   - *Google News RSS* — free, no key. An aggregator, so one query per entity

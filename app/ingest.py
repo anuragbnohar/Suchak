@@ -72,6 +72,15 @@ MAX_ENTRIES_PER_FEED = int(os.environ.get("SUCHAK_MAX_ENTRIES", "100"))
 # what is genuinely new. Raise it for a one-off backfill. 0 = whatever
 # the source considers current.
 LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "7"))
+# Windows offered next to each Fetch button. A single fetch can widen its own
+# window without changing the default for anything else -- useful for a small
+# entity that goes quiet for weeks, where the standing 7 days says nothing.
+LOOKBACK_CHOICES = (7, 30, 90, 365)
+
+
+def effective_days(days: int | None) -> int:
+    """The window this fetch should use: a valid override, else the default."""
+    return days if days in LOOKBACK_CHOICES else LOOKBACK_DAYS
 # Pause between entity feeds so a 33-entity sweep is not seen as abuse.
 FETCH_DELAY_SECONDS = float(os.environ.get("SUCHAK_FETCH_DELAY", "1.5"))
 DUP_WINDOW_DAYS = 7
@@ -160,10 +169,11 @@ def entity_languages(entity) -> list[str]:
     return langs or DEFAULT_LANGUAGES
 
 
-def google_news_url(registry: Registry, entity_id: int, lang: str = "en") -> str:
+def google_news_url(registry: Registry, entity_id: int, lang: str = "en",
+                    days: int | None = None) -> str:
     """Feed URL for one entity in one language: its aliases, minus the longer
     names that contain them, limited to the lookback window."""
-    query = build_query(registry, entity_id, days=LOOKBACK_DAYS or None)
+    query = build_query(registry, entity_id, days=effective_days(days) or None)
     hl, gl, ceid = NEWS_EDITIONS.get(lang, NEWS_EDITIONS["en"])
     return GOOGLE_NEWS_RSS.format(query=urllib.parse.quote(query),
                                   hl=hl, gl=gl, ceid=ceid)
@@ -190,7 +200,7 @@ def _entry_source(entry, link: str) -> str:
         return "unknown"
 
 
-def fetch_google_news(registry: Registry, entity) -> list[dict]:
+def fetch_google_news(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """Google News RSS: free, no key, aggregates the Indian press.
 
     One feed per language configured on the entity. A language edition that
@@ -203,7 +213,7 @@ def fetch_google_news(registry: Registry, entity) -> list[dict]:
     for n, lang in enumerate(entity_languages(entity)):
         if n and FETCH_DELAY_SECONDS:
             time.sleep(FETCH_DELAY_SECONDS)
-        url = google_news_url(registry, entity["id"], lang)
+        url = google_news_url(registry, entity["id"], lang, days)
         try:
             resp = httpx.get(url, timeout=20, follow_redirects=True,
                              headers={"User-Agent": "Suchak/0.1 (supervisory prototype)"})
@@ -229,7 +239,7 @@ def fetch_google_news(registry: Registry, entity) -> list[dict]:
     return items[:MAX_ENTRIES_PER_FEED]
 
 
-def fetch_youtube(registry: Registry, entity) -> list[dict]:
+def fetch_youtube(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """YouTube Data API v3 search.
 
     Video titles and descriptions are short and promotional, so the free
@@ -247,8 +257,9 @@ def fetch_youtube(registry: Registry, entity) -> list[dict]:
         "maxResults": YOUTUBE_MAX_RESULTS,
         "regionCode": "IN",
     }
-    if LOOKBACK_DAYS:
-        since = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
+    window = effective_days(days)
+    if window:
+        since = datetime.now(timezone.utc) - timedelta(days=window)
         params["publishedAfter"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     resp = httpx.get(YOUTUBE_SEARCH, params=params, timeout=20)
@@ -305,7 +316,7 @@ def x_query(registry: Registry, entity) -> str:
     return query
 
 
-def fetch_x(registry: Registry, entity) -> list[dict]:
+def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """X/Twitter recent search, scoped to customer complaints.
 
     Paid, billed per post returned. One request per entity per sweep, never
@@ -316,7 +327,7 @@ def fetch_x(registry: Registry, entity) -> list[dict]:
         return []
 
     since = datetime.now(timezone.utc) - timedelta(
-        days=min(LOOKBACK_DAYS or X_RECENT_SEARCH_DAYS, X_RECENT_SEARCH_DAYS))
+        days=min(effective_days(days) or X_RECENT_SEARCH_DAYS, X_RECENT_SEARCH_DAYS))
     params = {
         "query": x_query(registry, entity),
         "max_results": min(X_MAX_POSTS, 100),   # API ceiling per request
@@ -528,14 +539,20 @@ def fetch_broadcast_sources(db, registry: Registry) -> dict[int, list[dict]]:
 
 
 def ingest_entity(db, entity, registry: Registry | None = None,
-                  extra_candidates: list[dict] | None = None) -> dict:
+                  extra_candidates: list[dict] | None = None,
+                  days: int | None = None) -> dict:
     """Fetch every enabled source for one entity and store what survives
     disambiguation and de-duplication. `extra_candidates` carries items
-    already routed to this entity from broadcast feeds (RBI, exchanges)."""
+    already routed to this entity from broadcast feeds (RBI, exchanges).
+    `days` widens this fetch's window only; it changes nothing standing."""
     registry = registry or load_registry(db)
     result = {"found": 0, "added": 0, "merged": 0, "rejected": 0,
               "billed": 0, "note": None}
     notes = []
+
+    window = effective_days(days)
+    if window != LOOKBACK_DAYS:
+        notes.append(f"searched {window} days")
 
     trusted_norms = load_trusted_norms(db)
     entity_stop = alias_tokens(json.loads(entity["aliases"]))
@@ -544,7 +561,7 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         notes.append(f"{len(candidates)} from regulator/exchange feeds")
     for name, fetch in SOURCES.items():
         try:
-            got = fetch(registry, entity)
+            got = fetch(registry, entity, days)
             candidates.extend(got)
             billed = sum(1 for c in got if c.get("billed"))
             if billed:
@@ -646,9 +663,14 @@ def _log_fetch(db, entity_id: int, result: dict) -> None:
        result["merged"], note))
 
 
-def run_cycle(entity_id: int | None = None) -> dict:
+def run_cycle(entity_id: int | None = None, days: int | None = None) -> dict:
     """Fetch (all or one entity) then classify anything new. Opens its own
-    DB connection — safe to call from a background thread."""
+    DB connection — safe to call from a background thread.
+
+    `days` widens the per-entity feeds for this run only. Broadcast feeds
+    (RBI, exchanges) keep their own window: one fetch serves every entity,
+    so widening them for one entity's sake would re-scan the lot.
+    """
     if not fetch_lock.acquire(blocking=False):
         return {"skipped": True, "reason": "a fetch cycle is already running"}
     started = time.monotonic()
@@ -668,7 +690,8 @@ def run_cycle(entity_id: int | None = None) -> dict:
                 if n and FETCH_DELAY_SECONDS:
                     time.sleep(FETCH_DELAY_SECONDS)
                 r = ingest_entity(db, entity, registry,
-                                  extra_candidates=routed.get(entity["id"], []))
+                                  extra_candidates=routed.get(entity["id"], []),
+                                  days=days)
                 totals["entities"] += 1
                 for k in ("found", "added", "merged", "rejected", "billed"):
                     totals[k] += r[k]

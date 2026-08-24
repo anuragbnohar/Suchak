@@ -390,3 +390,17 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--paper); bo
   border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.88rem;
 }
 .lang-input { max-width: 7rem; min-width: 5rem; }
+.fetch-form { display: flex; gap: 0.35rem; align-items: center; }
+.fetch-form-all { justify-content: flex-end; }
+.lookback-select { width: auto; min-width: 0; font-size: 0.8rem; padding: 0.24rem 0.4rem; }
+.fetch-form-all .lookback-select { font-size: 0.85rem; padding: 0.42rem 0.55rem; }
+
+/* the entities table carries inputs and two action buttons, so it outgrows
+   narrow viewports; scroll it inside the panel rather than the page */
+.table-scroll { overflow-x: auto; }
+.entity-table { min-width: 56rem; }
+.entity-table th:first-child, .entity-table td:first-child { min-width: 10rem; }
+.entity-table .inline-form input[name="aliases"] { min-width: 11rem; }
+/* .inline-form sets a 14rem floor on inputs; a list of two-letter codes
+   does not need it, and the width it steals clips the row's buttons */
+.entity-table .lang-input { min-width: 4.5rem; max-width: 6rem; }

@@ -24,7 +24,7 @@ from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
                        similar_reviewed, suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
-from .ingest import NEWS_EDITIONS, run_cycle
+from .ingest import LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, run_cycle
 from .seed import seed_if_empty
 from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
                     recompute_source_tiers)
@@ -953,9 +953,11 @@ def entities_page(request: Request):
             n_items = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=?", (e["id"],))["n"]
             last_fetch = one(db, "SELECT * FROM fetch_log WHERE entity_id=?"
                                  " ORDER BY id DESC LIMIT 1", (e["id"],))
+            # NOT "items": Jinja resolves r.items to dict.items (the method)
+            # before it looks for the key, and renders the bound method.
             rows.append({"entity": e, "aliases": json.loads(e["aliases"]),
                          "languages": json.loads(e["languages"] or '["en"]'),
-                         "items": n_items, "last_fetch": last_fetch})
+                         "n_items": n_items, "last_fetch": last_fetch})
         # latest status per broadcast feed (RBI, NSE, BSE) -- logged with a
         # NULL entity because one fetch serves every entity
         broadcast, seen = [], set()
@@ -965,7 +967,8 @@ def entities_page(request: Request):
                 seen.add(r["source"])
                 broadcast.append(r)
         return render(request, "entities.html", user=user, rows=rows,
-                      broadcast=broadcast, fetch_minutes=FETCH_MINUTES)
+                      broadcast=broadcast, fetch_minutes=FETCH_MINUTES,
+                      lookback_choices=LOOKBACK_CHOICES, lookback_default=LOOKBACK_DAYS)
     finally:
         db.close()
 
@@ -1096,6 +1099,11 @@ async def entities_aliases(request: Request, entity_id: int):
 async def fetch_now(request: Request):
     form = await request.form()
     entity_id = form.get("entity_id")
+    # A window chosen for this fetch only. Anything unrecognised falls back to
+    # the standing default rather than erroring: a bad value must not be able
+    # to turn one Fetch press into a year-wide scan.
+    raw_days = (form.get("days") or "").strip()
+    days = int(raw_days) if raw_days.isdigit() and int(raw_days) in LOOKBACK_CHOICES else None
     db = connect()
     try:
         user = require_login(db, request)
@@ -1105,7 +1113,8 @@ async def fetch_now(request: Request):
             raise HTTPException(403, "Not your team's entity")
     finally:
         db.close()
-    _spawn(asyncio.to_thread(run_cycle, int(entity_id) if entity_id else None))
+    _spawn(asyncio.to_thread(run_cycle, int(entity_id) if entity_id else None, days))
+    window = days or LOOKBACK_DAYS
     return RedirectResponse(
-        "/entities?msg=Fetch+started+in+background+—+refresh+in+a+minute",
+        f"/entities?msg={quote(f'Fetch started — searching the last {window} days. Refresh in a minute.')}",
         status_code=303)
