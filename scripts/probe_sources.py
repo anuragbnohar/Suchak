@@ -34,7 +34,7 @@ from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
 
-PROBE_BUILD = "2026-08-24.8-company-scan"
+PROBE_BUILD = "2026-08-24.9-company-via-complaint"
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -241,10 +241,13 @@ def _probe_company_page(term: str) -> None:
     Search results are relevance-ranked, so they surface decade-old
     complaints and near-name companies (HDFC Bank Standard Life). The
     company page is the site's canonical, entity-specific list -- if it
-    parses, it beats searching. This discovers its URL from the search
-    page's own links rather than guessing the slug.
+    parses, it beats searching. Its URL is discovered, never guessed:
+    from the search page's own links where they exist, and otherwise from
+    a matching complaint's page -- the search page only links "verified"
+    companies, but every complaint page links the company it was filed
+    under.
     """
-    print(f"\n\n=== COMPANY PAGE -- discovering from the search page's links")
+    print(f"\n\n=== COMPANY PAGE -- discovering from the site's own links")
     try:
         r = httpx.get("https://www.consumercomplaints.in/",
                       params={"search": term},
@@ -254,27 +257,68 @@ def _probe_company_page(term: str) -> None:
         print(f"    UNREACHABLE: {exc}")
         return
 
-    counts = collections.Counter(_COMPANY_HREF.findall(r.text))
-    if not counts:
-        print("    no company-page links (-b<id>) on the search page at all.")
-        return
     words = [w for w in re.split(r"[^a-z0-9]+", term.lower()) if w]
+
     def matched(slug: str) -> int:
         return sum(1 for w in words if w in slug)
-    ranked = sorted(counts.items(),
-                    key=lambda kv: (-matched(kv[0]), -kv[1]))
-    print("    candidates (slug, links on page, name-words matched):")
-    for slug, n in ranked[:4]:
-        print(f"      {slug:<44} x{n}  matches {matched(slug)}/{len(words)}")
 
-    best, n = ranked[0]
-    # Every word must match: "bank" alone would fetch any bank's page for
-    # any other bank, so a generic word is never enough on its own.
-    if matched(best) < len(words):
-        print(f"    closest is {best}, but it does not match the full name "
-              "-- not fetching another company's page.")
-        return
-    url = "https://www.consumercomplaints.in" + best
+    counts = collections.Counter(_COMPANY_HREF.findall(r.text))
+    slug = None
+    if counts:
+        ranked = sorted(counts.items(), key=lambda kv: (-matched(kv[0]), -kv[1]))
+        print("    on the search page (slug, links, name-words matched):")
+        for cand, n in ranked[:4]:
+            print(f"      {cand:<44} x{n}  matches {matched(cand)}/{len(words)}")
+        # Every word must match: "bank" alone would fetch any bank's page
+        # for any other bank, so a generic word is never enough on its own.
+        if matched(ranked[0][0]) == len(words):
+            slug = ranked[0][0]
+    else:
+        print("    no company-page links (-b<id>) on the search page.")
+
+    if slug is None:
+        print("    none is this entity's own page -- following a complaint "
+              "instead, since a complaint page links the company it was "
+              "filed under.")
+        parser = forums._Results()
+        parser.feed(r.text)
+        parser.close()
+        rows = [row for row in parser.rows
+                if all(w in (row.get("title") or "").lower() for w in words)
+                and (row.get("href") or "").startswith("/")
+                and "/bycompany/" not in (row.get("href") or "")]
+        # A dated row is a recent complaint; its company link reflects the
+        # page the site files new complaints under today.
+        rows.sort(key=lambda row: bool(row.get("date_text") or row.get("date")),
+                  reverse=True)
+        if not rows:
+            print("    no matching complaint rows to follow either.")
+            return
+        for row in rows[:2]:
+            href = "https://www.consumercomplaints.in" + row["href"]
+            print(f"    reading {row['href'][:72]}")
+            time.sleep(1.5)
+            try:
+                cp = httpx.get(href, headers={"User-Agent": BROWSER_UA},
+                               timeout=30, follow_redirects=True)
+            except httpx.HTTPError as exc:
+                print(f"      UNREACHABLE: {exc}")
+                continue
+            c2 = collections.Counter(_COMPANY_HREF.findall(cp.text))
+            r2 = sorted(c2.items(), key=lambda kv: (-matched(kv[0]), -kv[1]))
+            if r2 and matched(r2[0][0]) == len(words):
+                slug = r2[0][0]
+                print(f"      it names its company: {slug}  (x{r2[0][1]})")
+                break
+            if r2:
+                print(f"      best link there is {r2[0][0]} -- not a full "
+                      "name match")
+        if slug is None:
+            print("    could not discover this entity's company page without "
+                  "guessing -- staying with search results.")
+            return
+
+    url = "https://www.consumercomplaints.in" + slug
     print(f"\n    fetching {url}")
     time.sleep(1.5)
     try:
