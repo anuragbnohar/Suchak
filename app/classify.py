@@ -423,12 +423,16 @@ def classify_item(db, item) -> None:
         source_type = item["source_type"] or "news"
     except (KeyError, IndexError):
         source_type = "news"
-    # Official sources (RBI releases, exchange filings) are routed to an
-    # entity deterministically by the registry -- asking a model whether the
-    # filing is "about" the bank would only cost money and add a failure
-    # mode. The screen exists for noisy feeds, so it runs only on those.
+    # Sources whose attribution comes from the request rather than from the
+    # text skip the screen. RBI releases and exchange filings are routed to
+    # an entity deterministically by the registry. Social posts are collected
+    # by searching the entity's own grievance handle, and a customer writing
+    # "my card was debited twice, no refund" never names the bank -- asking a
+    # model whether that post is "about HDFC Bank" would discard the very
+    # complaints the source exists to find. The screen exists for noisy
+    # feeds, so it runs only on those.
     exclusion_rules = get_setting(db, EXCLUSION_RULES_KEY, DEFAULT_EXCLUSION_RULES)
-    if GATE_MODEL and source_type not in ("regulatory", "filing"):
+    if GATE_MODEL and source_type not in ("regulatory", "filing", "social"):
         try:
             keep, excluded, reason = _gate(entity, item["title"],
                                            item["source_name"], exclusion_rules)

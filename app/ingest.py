@@ -43,6 +43,7 @@ from .db import connect, one, q, x
 from .matching import Registry, build_query
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
                          strip_publisher)
+from . import x_scrape
 from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
@@ -514,10 +515,30 @@ def fetch_bse() -> list[dict]:
     return items
 
 
+def fetch_x_scrape(registry: Registry, entity, days: int | None = None) -> list[dict]:
+    """Complaints addressed to the entity's grievance handle, read from a
+    signed-in browser session rather than the paid API.
+
+    Off unless SUCHAK_X_SCRAPE=1. Costs nothing per post, so the ceiling
+    here is about how much classification the fetch will trigger, not about
+    a bill from X.
+    """
+    if not x_scrape.ENABLED:
+        return []
+    handle = (entity["x_handle"] or "").strip().lstrip("@")
+    if not handle:
+        log.info("No X handle for %s -- skipping the browser collector", entity["name"])
+        return []
+    # -filter:replies would drop the complaints themselves; retweets are the
+    # only thing worth excluding at the query.
+    return x_scrape.scrape_query(f"to:{handle} -filter:retweets", x_scrape.MAX_POSTS)
+
+
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
     "x": fetch_x,
+    "x_scrape": fetch_x_scrape,
 }
 
 BROADCAST_SOURCES = {
@@ -589,6 +610,11 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 result["billed"] += billed
                 notes.append(f"{billed} paid posts from {name} "
                              f"(~${billed * X_PRICE_PER_POST:.2f})")
+            elif name == "x_scrape" and x_scrape.ENABLED and entity["x_handle"]:
+                # Always noted, zero included. A DOM change makes this
+                # collector return nothing, which is indistinguishable from a
+                # quiet week unless the count is stated every time.
+                notes.append(f"{len(got)} from X (browser)")
             elif name != "google_news" and got:
                 notes.append(f"{len(got)} from {name}")
         except Exception as exc:

@@ -4,3 +4,6 @@ __pycache__/
 suchak.db
 suchak.db-*
 .env
+
+# a live X session and its cookies — never commit this
+.x_session.json
