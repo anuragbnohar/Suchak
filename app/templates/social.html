@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Social media · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Social media</h1>
+    <p class="page-sub">Customer grievances posted to
+      {% if entity %}{{ entity.name }}'s handle{% else %}your entities' handles{% endif %} on X,
+      grouped by what the complaint is about.</p>
+  </div>
+  {% if entities|length > 1 %}
+  <form method="get" action="/social" class="entity-picker">
+    <label>Entity
+      <select name="entity" onchange="this.form.submit()">
+        {% if user.role == 'superadmin' %}<option value="all" {% if not entity %}selected{% endif %}>All entities</option>{% endif %}
+        {% for e in entities %}<option value="{{ e.id }}" {% if entity and e.id == entity.id %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+</div>
+
+{% if not x_enabled %}
+<p class="warn-note">Collection from X is switched off. Set <code>SUCHAK_X_ENABLED=1</code>
+  and <code>SUCHAK_X_BEARER</code>, give each entity its grievance handle on the
+  <a href="/entities">Entities</a> page, then press Fetch.
+  {% if not x_configured %}No bearer token is configured.{% endif %}
+  This is the only paid source — at most {{ x_cap }} posts per entity per fetch.</p>
+{% elif not handles %}
+<p class="warn-note">No entity has a grievance handle yet. Add one on the
+  <a href="/entities">Entities</a> page — complaints are collected from posts
+  addressed to it.</p>
+{% endif %}
+
+<div class="toolbar">
+  <nav class="tabs" aria-label="Complaint topic">
+    <a class="tab {% if not topic %}active{% endif %}"
+       href="/social?entity={{ entity_qs }}">All<span class="tab-count">{{ total_grievances }}</span></a>
+    {% for t, n in by_topic %}{% if n %}
+    <a class="tab {% if topic == t %}active{% endif %}"
+       href="/social?entity={{ entity_qs }}&amp;topic={{ t | urlencode }}">{{ t }}<span class="tab-count">{{ n }}</span></a>
+    {% endif %}{% endfor %}
+  </nav>
+</div>
+
+{% if not rows %}
+<p class="empty">
+  {% if collected %}{{ collected }} post{{ 's' if collected != 1 }} collected, none of them a
+  grievance{% if topic %} under this topic{% endif %}.
+  {% else %}No posts collected yet. Press Fetch on the <a href="/entities">Entities</a> page.{% endif %}
+</p>
+{% else %}
+<ul class="social-list">
+  {% for it in rows %}
+  <li class="social-card sev-{{ it.severity_shown }}">
+    <p class="social-head">
+      <span class="sev-chip sev-chip-{{ it.severity_shown }}">{{ it.severity_shown }}</span>
+      {% if not entity %}<span class="entity-chip">{{ it.entity_name }}</span>{% endif %}
+      <a class="social-author" href="{{ it.url }}" target="_blank" rel="noopener">{{ it.source_name }}</a>
+      <span class="meta-dim small">{{ it.published_at | timeago }}</span>
+    </p>
+    <p class="social-text">{{ it.snippet or it.title }}</p>
+    <p class="item-meta">
+      {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
+      {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
+      <a href="/item/{{ it.id }}">Review this post</a>
+      {% if it.status == 'reviewed' %}<span class="ok-chip">✓ reviewed</span>{% endif %}
+    </p>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<p class="meta-dim small view-note">
+  {{ collected }} post{{ 's' if collected != 1 }} collected in total ·
+  {{ total_grievances }} judged a grievance ·
+  {{ not_grievances }} not shown here because the classifier found no complaint in them.
+  Posts are collected from replies addressed to each entity's grievance handle, capped at
+  {{ x_cap }} per entity per fetch. Use the lookback picker on the
+  <a href="/entities">Entities</a> page to widen the period.</p>
+{% endblock %}

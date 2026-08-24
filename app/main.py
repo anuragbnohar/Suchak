@@ -24,7 +24,8 @@ from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
                        similar_reviewed, suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
-from .ingest import LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, run_cycle
+from .ingest import (LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS,
+                     X_BEARER, X_ENABLED, X_MAX_POSTS, run_cycle)
 from .seed import seed_if_empty
 from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
                     recompute_source_tiers)
@@ -727,6 +728,58 @@ async def todo_assign(request: Request, item_id: int):
     return RedirectResponse(_todo_back(form, "Action updated"), status_code=303)
 
 
+@app.get("/social")
+def social_page(request: Request):
+    """Customer grievances posted to the entities' handles on X.
+
+    Deliberately narrower than the queue: a social post only appears here if
+    the classifier found a grievance in it. Posts addressed to a bank's care
+    handle that turn out to be praise, questions or noise are counted but not
+    listed, because the supervisory question this screen answers is "what are
+    customers complaining about", not "what was said".
+    """
+    db = connect()
+    try:
+        user = require_login(db, request)
+        entity, entities = resolve_entity(db, user, request.query_params.get("entity"))
+        topic = request.query_params.get("topic", "")
+        if topic not in taxonomy.COMPLAINT_TOPICS:
+            topic = ""
+
+        if entity is None:
+            ids = [e["id"] for e in entities]
+            scope = f"entity_id IN ({','.join('?' * len(ids))})"
+            args = list(ids)
+        else:
+            scope, args = "entity_id = ?", [entity["id"]]
+        rows = [prep_item(r) for r in q(
+            db, "SELECT i.*, e.name AS entity_name FROM items i"
+                " JOIN entities e ON e.id = i.entity_id"
+                f" WHERE i.source_type = 'social' AND i.gated_out = 0 AND i.{scope}",
+            tuple(args))]
+
+        grievances = [r for r in rows if r["complaint_topics"]]
+        by_topic = Counter(t for r in grievances for t in r["complaint_topics"])
+        shown = [r for r in grievances if not topic or topic in r["complaint_topics"]]
+        shown.sort(key=lambda r: (taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3),
+                                  r["published_at"] or ""), reverse=False)
+        shown.reverse()
+        shown.sort(key=lambda r: taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3))
+
+        handles = [e for e in entities if e["x_handle"]]
+        return render(request, "social.html", user=user, entity=entity,
+                      entity_qs="all" if entity is None else entity["id"],
+                      entities=entities, rows=shown, topic=topic,
+                      by_topic=[(t, by_topic.get(t, 0)) for t in taxonomy.COMPLAINT_TOPICS],
+                      total_grievances=len(grievances),
+                      not_grievances=len(rows) - len(grievances),
+                      collected=len(rows), handles=handles,
+                      x_enabled=X_ENABLED, x_configured=bool(X_BEARER),
+                      x_cap=X_MAX_POSTS)
+    finally:
+        db.close()
+
+
 # --- dashboards -------------------------------------------------------------
 
 def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
@@ -1205,8 +1258,13 @@ async def entities_aliases(request: Request, entity_id: int):
         # whatever the entity already had rather than resetting it to English.
         langs = (_parse_languages(form.get("languages")) if form.get("languages") is not None
                  else json.loads(e["languages"] or '["en"]'))
-        x(db, "UPDATE entities SET aliases = ?, languages = ? WHERE id = ?",
-          (json.dumps(aliases), json.dumps(langs), entity_id))
+        # stored bare: the query builder writes "to:handle" itself
+        handle = (form.get("x_handle") or "").strip().lstrip("@") \
+            if form.get("x_handle") is not None else (e["x_handle"] or "")
+        if handle and not re.fullmatch(r"[A-Za-z0-9_]{1,15}", handle):
+            raise HTTPException(400, "An X handle is 1-15 letters, digits or underscores")
+        x(db, "UPDATE entities SET aliases = ?, languages = ?, x_handle = ? WHERE id = ?",
+          (json.dumps(aliases), json.dumps(langs), handle or None, entity_id))
     finally:
         db.close()
     return RedirectResponse("/entities?msg=Aliases+updated", status_code=303)

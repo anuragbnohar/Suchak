@@ -200,6 +200,16 @@ X recent search is capped at 7 days by its API regardless.
   the same severity, official and trusted sources rank first; trusted items
   carry a ✓ beside the outlet; the queue's source filter shows trusted
   sources only. Editing the list re-tiers every stored item immediately.
+- **Social media** — a screen of customer grievances posted to each entity's
+  grievance handle on X, grouped by complaint topic. Deliberately narrower
+  than the queue: a post is listed only if the classifier found a grievance
+  in it. Praise, questions and noise addressed to the same handle are counted
+  in the footer but not shown, because the question this screen answers is
+  *what are customers complaining about*, not *what was said*. Each post links
+  out to the original and in to its review page; the handle is set per entity
+  on the Entities page. Collection is the `care_handle` strategy — `to:handle`
+  — capped at `SUCHAK_X_MAX_POSTS` (default 50) per entity per fetch, and off
+  until `SUCHAK_X_ENABLED=1`.
 - **Complaints view** — the classifier tags customer-grievance items (from
   news and social posts) with topics: Mis-selling, Recovery practices,
   Service disruption, Unauthorized transactions, Charges & fees, Harassment,

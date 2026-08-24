@@ -110,10 +110,13 @@ X_ENABLED = os.environ.get("SUCHAK_X_ENABLED", "").strip().lower() in ("1", "tru
 X_BEARER = os.environ.get("SUCHAK_X_BEARER", "")
 # Hard ceiling on posts per entity per sweep. At $0.005/post this is your
 # spend control: 100 posts = $0.50 per bank per sweep, whatever happens.
-X_MAX_POSTS = max(10, min(int(os.environ.get("SUCHAK_X_MAX_POSTS", "100")), 1000))
+X_MAX_POSTS = max(10, min(int(os.environ.get("SUCHAK_X_MAX_POSTS", "50")), 1000))
 X_PRICE_PER_POST = float(os.environ.get("SUCHAK_X_PRICE_PER_POST", "0.005"))
 # complaints | care_handle | both
-X_STRATEGY = os.environ.get("SUCHAK_X_STRATEGY", "complaints")
+# care_handle: posts addressed TO the entity's grievance handle. That is
+# where customers actually complain, and it needs no name matching -- nobody
+# writes out "HDFC Bank Ltd." when replying to @HDFCBank_Cares.
+X_STRATEGY = os.environ.get("SUCHAK_X_STRATEGY", "care_handle")
 X_LANGS = [c.strip() for c in os.environ.get("SUCHAK_X_LANGS", "en,hi").split(",") if c.strip()]
 X_RECENT_SEARCH_DAYS = 7
 

@@ -431,3 +431,18 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--paper); bo
   background: var(--ink); border-radius: 4px; padding: 0.1rem 0.5rem;
   white-space: nowrap;
 }
+.handle-input { max-width: 10rem; min-width: 7rem; }
+
+/* social media: a post is its own content, so the text leads rather than a
+   headline standing in for it */
+.social-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.social-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong); border-radius: var(--radius);
+  padding: 0.9rem 1.1rem; box-shadow: var(--shadow-sm);
+}
+.social-card.sev-high { border-left-color: var(--serious); }
+.social-card.sev-medium { border-left-color: var(--warning); }
+.social-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.55rem; margin: 0; }
+.social-author { font-family: var(--mono); font-size: 0.82rem; font-weight: 600; }
+.social-text { margin: 0.5rem 0 0; font-size: 0.92rem; line-height: 1.5; }

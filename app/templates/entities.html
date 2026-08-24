@@ -35,6 +35,7 @@
         <th scope="col">Kind</th>
         <th scope="col">Aliases</th>
         <th scope="col">News in</th>
+        <th scope="col">X handle</th>
         <th scope="col" class="num">Items</th>
         <th scope="col">Last fetch</th>
         {% if user.role in ('lead','superadmin') %}<th scope="col"></th>{% endif %}
@@ -44,17 +45,21 @@
         <td><strong>{{ r.entity.name }}</strong></td>
         <td class="meta-dim">{{ r.entity.kind }}</td>
         {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
-        <td colspan="2">
+        <td colspan="3">
           <form method="post" action="/entities/{{ r.entity.id }}/aliases" class="inline-form">
             <input name="aliases" value="{{ r.aliases | join(', ') }}">
             <input name="languages" value="{{ r.languages | join(', ') }}"
                    class="lang-input" title="Google News language codes, e.g. en, mr">
+            <input name="x_handle" value="{{ r.entity.x_handle or '' }}"
+                   class="handle-input" placeholder="@care handle"
+                   title="The entity's grievance handle on X — complaints addressed to it are collected">
             <button type="submit" class="btn btn-small">Save</button>
           </form>
         </td>
         {% else %}
         <td>{{ r.aliases | join(', ') }}</td>
         <td class="meta-dim">{{ r.languages | join(', ') }}</td>
+        <td class="meta-dim">{{ ('@' ~ r.entity.x_handle) if r.entity.x_handle else '—' }}</td>
         {% endif %}
         <td class="num">{{ r.n_items }}</td>
         <td class="meta-dim small">
