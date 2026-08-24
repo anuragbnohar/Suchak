@@ -15,6 +15,7 @@ worth doing, and what to write it against.
 """
 import argparse
 import collections
+import re
 import time
 import html.parser
 import json
@@ -32,6 +33,8 @@ import httpx
 from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
+
+PROBE_BUILD = "2026-08-24.8-company-scan"
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -222,11 +225,95 @@ def _probe_forum_parser(reg: Registry, ent) -> None:
         if bycompany:
             print(f"    {bycompany} are /bycompany/ listings, whose date slot "
                   "the site leaves empty on the results page.")
-        unexplained = undated - bycompany
-        if unexplained > 0:
-            print(f"    {unexplained} are NOT explained yet -- the site shows "
-                  "a date below the complainant's name for rows like these. "
-                  "Run with --dump to capture their markup.")
+        others = undated - bycompany
+        if others > 0:
+            print(f"    {others} are older complaints (dumped rows confirmed "
+                  "their date slot is empty on the results page too). The "
+                  "site dates recent complaints; it leaves old ones blank.")
+
+
+_COMPANY_HREF = re.compile(r'href="(/[a-z0-9-]+-b\d+)(?:#[^"]*)?"')
+
+
+def _probe_company_page(term: str) -> None:
+    """Find the site's own page for this company and try to read it.
+
+    Search results are relevance-ranked, so they surface decade-old
+    complaints and near-name companies (HDFC Bank Standard Life). The
+    company page is the site's canonical, entity-specific list -- if it
+    parses, it beats searching. This discovers its URL from the search
+    page's own links rather than guessing the slug.
+    """
+    print(f"\n\n=== COMPANY PAGE -- discovering from the search page's links")
+    try:
+        r = httpx.get("https://www.consumercomplaints.in/",
+                      params={"search": term},
+                      headers={"User-Agent": BROWSER_UA},
+                      timeout=30, follow_redirects=True)
+    except httpx.HTTPError as exc:
+        print(f"    UNREACHABLE: {exc}")
+        return
+
+    counts = collections.Counter(_COMPANY_HREF.findall(r.text))
+    if not counts:
+        print("    no company-page links (-b<id>) on the search page at all.")
+        return
+    words = [w for w in re.split(r"[^a-z0-9]+", term.lower()) if w]
+    def matched(slug: str) -> int:
+        return sum(1 for w in words if w in slug)
+    ranked = sorted(counts.items(),
+                    key=lambda kv: (-matched(kv[0]), -kv[1]))
+    print("    candidates (slug, links on page, name-words matched):")
+    for slug, n in ranked[:4]:
+        print(f"      {slug:<44} x{n}  matches {matched(slug)}/{len(words)}")
+
+    best, n = ranked[0]
+    # Every word must match: "bank" alone would fetch any bank's page for
+    # any other bank, so a generic word is never enough on its own.
+    if matched(best) < len(words):
+        print(f"    closest is {best}, but it does not match the full name "
+              "-- not fetching another company's page.")
+        return
+    url = "https://www.consumercomplaints.in" + best
+    print(f"\n    fetching {url}")
+    time.sleep(1.5)
+    try:
+        page = httpx.get(url, headers={"User-Agent": BROWSER_UA},
+                         timeout=30, follow_redirects=True)
+    except httpx.HTTPError as exc:
+        print(f"    UNREACHABLE: {exc}")
+        return
+    print(f"    http {page.status_code}  {len(page.content)} bytes")
+    if page.status_code >= 400:
+        return
+
+    parser = forums._Results()
+    parser.feed(page.text)
+    parser.close()
+    if parser.rows:
+        dated = sum(1 for row in parser.rows
+                    if row.get("date") or row.get("date_text")
+                    or forums._date_from_region(row.get("region", "")))
+        print(f"    the existing parser reads it: {len(parser.rows)} rows, "
+              f"{dated} dated")
+        for row in parser.rows[:5]:
+            d = row.get("date_text") or row.get("date") or "no date"
+            print(f"      [{d:<12}] {row.get('title','')[:66]}")
+        return
+    # Different markup: show what a parser would have to target.
+    print("    the search-results parser reads nothing here -- structure:")
+    fp = _Fingerprint()
+    try:
+        fp.feed(page.text)
+    except Exception as exc:
+        print(f"    could not parse: {exc}")
+        return
+    ranked_fp = [(k, c) for k, c in fp.counts.most_common(40)
+                 if c >= 3 and fp.samples.get(k)]
+    for key, c in ranked_fp[:6]:
+        print(f"      {key:<34} x{c}")
+        for sample in fp.samples[key][:1]:
+            print(f"          | {sample}")
 
 
 def _dump_raw(term: str) -> None:
@@ -361,8 +448,8 @@ def main() -> int:
                     help="scan page structure instead of running the parser")
     args = ap.parse_args()
 
-    print(f"build        : reddit_source {reddit_source.BUILD}  |  "
-          f"forums {forums.BUILD}")
+    print(f"build        : probe {PROBE_BUILD}  |  "
+          f"reddit_source {reddit_source.BUILD}  |  forums {forums.BUILD}")
 
     init_db()
     db = connect()
@@ -410,6 +497,7 @@ def main() -> int:
                     _probe_forum(name, template, term)
             elif ent:
                 _probe_forum_parser(reg, ent)
+                _probe_company_page(term)
             if args.dump:
                 _dump_raw(term)
         return 0
