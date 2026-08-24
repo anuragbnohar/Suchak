@@ -81,6 +81,51 @@ def _new_context(browser):
     return browser.new_context(**opts), False
 
 
+# X's login is a React flow whose field names have changed more than once,
+# and which sometimes serves a consent, error or bot-check page instead. Each
+# step therefore tries several selectors and, when none appears, reports what
+# the page actually showed rather than a bare Playwright timeout.
+USERNAME_SELECTORS = ('input[autocomplete="username"]', 'input[name="text"]',
+                      'input[autocomplete="email"]')
+PASSWORD_SELECTORS = ('input[name="password"]', 'input[type="password"]',
+                      'input[autocomplete="current-password"]')
+CHALLENGE_SELECTORS = ('input[data-testid="ocfEnterTextTextInput"]',
+                       'input[data-testid="challenge_response"]')
+DEBUG_SHOT = os.environ.get(
+    "SUCHAK_X_DEBUG_SHOT",
+    str(Path(__file__).resolve().parent.parent / ".x_login_debug.png"))
+
+
+def _first_visible(page, selectors, timeout_ms: int):
+    """The first of these selectors to appear, or None. Polls rather than
+    waiting on one selector, so a renamed field is not fatal."""
+    deadline = time.time() + timeout_ms / 1000
+    while time.time() < deadline:
+        for sel in selectors:
+            loc = page.locator(sel).first
+            try:
+                if loc.count() and loc.is_visible():
+                    return loc
+            except Exception:
+                pass
+        page.wait_for_timeout(400)
+    return None
+
+
+def _page_summary(page) -> str:
+    """What the page is actually showing, for an error message worth reading."""
+    try:
+        text = " ".join(page.inner_text("body").split())[:300]
+    except Exception:
+        text = "(could not read the page)"
+    try:
+        page.screenshot(path=DEBUG_SHOT, full_page=False)
+        shot = f" A screenshot was saved to {DEBUG_SHOT}."
+    except Exception:
+        shot = ""
+    return f"URL {page.url} — page said: {text!r}.{shot}"
+
+
 def _login(context) -> None:
     if not (USER and PASS):
         raise ScrapeUnavailable(
@@ -89,30 +134,52 @@ def _login(context) -> None:
     page.set_default_timeout(NAV_TIMEOUT_MS)
     try:
         page.goto("https://x.com/i/flow/login", wait_until="domcontentloaded")
+        try:
+            page.wait_for_load_state("networkidle", timeout=20_000)
+        except Exception:
+            pass                      # a busy page is fine; the field check decides
         _sleep(1.5, 2.5)
-        page.fill('input[autocomplete="username"]', USER)
+
+        field = _first_visible(page, USERNAME_SELECTORS, 25_000)
+        if field is None:
+            raise ScrapeUnavailable(
+                "The login page never showed a username field. X may be serving a "
+                "consent, error or bot-check page, or it has renamed the field. "
+                "Re-run with SUCHAK_X_HEADLESS=0 to watch it. " + _page_summary(page))
+        field.fill(USER)
         page.keyboard.press("Enter")
         _sleep()
 
-        # X inserts an identity challenge when it does not recognise the
-        # device. It is not an error, but it cannot be guessed past.
-        if page.locator('input[data-testid="ocfEnterTextTextInput"]').count():
+        # X inserts an identity challenge when it does not recognise the device.
+        challenge = _first_visible(page, CHALLENGE_SELECTORS, 6_000)
+        if challenge is not None:
             if not VERIFY:
                 raise ScrapeUnavailable(
                     "X asked to verify the account (usually the email or phone on "
-                    "it). Set SUCHAK_X_VERIFY to that value.")
-            page.fill('input[data-testid="ocfEnterTextTextInput"]', VERIFY)
+                    "it). Set SUCHAK_X_VERIFY to that value. " + _page_summary(page))
+            challenge.fill(VERIFY)
             page.keyboard.press("Enter")
             _sleep()
 
-        page.fill('input[name="password"]', PASS)
-        page.keyboard.press("Enter")
-        page.wait_for_url(re.compile(r"https://x\.com/(home|i/flow)?"), timeout=NAV_TIMEOUT_MS)
-        _sleep(1.0, 2.0)
-        if "/i/flow/login" in page.url:
+        pwd = _first_visible(page, PASSWORD_SELECTORS, 25_000)
+        if pwd is None:
             raise ScrapeUnavailable(
-                "Login did not complete -- X may be showing a challenge, or the "
-                "account is locked. Run once with SUCHAK_X_HEADLESS=0 to watch it.")
+                "The password field never appeared. The username step may have "
+                "been rejected, or a challenge is on screen. " + _page_summary(page))
+        pwd.fill(PASS)
+        page.keyboard.press("Enter")
+
+        try:
+            page.wait_for_url(re.compile(r"https://(x|twitter)\.com/home"),
+                              timeout=NAV_TIMEOUT_MS)
+        except Exception:
+            if _first_visible(page, PASSWORD_SELECTORS, 2_000) is not None:
+                raise ScrapeUnavailable(
+                    "Still on the password step: the credentials were rejected, or "
+                    "X is asking for another factor. " + _page_summary(page))
+            raise ScrapeUnavailable(
+                "Login did not reach the timeline. " + _page_summary(page))
+        _sleep(1.0, 2.0)
         context.storage_state(path=STATE_PATH)
         log.info("X session saved to %s", STATE_PATH)
     finally:
