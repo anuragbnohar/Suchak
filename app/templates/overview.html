@@ -1,13 +1,28 @@
 {% extends "base.html" %}
 {% block title %}Overview · Suchak{% endblock %}
 {% block content %}
+{% set titles = {'entity': 'All regulated entities',
+                 'severity': 'By severity',
+                 'risk': 'By risk area'} %}
+{% set subs = {'entity': 'Which entities need attention · sorted by high-severity volume',
+               'severity': 'How serious this week is, across every entity',
+               'risk': 'What kind of problem is showing up, across every entity'} %}
 <div class="page-head">
   <div>
-    <h1>All regulated entities</h1>
-    <p class="page-sub">Cross-entity signal picture · last 7 days · sorted by high-severity volume</p>
+    <h1>{{ titles[view] }}</h1>
+    <p class="page-sub">Last {{ days }} days · {{ subs[view] }}</p>
   </div>
 </div>
 
+<div class="toolbar">
+  <nav class="tabs" aria-label="Group by">
+    {% for v, label in [('entity','Entity'), ('severity','Severity'), ('risk','Risk area')] %}
+    <a class="tab {% if view == v %}active{% endif %}" href="/overview?view={{ v }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+{% if view == 'entity' %}
 <table class="data-table overview-table">
   <tr>
     <th scope="col">Entity</th>
@@ -38,4 +53,66 @@
   </tr>
   {% endfor %}
 </table>
+{% endif %}
+
+{% macro entity_split(r, qs) %}
+  {% if r.entities %}
+  <div class="split-row">
+    {% for e in r.entities %}
+    <a class="split-chip" href="/queue?entity={{ e.id }}&amp;status=all&amp;days={{ days }}{{ qs }}"
+       title="Open these items in {{ e.name }}'s queue">{{ e.name }}<span>{{ e.count }}</span></a>
+    {% endfor %}
+  </div>
+  {% else %}<span class="meta-dim">—</span>{% endif %}
+{% endmacro %}
+
+{% if view == 'severity' %}
+<table class="data-table overview-table">
+  <tr>
+    <th scope="col">Severity</th>
+    <th scope="col" class="num">Items ({{ days }}d)</th>
+    <th scope="col" class="num">Awaiting review<br><span class="th-note">all time</span></th>
+    <th scope="col">Across entities ({{ days }}d)</th>
+    <th scope="col">Latest item</th>
+  </tr>
+  {% for r in sev_rows %}
+  <tr class="{% if r.category == 'high' and r.total %}row-serious{% endif %}">
+    <td><span class="sev-chip sev-chip-{{ r.category }}">{{ r.category }}</span></td>
+    <td class="num">{{ r.total }}</td>
+    <td class="num">{{ r.open }}</td>
+    <td>{{ entity_split(r, '&sev=' ~ r.category) }}</td>
+    <td class="meta-dim">{{ r.last | timeago }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if view == 'risk' %}
+<table class="data-table overview-table">
+  <tr>
+    <th scope="col">Risk area</th>
+    <th scope="col" class="num">Items ({{ days }}d)</th>
+    <th scope="col" class="num">High ({{ days }}d)</th>
+    <th scope="col" class="num">Awaiting review<br><span class="th-note">all time</span></th>
+    <th scope="col">Across entities ({{ days }}d)</th>
+    <th scope="col">Latest item</th>
+  </tr>
+  {% for r in risk_rows %}
+  <tr class="{% if r.high %}row-serious{% endif %}">
+    <td><strong>{{ r.category }}</strong></td>
+    <td class="num">{{ r.total }}</td>
+    <td class="num">{% if r.high %}<span class="sev-chip sev-chip-high">{{ r.high }} high</span>{% else %}0{% endif %}</td>
+    <td class="num">{{ r.open }}</td>
+    <td>{{ entity_split(r, '&risk=' ~ (r.category | urlencode)) }}</td>
+    <td class="meta-dim">{{ r.last | timeago }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if unclassified %}
+<p class="meta-dim small view-note">{{ unclassified }} item{{ 's' if unclassified != 1 }}
+  still awaiting classification{% if view != 'entity' %} and not counted here — an
+  unclassified item has no severity or risk area yet{% endif %}.</p>
+{% endif %}
 {% endblock %}

@@ -408,3 +408,16 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--paper); bo
 .older-note { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
 .older-note:hover { color: var(--accent); }
 .tile-note-quiet { color: var(--muted); font-weight: 500; }
+
+/* severity / risk views: each row keeps its per-entity split, because the
+   queue is per entity and a total nobody can open is not a drill-down */
+.split-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.split-chip {
+  display: inline-flex; align-items: baseline; gap: 0.4rem;
+  font-size: 0.78rem; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: 999px; padding: 0.12rem 0.55rem; white-space: nowrap;
+}
+.split-chip span { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
+.split-chip:hover { border-color: var(--accent); text-decoration: none; }
+.view-note { margin-top: 1rem; }

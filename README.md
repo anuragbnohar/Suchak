@@ -210,6 +210,16 @@ X recent search is capped at 7 days by its API regardless.
   sub-count) into the To-do page, daily volume trend, factor hits, and
   extracted organization linkages — every figure is a drill-down into the
   exact items it counts; a cross-entity overview for the super admin.
+- **Three ways to read the same week** — the super admin's overview groups by
+  **Entity** ("who needs attention"), **Severity** ("how serious is this
+  week") or **Risk area** ("what kind of problem is showing up"). The two
+  category views span every entity, and each row keeps its per-entity split
+  as clickable chips: the queue is per entity, so a cross-entity total nobody
+  could open would break the rule that every figure is a drill-down. A
+  reviewer's severity *and* risk-area corrections drive the grouping, not the
+  classifier's original verdict. Items still awaiting classification are
+  excluded and counted in a footnote — they carry no verdict, and including
+  them would file every one under *low*.
   Two deliberate exceptions to the day window: *Awaiting review* and *Open
   actions* are all-time, because an item unread or a follow-up owed five weeks
   ago is still work today. Both are labelled as such, and where an entity has

@@ -135,8 +135,13 @@ def prep_item(row) -> dict:
     d["actionability_label"] = taxonomy.ACTIONABILITY_LABELS.get(
         d.get("actionability") or "", d.get("actionability") or "")
     d["source_type_label"] = taxonomy.SOURCE_TYPE_LABELS.get(d.get("source_type") or "news")
-    # a reviewer's severity correction wins over the classifier's verdict
+    # a reviewer's correction wins over the classifier's verdict, for the
+    # risk areas exactly as for the severity
     d["severity_shown"] = d.get("review_severity") or d.get("severity") or "low"
+    d["risk_areas_shown"] = d.get("review_risk_areas") or d.get("risk_areas") or []
+    # an item still awaiting classification has no verdict to show; callers
+    # that group by category must exclude it rather than file it under "low"
+    d["classified"] = d.get("status") != "new"
     return d
 
 
@@ -613,7 +618,7 @@ def todo_page(request: Request):
         if sev in taxonomy.SEVERITIES:
             rows = [r for r in rows if r["severity_shown"] == sev]
         if risk:
-            rows = [r for r in rows if risk in (r["review_risk_areas"] or r["risk_areas"])]
+            rows = [r for r in rows if risk in r["risk_areas_shown"]]
         rows.sort(key=_action_sort_key)
         # Resolve per-row permissions here rather than in the template, where
         # the role rules would be spread across several nested conditionals.
@@ -710,7 +715,7 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     by_topic, complaints_total = Counter(), 0
     linkages = Counter()
     for it in rows:
-        for a in it["risk_areas"]:
+        for a in it["risk_areas_shown"]:
             by_risk[a] += 1
         by_sev[it["severity_shown"]] += 1
         if it["complaint_topics"]:
@@ -787,6 +792,61 @@ def dashboard(request: Request):
         db.close()
 
 
+def _category_rows(db, entities, since, key_fn, categories):
+    """Group the window's classified items by a category instead of by entity.
+
+    `key_fn` returns the categories one item belongs to -- one for severity,
+    zero or more for risk areas. Each row keeps its per-entity split so every
+    number still leads to the items behind it: the queue is per entity, so a
+    cross-entity total that could not be opened would break the rule that
+    every figure on a dashboard is a drill-down.
+
+    Items still awaiting classification are excluded. They carry no verdict,
+    and counting them would file every one of them under 'low'.
+    """
+    by_cat = {c: {"total": 0, "high": 0, "open": 0, "last": None,
+                  "per_entity": Counter(), "open_per_entity": Counter()}
+              for c in categories}
+    names = {e["id"]: e["name"] for e in entities}
+
+    for e in entities:
+        rows = [prep_item(r) for r in q(
+            db, "SELECT * FROM items WHERE entity_id = ? AND gated_out = 0"
+                " AND status != 'new'", (e["id"],))]
+        for it in rows:
+            fresh = (it["published_at"] or "") >= since
+            awaiting = it["status"] == "classified"
+            for cat in key_fn(it):
+                if cat not in by_cat:
+                    continue
+                bucket = by_cat[cat]
+                if fresh:
+                    bucket["total"] += 1
+                    bucket["per_entity"][e["id"]] += 1
+                    if it["severity_shown"] == "high":
+                        bucket["high"] += 1
+                if awaiting:
+                    bucket["open"] += 1
+                    bucket["open_per_entity"][e["id"]] += 1
+                published = it["published_at"] or ""
+                if published and (bucket["last"] or "") < published:
+                    bucket["last"] = published
+
+    out = []
+    for cat in categories:
+        b = by_cat[cat]
+        out.append({
+            "category": cat,
+            "total": b["total"],
+            "high": b["high"],
+            "open": b["open"],
+            "last": b["last"],
+            "entities": [{"id": eid, "name": names[eid], "count": n}
+                         for eid, n in b["per_entity"].most_common()],
+        })
+    return out
+
+
 @app.get("/overview")
 def overview(request: Request):
     db = connect()
@@ -824,7 +884,28 @@ def overview(request: Request):
                 "last": last,
             })
         rows.sort(key=lambda r: (-r["high7"], -r["total7"]))
-        return render(request, "overview.html", user=user, rows=rows)
+
+        # The same seven days, grouped three ways. Entity answers "who needs
+        # attention", severity "how bad is the week", risk "what kind of
+        # problem is showing up" -- questions a supervisor asks separately.
+        view = request.query_params.get("view") or "entity"
+        if view not in ("entity", "severity", "risk"):
+            view = "entity"
+        sev_rows = risk_rows = None
+        if view == "severity":
+            sev_rows = _category_rows(
+                db, entities, since,
+                lambda it: [it["severity_shown"]], taxonomy.SEVERITIES)
+        elif view == "risk":
+            risk_rows = [r for r in _category_rows(
+                db, entities, since,
+                lambda it: it["risk_areas_shown"], taxonomy.RISK_AREAS)]
+            risk_rows.sort(key=lambda r: (-r["high"], -r["total"], r["category"]))
+        unclassified = one(db, "SELECT COUNT(*) n FROM items"
+                               " WHERE status = 'new' AND gated_out = 0")["n"]
+        return render(request, "overview.html", user=user, rows=rows, view=view,
+                      sev_rows=sev_rows, risk_rows=risk_rows,
+                      unclassified=unclassified, days=7)
     finally:
         db.close()
 

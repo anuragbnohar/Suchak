@@ -76,7 +76,7 @@
       </p>
       <p class="todo-meta">
         {% if entities|length > 1 %}<span class="meta-strong">{{ it.entity_name }}</span>{% endif %}
-        {% for a in (it.review_risk_areas or it.risk_areas) %}<span class="mini-chip">{{ a }}</span>{% endfor %}
+        {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
         {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
         <span>Owner {{ it.owner_name or '—' }}</span>
         {% if it.due_label %}<span>Due {{ it.due_label }}</span>{% endif %}
