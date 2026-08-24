@@ -43,7 +43,7 @@ from .db import connect, one, q, x
 from .matching import Registry, build_query
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
                          strip_publisher)
-from . import x_scrape
+from . import reddit_source, x_scrape
 from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
@@ -534,11 +534,26 @@ def fetch_x_scrape(registry: Registry, entity, days: int | None = None) -> list[
     return x_scrape.scrape_query(f"to:{handle} -filter:retweets", x_scrape.MAX_POSTS)
 
 
+def fetch_reddit(registry: Registry, entity, days: int | None = None) -> list[dict]:
+    """Posts naming the entity on Reddit, site-wide and in the Indian
+    finance subreddits.
+
+    Needs no key and no account, so unlike the X collector there is nothing
+    here that can be restricted for looking automated. What it returns is
+    unfiltered: the classifier decides which posts are grievances.
+    """
+    if not reddit_source.ENABLED:
+        return []
+    return reddit_source.search(registry, entity["id"], days,
+                                reddit_source.MAX_POSTS)
+
+
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
     "x": fetch_x,
     "x_scrape": fetch_x_scrape,
+    "reddit": fetch_reddit,
 }
 
 BROADCAST_SOURCES = {
@@ -615,6 +630,11 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 # collector return nothing, which is indistinguishable from a
                 # quiet week unless the count is stated every time.
                 notes.append(f"{len(got)} from X (browser)")
+            elif name == "reddit" and reddit_source.ENABLED:
+                # Stated even at zero. Reddit raises when it could not read
+                # anything, so a zero here really does mean "searched and
+                # matched nothing" -- but only if the count is always shown.
+                notes.append(f"{len(got)} from Reddit")
             elif name != "google_news" and got:
                 notes.append(f"{len(got)} from {name}")
         except Exception as exc:
