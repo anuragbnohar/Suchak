@@ -446,3 +446,12 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--paper); bo
 .social-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.55rem; margin: 0; }
 .social-author { font-family: var(--mono); font-size: 0.82rem; font-weight: 600; }
 .social-text { margin: 0.5rem 0 0; font-size: 0.92rem; line-height: 1.5; }
+
+/* the running build, so a screenshot always says which code produced it */
+.app-footer {
+  max-width: 1180px;
+  margin: 2rem auto 0.8rem;
+  padding: 0.6rem 1.5rem 0;
+  text-align: right;
+  border-top: 1px solid var(--line, #e5e7eb);
+}
