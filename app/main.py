@@ -250,6 +250,10 @@ def queue(request: Request):
             params = list(ids)
         else:
             where, params = ["i.entity_id = ?"], [entity["id"]]
+        # Social complaints are a workstream of their own: they are reviewed
+        # from the Social media tab, and volume is their signal. Fifty forum
+        # complaints would otherwise bury the day's news in every tab here.
+        where.append("i.source_type != 'social'")
         if status == "open":
             where.append("i.status IN ('new','classified') AND i.gated_out = 0")
         elif status == "filtered":
@@ -312,6 +316,7 @@ def queue(request: Request):
                 [e["id"] for e in entities])
         else:
             scope_sql, scope_args = "entity_id = ?", [entity["id"]]
+        scope_sql += " AND source_type != 'social'"
         counts = {r["s"]: r["n"] for r in q(
             db, "SELECT CASE WHEN gated_out = 1 THEN 'filtered'"
                 "        WHEN status IN ('new','classified') THEN 'open'"
@@ -758,6 +763,9 @@ def social_page(request: Request):
                 f" WHERE i.source_type = 'social' AND i.gated_out = 0 AND i.{scope}",
             tuple(args))]
 
+        # Posts still awaiting classification carry no verdict yet; counting
+        # them as "no complaint found" would misstate a fetch in progress.
+        pending = sum(1 for r in rows if r["status"] == "new")
         grievances = [r for r in rows if r["complaint_topics"]]
         by_topic = Counter(t for r in grievances for t in r["complaint_topics"])
         shown = [r for r in grievances if not topic or topic in r["complaint_topics"]]
@@ -772,7 +780,8 @@ def social_page(request: Request):
                       entities=entities, rows=shown, topic=topic,
                       by_topic=[(t, by_topic.get(t, 0)) for t in taxonomy.COMPLAINT_TOPICS],
                       total_grievances=len(grievances),
-                      not_grievances=len(rows) - len(grievances),
+                      pending=pending,
+                      not_grievances=len(rows) - len(grievances) - pending,
                       collected=len(rows), handles=handles,
                       x_enabled=X_ENABLED or x_scrape.ENABLED,
                       any_source=(reddit_source.ENABLED or forums.ENABLED
@@ -788,7 +797,8 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows = [prep_item(r) for r in q(
         db, "SELECT * FROM items WHERE entity_id = ? AND published_at >= ?"
-            " AND gated_out = 0", (entity_id, since))]
+            " AND gated_out = 0 AND source_type != 'social'",
+        (entity_id, since))]
 
     by_risk, by_sev, by_factor, by_day = Counter(), Counter(), Counter(), Counter()
     by_topic, complaints_total = Counter(), 0
@@ -818,10 +828,12 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     max_trend = max((t["count"] for t in trend), default=0)
 
     open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
-                         " status IN ('new','classified') AND gated_out = 0",
+                         " status IN ('new','classified') AND gated_out = 0"
+                         " AND source_type != 'social'",
                      (entity_id,))["n"]
     total_all = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id = ?"
-                        " AND gated_out = 0", (entity_id,))["n"]
+                        " AND gated_out = 0 AND source_type != 'social'",
+                    (entity_id,))["n"]
     # Follow-ups are deliberately NOT windowed: an action opened five weeks
     # ago is still owed today, and hiding it behind the window would be the
     # one number on this page that understates the team's workload.
@@ -833,7 +845,8 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
     high_recent = [prep_item(r) for r in q(
         db, "SELECT * FROM items WHERE entity_id=?"
             " AND COALESCE(review_severity, severity)='high' AND published_at >= ?"
-            " AND gated_out = 0 ORDER BY published_at DESC LIMIT 6", (entity_id, since))]
+            " AND gated_out = 0 AND source_type != 'social'"
+            " ORDER BY published_at DESC LIMIT 6", (entity_id, since))]
 
     return {
         "total": len(rows),
@@ -891,7 +904,7 @@ def _category_rows(db, entities, since, key_fn, categories):
     for e in entities:
         rows = [prep_item(r) for r in q(
             db, "SELECT * FROM items WHERE entity_id = ? AND gated_out = 0"
-                " AND status != 'new'", (e["id"],))]
+                " AND status != 'new' AND source_type != 'social'", (e["id"],))]
         for it in rows:
             fresh = (it["published_at"] or "") >= since
             awaiting = it["status"] == "classified"
@@ -938,20 +951,24 @@ def overview(request: Request):
         for e in entities:
             items = [prep_item(r) for r in q(
                 db, "SELECT * FROM items WHERE entity_id=? AND published_at >= ?"
-                    " AND gated_out = 0", (e["id"], since))]
+                    " AND gated_out = 0 AND source_type != 'social'",
+                (e["id"], since))]
             by_risk = Counter(a for it in items for a in it["risk_areas"])
             top_risk = by_risk.most_common(1)
             open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
-                                 " status IN ('new','classified') AND gated_out = 0",
+                                 " status IN ('new','classified') AND gated_out = 0"
+                                 " AND source_type != 'social'",
                              (e["id"],))["n"]
-            last = one(db, "SELECT MAX(published_at) m FROM items WHERE entity_id=?",
+            last = one(db, "SELECT MAX(published_at) m FROM items WHERE entity_id=?"
+                           " AND source_type != 'social'",
                        (e["id"],))["m"]
             # Items older than the window still exist and are still reviewable.
             # Without this the row reads as a contradiction -- 0 items beside 4
             # awaiting review -- when the truth is simply that the coverage is
             # older than seven days, which for a small entity is normal.
             total_all = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=?"
-                                " AND gated_out = 0", (e["id"],))["n"]
+                                " AND gated_out = 0 AND source_type != 'social'",
+                            (e["id"],))["n"]
             rows.append({
                 "entity": e,
                 "total7": len(items),
@@ -981,7 +998,8 @@ def overview(request: Request):
                 lambda it: it["risk_areas_shown"], taxonomy.RISK_AREAS)]
             risk_rows.sort(key=lambda r: (-r["high"], -r["total"], r["category"]))
         unclassified = one(db, "SELECT COUNT(*) n FROM items"
-                               " WHERE status = 'new' AND gated_out = 0")["n"]
+                               " WHERE status = 'new' AND gated_out = 0"
+                               " AND source_type != 'social'")["n"]
         return render(request, "overview.html", user=user, rows=rows, view=view,
                       sev_rows=sev_rows, risk_rows=risk_rows,
                       unclassified=unclassified, days=7)

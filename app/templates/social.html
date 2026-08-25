@@ -73,7 +73,8 @@
 <p class="meta-dim small view-note">
   {{ collected }} post{{ 's' if collected != 1 }} collected in total ·
   {{ total_grievances }} judged a grievance ·
-  {{ not_grievances }} not shown here because the classifier found no complaint in them.
+  {% if pending %}{{ pending }} still awaiting classification ·
+  {% endif %}{{ not_grievances }} not shown here because the classifier found no complaint in them.
   Posts come from Reddit and consumercomplaints.in{% if x_enabled %} and from replies
   to each entity's X handle{% endif %}, roughly {{ x_cap }} per source per entity per
   fetch, limited to the last {{ social_days }} days. Undated forum complaints are
