@@ -704,7 +704,15 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         # separately anyway
         title = strip_publisher(title, cand["source_name"])
 
-        published = cand["published_at"] or datetime.now(timezone.utc).isoformat(timespec="seconds")
+        # A missing date is approximately "now" for a news feed read inside
+        # its own recency window -- but an invented date on a social
+        # complaint is how a 2018 grievance wore "17h ago" in the review
+        # queue and slipped past the 365-day cleanup. Social items keep an
+        # honest NULL; their collectors drop undated posts anyway, so this
+        # is the guard, not the mechanism.
+        published = cand["published_at"]
+        if not published and cand["source_type"] != "social":
+            published = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         # A video and an article about the same event are the same event, so
         # duplicate detection deliberately spans source types -- an RBI
