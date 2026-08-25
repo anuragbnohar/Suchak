@@ -24,7 +24,7 @@ from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
                        similar_reviewed, suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
-from .ingest import (LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS,
+from .ingest import (LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, SOCIAL_LOOKBACK_DAYS,
                      X_BEARER, X_ENABLED, X_MAX_POSTS, run_cycle)
 from .seed import seed_if_empty
 from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
@@ -777,7 +777,7 @@ def social_page(request: Request):
                       x_enabled=X_ENABLED or x_scrape.ENABLED,
                       any_source=(reddit_source.ENABLED or forums.ENABLED
                                   or X_ENABLED or x_scrape.ENABLED),
-                      x_cap=X_MAX_POSTS)
+                      x_cap=X_MAX_POSTS, social_days=SOCIAL_LOOKBACK_DAYS)
     finally:
         db.close()
 

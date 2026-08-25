@@ -231,6 +231,32 @@ def _backfill_reviews(con: sqlite3.Connection) -> None:
     )
 
 
+def _backfill_social_window(con: sqlite3.Connection) -> None:
+    """Gate the social items a pre-window fetch already stored.
+
+    The first real fetch ran before social sources were limited to the
+    last 365 days, so the queue holds years-old forum complaints wearing
+    their fetch time as a date. Self-limiting, like the other backfills:
+    the collectors no longer store undated or out-of-window social items,
+    and classification now gates no-grievance social posts itself, so
+    after one pass nothing can match again. Reviewed items are left
+    alone -- a human's judgment outranks a window.
+    """
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    con.execute(
+        "UPDATE items SET gated_out=1,"
+        " gate_reason='social: undated or older than the 365-day window'"
+        " WHERE source_type='social' AND gated_out=0 AND status!='reviewed'"
+        " AND (published_at IS NULL OR published_at < ?)", (cutoff,))
+    con.execute(
+        "UPDATE items SET gated_out=1,"
+        " gate_reason='social post with no grievance in it'"
+        " WHERE source_type='social' AND gated_out=0 AND status!='reviewed'"
+        " AND classifier='llm'"
+        " AND (complaint_topics IS NULL OR complaint_topics IN ('', '[]'))")
+
+
 def init_db() -> None:
     con = connect()
     try:
@@ -240,6 +266,7 @@ def init_db() -> None:
             con.execute(stmt)
         _backfill_actions(con)
         _backfill_reviews(con)
+        _backfill_social_window(con)
         con.commit()
     finally:
         con.close()

@@ -202,7 +202,7 @@ def _probe_forum_parser(reg: Registry, ent) -> None:
             print(f" {outcome}", flush=True)
 
     try:
-        items = forums.search(reg, ent["id"], None, on_progress=progress)
+        items = forums.search(reg, ent["id"], 365, on_progress=progress)
     except forums.ForumUnavailable as exc:
         print(f"\n    COULD NOT RUN: {exc}")
         print(f"    diagnosis: {json.dumps(forums.LAST_DIAGNOSIS)[:300]}")
@@ -225,11 +225,10 @@ def _probe_forum_parser(reg: Registry, ent) -> None:
         if bycompany:
             print(f"    {bycompany} are /bycompany/ listings, whose date slot "
                   "the site leaves empty on the results page.")
-        others = undated - bycompany
-        if others > 0:
-            print(f"    {others} are older complaints (dumped rows confirmed "
-                  "their date slot is empty on the results page too). The "
-                  "site dates recent complaints; it leaves old ones blank.")
+        if (info.get("dropped")):
+            print("    undated rows were DROPPED, not stored: inside a "
+                  "window an undated complaint cannot be shown to be "
+                  "recent, and the dumps proved undated means old here.")
 
 
 _COMPANY_HREF = re.compile(r'href="(/[a-z0-9-]+-b\d+)(?:#[^"]*)?"')

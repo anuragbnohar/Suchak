@@ -29,7 +29,7 @@ from .matching import Registry
 
 log = logging.getLogger("suchak.forums")
 
-BUILD = "2026-08-24.5-consumercomplaints"
+BUILD = "2026-08-25.1-window-enforced"
 
 ENABLED = os.environ.get("SUCHAK_FORUMS", "1").strip().lower() not in ("0", "false", "no")
 
@@ -243,9 +243,11 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
     seen: set[str] = set()
     items: list[dict] = []
     errors: list[str] = []
-    undated_info = {"total": 0, "bycompany": 0, "kinds": {}}
+    undated_info = {"total": 0, "bycompany": 0, "kinds": {}, "dropped": False}
+    rows_read = 0
     pages = 0
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)) if days else None
+    undated_info["dropped"] = cutoff is not None
 
     for page in range(1, MAX_PAGES + 1):
         if len(items) >= limit:
@@ -270,18 +272,13 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
         parser = _Results()
         parser.feed(body)
         parser.close()
+        rows_read += len(parser.rows)
         before = len(items)
         for row in parser.rows:
             href = row.get("href") or ""
             url = href if href.startswith("http") else urllib.parse.urljoin(BASE, href)
             if not row.get("title") or not href or url in seen:
                 continue
-            # Complaints listed under a company page (/bycompany/...) are
-            # published with no date: the site renders the date element
-            # empty for them, so there is nothing to read. A dated
-            # complaint can be excluded by the lookback window; an undated
-            # one is kept, because dropping a real grievance for lacking a
-            # timestamp the site never published would lose it silently.
             published = (_parse_date(row.get("date"))
                          or _parse_date(row.get("date_text"))
                          or _date_from_region(row.get("date_text", ""))
@@ -298,6 +295,15 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
                     undated_info["bycompany"] += 1
                 kind = row.get("kind") or "untyped"
                 undated_info["kinds"][kind] = undated_info["kinds"].get(kind, 0) + 1
+                # Inside a window, undated means excluded. The site dates
+                # its recent complaints and leaves old ones blank -- every
+                # undated row dumped so far was years old -- so an undated
+                # row cannot be shown to fall inside the window, and a
+                # supervisor asking for the last year must not be handed a
+                # 2018 grievance wearing today's fetch time.
+                if cutoff:
+                    seen.add(url)
+                    continue
             seen.add(url)
             items.append({
                 "title": row["title"],
@@ -319,11 +325,12 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
 
     if errors and not items:
         raise ForumUnavailable(errors[0].split(": ", 1)[-1])
-    # A page that loaded but yielded nothing is the markup changing, not a
-    # bank without complaints. consumercomplaints.in carries complaints
-    # about every large Indian bank; zero from a 200 means the parser is
-    # reading the wrong element.
-    if not items and pages:
+    # A page that loaded but PARSED to nothing is the markup changing, not
+    # a bank without complaints: consumercomplaints.in carries complaints
+    # about every large Indian bank. But a page whose rows were all read
+    # and then window-dropped is a legitimate empty -- the search matched
+    # only old complaints -- and must not be reported as a broken parser.
+    if not items and pages and rows_read == 0:
         raise ForumUnavailable(
             "The results page loaded but no complaints could be read from "
             f"it. The site's markup has probably changed -- the parser "

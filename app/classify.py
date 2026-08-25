@@ -476,6 +476,21 @@ def classify_item(db, item) -> None:
                           classifier=classifier, model=model)
         return
 
+    # A social post with no grievance in it is the social equivalent of an
+    # irrelevant headline: a protein-deal thread that mentions the bank's
+    # card, investor chatter. News like that never reaches the queue (the
+    # gate drops it), so social should not either. Only an LLM verdict is
+    # trusted to gate here -- the heuristic fallback cannot tell a
+    # complaint from a mention, and a wrongly gated grievance is exactly
+    # the silent loss this pipeline is built to avoid.
+    if (item["source_type"] == "social" and classifier == "llm"
+            and not (verdict.get("complaint_topics") or [])):
+        log.info("No grievance in social post %r for %s",
+                 item["title"][:60], entity["name"])
+        _record_gated_out(db, item, "social post with no grievance in it",
+                          classifier=classifier, model=model)
+        return
+
     x(
         db,
         "UPDATE items SET status='classified', relevance=?, risk_areas=?, severity=?,"

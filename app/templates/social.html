@@ -76,7 +76,7 @@
   {{ not_grievances }} not shown here because the classifier found no complaint in them.
   Posts come from Reddit and consumercomplaints.in{% if x_enabled %} and from replies
   to each entity's X handle{% endif %}, roughly {{ x_cap }} per source per entity per
-  fetch. Old consumercomplaints entries carry no date — the site publishes none for
-  them. Use the lookback picker on the <a href="/entities">Entities</a> page to widen
-  the period.</p>
+  fetch, limited to the last {{ social_days }} days. Undated forum complaints are
+  dropped — the site only dates recent ones, so an undated complaint cannot be shown
+  to be recent.</p>
 {% endblock %}

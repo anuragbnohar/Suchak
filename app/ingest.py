@@ -80,6 +80,12 @@ LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "7"))
 # entity that goes quiet for weeks, where the standing 7 days says nothing.
 LOOKBACK_CHOICES = (7, 30, 90, 365)
 
+# Social complaints age differently from news: a complaint forum's value is
+# the pattern across months, and a bank the size of these gets few posts a
+# week, so the news window (7 days by default) would return almost nothing.
+# One year, always -- the lookback picker widens news, not this.
+SOCIAL_LOOKBACK_DAYS = int(os.environ.get("SUCHAK_SOCIAL_LOOKBACK_DAYS", "365"))
+
 
 def effective_days(days: int | None) -> int:
     """The window this fetch should use: a valid override, else the default."""
@@ -536,7 +542,8 @@ def fetch_x_scrape(registry: Registry, entity, days: int | None = None) -> list[
 
 def fetch_reddit(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """Posts naming the entity on Reddit, site-wide and in the Indian
-    finance subreddits.
+    finance subreddits. Always the last SOCIAL_LOOKBACK_DAYS, whatever
+    the news lookback: `days` widens news feeds, not social ones.
 
     Needs no key and no account, so unlike the X collector there is nothing
     here that can be restricted for looking automated. What it returns is
@@ -544,12 +551,15 @@ def fetch_reddit(registry: Registry, entity, days: int | None = None) -> list[di
     """
     if not reddit_source.ENABLED:
         return []
-    return reddit_source.search(registry, entity["id"], days,
+    return reddit_source.search(registry, entity["id"], SOCIAL_LOOKBACK_DAYS,
                                 reddit_source.MAX_POSTS)
 
 
 def fetch_forums(registry: Registry, entity, days: int | None = None) -> list[dict]:
-    """Complaints filed against the entity on consumercomplaints.in.
+    """Complaints filed against the entity on consumercomplaints.in --
+    dated ones from the last SOCIAL_LOOKBACK_DAYS only. Undated entries
+    are dropped there: the site dates recent complaints and leaves old
+    ones blank, so undated cannot be shown to be recent.
 
     Every entry there is already a grievance, so this is the densest
     complaint source the app has -- but the classifier still decides
@@ -557,7 +567,8 @@ def fetch_forums(registry: Registry, entity, days: int | None = None) -> list[di
     """
     if not forums.ENABLED:
         return []
-    return forums.search(registry, entity["id"], days, forums.MAX_ITEMS)
+    return forums.search(registry, entity["id"], SOCIAL_LOOKBACK_DAYS,
+                         forums.MAX_ITEMS)
 
 
 SOURCES = {
