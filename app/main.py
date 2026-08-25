@@ -24,7 +24,7 @@ from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
                        similar_reviewed, suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
-from .ingest import (LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, SOCIAL_LOOKBACK_DAYS,
+from .ingest import (CHANNELS, LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, SOCIAL_LOOKBACK_DAYS,
                      X_BEARER, X_ENABLED, X_MAX_POSTS, run_cycle)
 from .seed import seed_if_empty
 from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
@@ -1299,6 +1299,11 @@ async def fetch_now(request: Request):
     # to turn one Fetch press into a year-wide scan.
     raw_days = (form.get("days") or "").strip()
     days = int(raw_days) if raw_days.isdigit() and int(raw_days) in LOOKBACK_CHOICES else None
+    # News and social are separate buttons; anything unrecognised runs the
+    # full fetch, same as before the split.
+    channel = form.get("channel") or "all"
+    if channel not in CHANNELS:
+        channel = "all"
     db = connect()
     try:
         user = require_login(db, request)
@@ -1308,8 +1313,13 @@ async def fetch_now(request: Request):
             raise HTTPException(403, "Not your team's entity")
     finally:
         db.close()
-    _spawn(asyncio.to_thread(run_cycle, int(entity_id) if entity_id else None, days))
-    window = days or LOOKBACK_DAYS
-    return RedirectResponse(
-        f"/entities?msg={quote(f'Fetch started — searching the last {window} days. Refresh in a minute.')}",
-        status_code=303)
+    _spawn(asyncio.to_thread(run_cycle, int(entity_id) if entity_id else None,
+                             days, channel))
+    if channel == "social":
+        msg = (f"Social media fetch started — complaints from the last "
+               f"{SOCIAL_LOOKBACK_DAYS} days. Refresh in a minute.")
+    else:
+        window = days or LOOKBACK_DAYS
+        what = "News fetch" if channel == "news" else "Fetch"
+        msg = f"{what} started — searching the last {window} days. Refresh in a minute."
+    return RedirectResponse(f"/entities?msg={quote(msg)}", status_code=303)

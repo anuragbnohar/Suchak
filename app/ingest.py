@@ -580,6 +580,16 @@ SOURCES = {
     "forums": fetch_forums,
 }
 
+# Two channels a fetch can run: press coverage and customer complaints.
+# They answer different supervisory questions on different cadences, so
+# the Entities page offers each its own button; "all" remains what the
+# background sweep runs.
+SOURCE_CHANNELS = {
+    "google_news": "news", "youtube": "news",
+    "x": "social", "x_scrape": "social", "reddit": "social", "forums": "social",
+}
+CHANNELS = ("all", "news", "social")
+
 BROADCAST_SOURCES = {
     "rbi": fetch_rbi,
     "nse": fetch_nse,
@@ -621,18 +631,26 @@ def fetch_broadcast_sources(db, registry: Registry) -> dict[int, list[dict]]:
 
 def ingest_entity(db, entity, registry: Registry | None = None,
                   extra_candidates: list[dict] | None = None,
-                  days: int | None = None) -> dict:
-    """Fetch every enabled source for one entity and store what survives
-    disambiguation and de-duplication. `extra_candidates` carries items
-    already routed to this entity from broadcast feeds (RBI, exchanges).
-    `days` widens this fetch's window only; it changes nothing standing."""
+                  days: int | None = None, channel: str = "all") -> dict:
+    """Fetch one entity's sources and store what survives disambiguation
+    and de-duplication. `extra_candidates` carries items already routed to
+    this entity from broadcast feeds (RBI, exchanges). `days` widens this
+    fetch's window only; `channel` limits it to one kind of source --
+    "news", "social", or "all"."""
     registry = registry or load_registry(db)
     result = {"found": 0, "added": 0, "merged": 0, "rejected": 0,
               "billed": 0, "note": None}
     notes = []
 
+    if channel == "news":
+        notes.append("news sources only")
+    elif channel == "social":
+        # The lookback picker widens news; social always covers its own
+        # fixed year, so a days note here would describe the wrong window.
+        notes.append(f"social sources only (last {SOCIAL_LOOKBACK_DAYS} days)")
+
     window = effective_days(days)
-    if window != LOOKBACK_DAYS:
+    if window != LOOKBACK_DAYS and channel != "social":
         notes.append(f"searched {window} days")
 
     trusted_norms = load_trusted_norms(db)
@@ -641,6 +659,8 @@ def ingest_entity(db, entity, registry: Registry | None = None,
     if candidates:
         notes.append(f"{len(candidates)} from regulator/exchange feeds")
     for name, fetch in SOURCES.items():
+        if channel != "all" and SOURCE_CHANNELS[name] != channel:
+            continue
         try:
             got = fetch(registry, entity, days)
             candidates.extend(got)
@@ -654,7 +674,7 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 # collector return nothing, which is indistinguishable from a
                 # quiet week unless the count is stated every time.
                 notes.append(f"{len(got)} from X (browser)")
-            elif name == "forums" and forums.ENABLED:
+            elif name == "forums" and forums.ENABLED:  # stated even at zero
                 # Stated even at zero, like Reddit: the collector raises
                 # when it read nothing, so a zero really is "searched and
                 # matched nothing".
@@ -757,29 +777,35 @@ def ingest_entity(db, entity, registry: Registry | None = None,
             result["added"] += 1
 
     result["note"] = "; ".join(notes) or None
-    _log_fetch(db, entity["id"], result)
+    _log_fetch(db, entity["id"], result, channel)
     return result
 
 
-def _log_fetch(db, entity_id: int, result: dict) -> None:
+def _log_fetch(db, entity_id: int, result: dict,
+               channel: str = "all") -> None:
     note = result["note"]
     if result.get("rejected"):
         rejected = f"{result['rejected']} rejected as another entity's news"
         note = f"{note}; {rejected}" if note else rejected
     x(db, "INSERT INTO fetch_log (entity_id, source, found, added, merged, note)"
           " VALUES (?,?,?,?,?,?)",
-      (entity_id, "google_news_rss", result["found"], result["added"],
+      (entity_id, f"fetch:{channel}", result["found"], result["added"],
        result["merged"], note))
 
 
-def run_cycle(entity_id: int | None = None, days: int | None = None) -> dict:
+def run_cycle(entity_id: int | None = None, days: int | None = None,
+              channel: str = "all") -> dict:
     """Fetch (all or one entity) then classify anything new. Opens its own
     DB connection — safe to call from a background thread.
 
     `days` widens the per-entity feeds for this run only. Broadcast feeds
     (RBI, exchanges) keep their own window: one fetch serves every entity,
     so widening them for one entity's sake would re-scan the lot.
+    `channel` limits the run to news or social sources; broadcast feeds
+    are press coverage, so a social-only run skips them entirely.
     """
+    if channel not in CHANNELS:
+        channel = "all"
     if not fetch_lock.acquire(blocking=False):
         return {"skipped": True, "reason": "a fetch cycle is already running"}
     started = time.monotonic()
@@ -793,14 +819,18 @@ def run_cycle(entity_id: int | None = None, days: int | None = None) -> dict:
             else:
                 entities = q(db, "SELECT * FROM entities ORDER BY id")
             registry = load_registry(db)
-            routed = fetch_broadcast_sources(db, registry)
-            totals["routed"] = sum(len(v) for v in routed.values())
+            if channel == "social":
+                routed = {}
+                totals["routed"] = 0
+            else:
+                routed = fetch_broadcast_sources(db, registry)
+                totals["routed"] = sum(len(v) for v in routed.values())
             for n, entity in enumerate(entities):
                 if n and FETCH_DELAY_SECONDS:
                     time.sleep(FETCH_DELAY_SECONDS)
                 r = ingest_entity(db, entity, registry,
                                   extra_candidates=routed.get(entity["id"], []),
-                                  days=days)
+                                  days=days, channel=channel)
                 totals["entities"] += 1
                 for k in ("found", "added", "merged", "rejected", "billed"):
                     totals[k] += r[k]

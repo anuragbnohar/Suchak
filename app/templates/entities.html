@@ -19,8 +19,10 @@
     <p class="meta-dim small" style="margin:0.4rem 0 0; text-align:right">
       {% if fetch_minutes %}Also fetching automatically every {{ fetch_minutes }} min
       {% else %}Manual only — nothing is fetched until you press Fetch{% endif %}<br>
-      A wider window applies to that fetch alone. Re-fetching is incremental,
-      so it only classifies what it has not seen.
+      That button runs news and social together. Per entity below, news and
+      social fetch separately; the window widens news only — social always
+      covers the last year. Re-fetching is incremental, so it only
+      classifies what it has not seen.
     </p>
   </div>
   {% endif %}
@@ -75,13 +77,20 @@
             {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
             <form method="post" action="/fetch" class="fetch-form">
               <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
+              <input type="hidden" name="channel" value="news">
               <select name="days" class="lookback-select" aria-label="Lookback window"
-                      title="How far back to search, for this fetch only">
+                      title="How far back to search, for this news fetch only">
                 {% for d in lookback_choices %}
                 <option value="{{ d }}" {% if d == lookback_default %}selected{% endif %}>{{ d }}d</option>
                 {% endfor %}
               </select>
-              <button type="submit" class="btn btn-small">Fetch</button>
+              <button type="submit" class="btn btn-small">Fetch news</button>
+            </form>
+            <form method="post" action="/fetch" class="fetch-form">
+              <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
+              <input type="hidden" name="channel" value="social">
+              <button type="submit" class="btn btn-small"
+                      title="Reddit and consumercomplaints.in, always the last year">Fetch social</button>
             </form>
             {% endif %}
             {% if user.role == 'superadmin' %}
