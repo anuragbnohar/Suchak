@@ -91,7 +91,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-08-25.1"
+APP_BUILD = "2026-08-25.2"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -273,7 +273,12 @@ def queue(request: Request):
             # own tab and is excluded, so dashboard counts match this view
             where.append("i.gated_out = 0")
         if risk:
-            where.append("i.risk_areas LIKE ?")
+            # The reviewer's risk areas outrank the classifier's here just
+            # as they do on screen -- but only when the review actually set
+            # some: '[]' means "no correction", so it falls through to the
+            # machine's list, matching prep_item's display rule exactly.
+            where.append("COALESCE(NULLIF(i.review_risk_areas, '[]'),"
+                         " i.risk_areas) LIKE ?")
             params.append(f'%"{risk}"%')
         if sev:
             where.append("COALESCE(i.review_severity, i.severity) = ?")
@@ -960,7 +965,7 @@ def overview(request: Request):
                 db, "SELECT * FROM items WHERE entity_id=? AND published_at >= ?"
                     " AND gated_out = 0 AND source_type != 'social'",
                 (e["id"], since))]
-            by_risk = Counter(a for it in items for a in it["risk_areas"])
+            by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
             top_risk = by_risk.most_common(1)
             open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
                                  " status IN ('new','classified') AND gated_out = 0"
