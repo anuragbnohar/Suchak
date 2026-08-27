@@ -91,7 +91,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-08-25.2"
+APP_BUILD = "2026-08-25.3"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -430,7 +430,7 @@ def item_detail(request: Request, item_id: int):
 
         return render(request, "item.html", user=user, entity=entity,
                       item=prep_action(row, _today()), sources=sources,
-                      owners=_eligible_owners(db, row["entity_id"]),
+                      owners=_assignable_users(db, user, row["entity_id"]),
                       history=_review_history(db, item_id),
                       similar=similar_prepped, suggestion=suggestion)
     finally:
@@ -481,7 +481,7 @@ async def item_review(request: Request, item_id: int):
         # so re-reviewing an item never silently reopens work already closed.
         if actionable:
             raw = (form.get("action_owner") or "").strip()
-            eligible = {str(u["id"]) for u in _eligible_owners(db, row["entity_id"])}
+            eligible = {str(u["id"]) for u in _assignable_users(db, user, row["entity_id"])}
             owner = int(raw) if raw in eligible else (row["action_owner"] or user["id"])
             x(db, "UPDATE items SET action_status=COALESCE(action_status,'open'),"
                   " action_owner=?, action_due=? WHERE id=?",
@@ -530,12 +530,29 @@ def _valid_date(raw: str | None) -> str | None:
         return None
 
 
-def _eligible_owners(db, entity_id):
-    """Who a follow-up on this entity may be assigned to: that entity's team,
-    plus superadmins, who work across entities."""
+def _assignable_users(db, actor, entity_id):
+    """Who this actor may allocate a follow-up on this entity to.
+
+    The hierarchy allocates downward or sideways, never upward: the
+    superadmin may pick anyone; a team lead picks themselves or their
+    members; a member picks themselves or a fellow member -- handing a
+    task up to the lead (or to a superadmin) is the lead's call to make
+    about their own plate, not the member's.
+    """
+    if actor["role"] == "superadmin":
+        return q(db, "SELECT id, display_name, role FROM users"
+                     " ORDER BY (entity_id IS NOT ?), (role = 'superadmin'),"
+                     " display_name", (entity_id,))
+    if actor["entity_id"] != entity_id:
+        return []
+    if actor["role"] == "lead":
+        return q(db, "SELECT id, display_name, role FROM users"
+                     " WHERE entity_id = ? AND (role = 'member' OR id = ?)"
+                     " ORDER BY (id != ?), display_name",
+                 (entity_id, actor["id"], actor["id"]))
     return q(db, "SELECT id, display_name, role FROM users"
-                 " WHERE entity_id = ? OR role = 'superadmin'"
-                 " ORDER BY (role = 'superadmin'), display_name", (entity_id,))
+                 " WHERE entity_id = ? AND role = 'member'"
+                 " ORDER BY (id != ?), display_name", (entity_id, actor["id"]))
 
 
 def _can_close(user, row) -> bool:
@@ -546,10 +563,26 @@ def _can_close(user, row) -> bool:
     return user["role"] == "lead" or row["action_owner"] == user["id"]
 
 
-def _can_assign(user, row) -> bool:
+def _can_assign(db, user, row) -> bool:
+    """Whether this user may (re)allocate this follow-up.
+
+    Members allocate sideways only: they may move a task that sits with a
+    fellow member (or with nobody), but not one on the lead's or a
+    superadmin's plate -- taking work off a senior's desk is as much an
+    upward act as handing work to them.
+    """
     if user["role"] == "superadmin":
         return True
-    return user["role"] == "lead" and row["entity_id"] == user["entity_id"]
+    if row["entity_id"] != user["entity_id"]:
+        return False
+    if user["role"] == "lead":
+        return True
+    if user["role"] != "member":
+        return False
+    if not row["action_owner"]:
+        return True
+    owner = one(db, "SELECT role FROM users WHERE id = ?", (row["action_owner"],))
+    return bool(owner) and owner["role"] == "member"
 
 
 def prep_action(row, today: str) -> dict:
@@ -666,9 +699,9 @@ def todo_page(request: Request):
         # the role rules would be spread across several nested conditionals.
         for r in rows:
             r["can_close"] = _can_close(user, r)
-            r["can_assign"] = _can_assign(user, r)
+            r["can_assign"] = _can_assign(db, user, r)
 
-        owners = {e["id"]: _eligible_owners(db, e["id"]) for e in entities}
+        owners = {e["id"]: _assignable_users(db, user, e["id"]) for e in entities}
         extras = {k: v for k, v in (
             ("owner", "me" if mine else ""), ("overdue", "1" if overdue_only else ""),
             ("sev", sev or ""), ("risk", risk or ""), ("entity", ent or "")) if v}
@@ -733,11 +766,15 @@ async def todo_assign(request: Request, item_id: int):
     try:
         user = require_login(db, request)
         row = _action_or_404(db, item_id)
-        if not _can_assign(user, row):
-            raise HTTPException(403, "Only a team lead can reassign this")
+        if not _can_assign(db, user, row):
+            raise HTTPException(403, "You cannot reallocate this follow-up")
         raw = (form.get("action_owner") or "").strip()
-        eligible = {str(u["id"]) for u in _eligible_owners(db, row["entity_id"])}
-        owner = int(raw) if raw in eligible else row["action_owner"]
+        eligible = {str(u["id"]) for u in _assignable_users(db, user, row["entity_id"])}
+        if raw and raw not in eligible:
+            # An out-of-rank target is a refusal, not a silent keep: a
+            # member posting the lead's id must hear no, not "updated".
+            raise HTTPException(403, "You cannot allocate a task to that user")
+        owner = int(raw) if raw else row["action_owner"]
         x(db, "UPDATE items SET action_owner=?, action_due=? WHERE id=?",
           (owner, _valid_date(form.get("action_due")), item_id))
     finally:
