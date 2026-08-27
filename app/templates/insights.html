@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Insights · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Insights</h1>
+    <p class="page-sub">Patterns across
+      {% if entity %}{{ entity.name }}'s{% else %}your entities'{% endif %}
+      social-media grievances: the products and processes that keep drawing
+      complaints, each backed by the complaints themselves.</p>
+  </div>
+  {% if entities|length > 1 %}
+  <form method="get" action="/insights" class="entity-picker">
+    <label>Entity
+      <select name="entity" onchange="this.form.submit()">
+        {% if user.role == 'superadmin' %}<option value="all" {% if not entity %}selected{% endif %}>All entities</option>{% endif %}
+        {% for e in entities %}<option value="{{ e.id }}" {% if entity and e.id == entity.id %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+</div>
+
+{% if can_generate %}
+<form method="post" action="/insights/generate" class="fetch-form" style="margin-bottom:1rem">
+  <input type="hidden" name="entity_id" value="{{ entity.id }}">
+  <button type="submit" class="btn btn-primary"
+          title="Reads the entity's social grievances and asks the model for recurring deficiencies. One model call.">
+    {% if cards %}Regenerate insights{% else %}Generate insights{% endif %}
+  </button>
+  <span class="meta-dim small">{{ n_grievances }} grievance{{ 's' if n_grievances != 1 }}
+    available to analyse · takes about half a minute · replaces the current set</span>
+</form>
+{% elif entity is none and user.role == 'superadmin' %}
+<p class="meta-dim small">Pick one entity to generate — insights are built per entity.</p>
+{% endif %}
+
+{% if not cards %}
+<p class="empty">
+  No insights yet{% if entity %} for {{ entity.name }}{% endif %}.
+  {% if n_grievances %}Press Generate to analyse the {{ n_grievances }} collected
+  grievance{{ 's' if n_grievances != 1 }}.{% elif entity %}There are no social-media
+  grievances to analyse — run <strong>Fetch social</strong> on the
+  <a href="/entities">Entities</a> page first.{% endif %}
+</p>
+{% else %}
+<ul class="social-list">
+  {% for c in cards %}
+  <li class="social-card sev-{{ c.severity }}">
+    <p class="social-head">
+      <span class="sev-chip sev-chip-{{ c.severity }}">{{ c.severity }}</span>
+      {% if not entity %}<span class="entity-chip">{{ c.entity_name }}</span>{% endif %}
+      <strong>{{ c.product }}</strong>
+      <span class="meta-dim small">{{ c.item_ids | length }} complaints</span>
+    </p>
+    <p class="social-text">{{ c.pattern }}</p>
+    <p class="social-text"><strong>Recommendation:</strong> {{ c.recommendation }}</p>
+    <p class="item-meta">
+      Evidence:
+      {% for iid in c.item_ids %}<a href="/item/{{ iid }}">#{{ iid }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+  </li>
+  {% endfor %}
+</ul>
+<p class="meta-dim small view-note">
+  Generated {{ cards[0].generated_at | timeago }} by {{ cards[0].model }} from
+  {{ cards[0].n_grievances }} grievance{{ 's' if cards[0].n_grievances != 1 }}
+  (last {{ cards[0].window_days }} days). Every pattern cites at least
+  {{ min_evidence }} complaints; the counts are recomputed from the verified
+  citations, not taken from the model. Regenerating replaces this set.</p>
+{% endif %}
+{% endblock %}

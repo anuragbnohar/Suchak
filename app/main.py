@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import forums, reddit_source, taxonomy, x_scrape
+from . import forums, insights as insights_mod, reddit_source, taxonomy, x_scrape
 from .auth import get_user, require_login, require_role, verify_password
 from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
                        EXCLUSION_RULES_KEY, SEVERITY_DEFS_KEY,
@@ -91,7 +91,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-08-25.3"
+APP_BUILD = "2026-08-25.4"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -780,6 +780,87 @@ async def todo_assign(request: Request, item_id: int):
     finally:
         db.close()
     return RedirectResponse(_todo_back(form, "Action updated"), status_code=303)
+
+
+@app.get("/insights")
+def insights_page(request: Request):
+    """Patterns across the social-media grievances: which product or
+    process keeps drawing complaints, with evidence and a recommendation.
+    Anyone on the team may read them; generating costs a model call, so
+    that stays with leads and the superadmin, like Fetch."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        entity, entities = resolve_entity(db, user, request.query_params.get("entity"))
+        if entity is None:
+            ids = [e["id"] for e in entities]
+            scope = f"entity_id IN ({','.join('?' * len(ids))})"
+            args = list(ids)
+        else:
+            scope, args = "entity_id = ?", [entity["id"]]
+        rows = q(db, "SELECT i.*, e.name AS entity_name FROM insights i"
+                     " JOIN entities e ON e.id = i.entity_id"
+                     f" WHERE i.{scope}"
+                     " ORDER BY CASE i.severity WHEN 'high' THEN 0"
+                     "   WHEN 'medium' THEN 1 ELSE 2 END, i.id",
+                 tuple(args))
+        cards = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["item_ids"] = json.loads(d["item_ids"] or "[]")
+            except (TypeError, ValueError):
+                d["item_ids"] = []
+            cards.append(d)
+        n_grievances = 0
+        if entity is not None:
+            n_grievances = len(insights_mod.grievances_for(db, entity["id"]))
+        return render(request, "insights.html", user=user, entity=entity,
+                      entities=entities, cards=cards,
+                      entity_qs="all" if entity is None else entity["id"],
+                      n_grievances=n_grievances,
+                      min_evidence=insights_mod.MIN_EVIDENCE,
+                      can_generate=(user["role"] in ("lead", "superadmin")
+                                    and entity is not None))
+    finally:
+        db.close()
+
+
+@app.post("/insights/generate")
+async def insights_generate(request: Request):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "lead", "superadmin")
+        entity_id = form.get("entity_id")
+        row = one(db, "SELECT * FROM entities WHERE id = ?", (entity_id,))
+        if not row:
+            raise HTTPException(404, "No such entity")
+        if user["role"] != "superadmin" and user["entity_id"] != row["id"]:
+            raise HTTPException(403, "Not your team's entity")
+        try:
+            result = insights_mod.generate(db, row, user["id"])
+        except Exception as exc:
+            log.warning("Insight generation failed for %s: %s: %s",
+                        row["name"], type(exc).__name__, exc)
+            msg = (f"Could not generate insights: {type(exc).__name__}: "
+                   f"{str(exc)[:120]}")
+            return RedirectResponse(
+                f"/insights?entity={row['id']}&msg={quote(msg)}", status_code=303)
+    finally:
+        db.close()
+    if result["grievances"] == 0:
+        msg = "No social-media grievances to analyse yet — run Fetch social first."
+    elif result["insights"] == 0:
+        msg = (f"Analysed {result['grievances']} grievances — no pattern with "
+               f"at least {insights_mod.MIN_EVIDENCE} supporting complaints. "
+               "That is a finding too.")
+    else:
+        msg = (f"{result['insights']} pattern(s) found across "
+               f"{result['grievances']} grievances.")
+    return RedirectResponse(f"/insights?entity={row['id']}&msg={quote(msg)}",
+                            status_code=303)
 
 
 @app.get("/social")

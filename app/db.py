@@ -136,6 +136,25 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_by INTEGER REFERENCES users(id)
 );
 
+-- Patterns found across an entity's social-media grievances: a product or
+-- process that keeps drawing complaints, with the evidence and a
+-- recommendation. Derived data, regenerated on demand -- each run replaces
+-- the entity's previous set, so there is no history to migrate.
+CREATE TABLE IF NOT EXISTS insights (
+    id            INTEGER PRIMARY KEY,
+    entity_id     INTEGER NOT NULL REFERENCES entities(id),
+    generated_at  TEXT NOT NULL,
+    generated_by  INTEGER REFERENCES users(id),
+    model         TEXT,
+    window_days   INTEGER,
+    n_grievances  INTEGER,
+    product       TEXT NOT NULL,
+    pattern       TEXT NOT NULL,
+    recommendation TEXT NOT NULL,
+    severity      TEXT,
+    item_ids      TEXT NOT NULL DEFAULT '[]'
+);
+
 CREATE TABLE IF NOT EXISTS fetch_log (
     id        INTEGER PRIMARY KEY,
     ran_at    TEXT NOT NULL DEFAULT (datetime('now')),
