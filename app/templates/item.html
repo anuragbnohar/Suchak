@@ -3,6 +3,21 @@
 {% block content %}
 <p class="crumb"><a href="/queue?entity={{ entity.id }}">← Back to queue</a></p>
 
+{% if item.attribution == 'rejected' %}
+<div class="flash warn-note">
+  This item was <strong>rejected as another entity's news</strong> — none of
+  {{ entity.name }}'s stored aliases appears in its headline or snippet
+  ({{ item.gate_reason }}). If you recognise it as this entity's, attribute it
+  and it will be classified like any other item.
+  <form method="post" action="/item/{{ item.id }}/attribute" style="margin-top:0.5rem">
+    <button type="submit" class="btn btn-primary">This is {{ entity.name }}'s — classify it</button>
+  </form>
+  <p class="meta-dim small" style="margin:0.5rem 0 0">If the press spells the
+    name this way often, also add that spelling as an alias on the
+    <a href="/entities">Entities</a> page so future fetches match it themselves.</p>
+</div>
+{% endif %}
+
 <article class="detail">
   <div class="detail-main">
     <h1 class="detail-title">{{ item.title }}</h1>

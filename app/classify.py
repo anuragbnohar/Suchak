@@ -489,6 +489,18 @@ def classify_item(db, item) -> None:
         try:
             keep, excluded, reason = _gate(entity, item["title"],
                                            item["source_name"], exclusion_rules)
+            try:
+                human_ruled = item["attribution"] == "human"
+            except (KeyError, IndexError):
+                human_ruled = False
+            if not keep and human_ruled:
+                # A team member has ruled this item IS the entity's -- the
+                # cheap screen does not get to overrule that. The negative
+                # list below still applies: it is about content type, not
+                # about which bank the item concerns.
+                log.info("Gate disagreed but a human attributed %r to %s; "
+                         "keeping", item["title"][:60], entity["name"])
+                keep = True
             if not keep:
                 log.info("Gated out %r for %s: %s",
                          item["title"][:60], entity["name"], reason)

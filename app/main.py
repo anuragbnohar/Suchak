@@ -20,7 +20,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import forums, insights as insights_mod, reddit_source, taxonomy, x_scrape
 from .matching import derive_aliases
 from .auth import get_user, require_login, require_role, verify_password
-from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_RISK_DEFS,
+from .classify import (classify_item,
+                       DEFAULT_EXCLUSION_RULES, DEFAULT_RISK_DEFS,
                        DEFAULT_SEVERITY_DEFS,
                        EXCLUSION_RULES_KEY, RISK_DEFS_KEY, SEVERITY_DEFS_KEY,
                        similar_reviewed, suggest_action)
@@ -93,7 +94,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-08-25.11"
+APP_BUILD = "2026-08-26.1"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -266,7 +267,10 @@ def queue(request: Request):
         if status == "open":
             where.append("i.status IN ('new','classified') AND i.gated_out = 0")
         elif status == "filtered":
-            where.append("i.gated_out = 1")
+            where.append("i.gated_out = 1"
+                         " AND COALESCE(i.attribution,'') != 'rejected'")
+        elif status == "rejected":
+            where.append("COALESCE(i.attribution,'') = 'rejected'")
         elif status in ("reviewed", "dismissed"):
             where.append("i.status = ?")
             params.append(status)
@@ -332,7 +336,9 @@ def queue(request: Request):
             scope_sql, scope_args = "entity_id = ?", [entity["id"]]
         scope_sql += " AND source_type != 'social'"
         counts = {r["s"]: r["n"] for r in q(
-            db, "SELECT CASE WHEN gated_out = 1 THEN 'filtered'"
+            db, "SELECT CASE WHEN COALESCE(attribution,'') = 'rejected'"
+                "             THEN 'rejected'"
+                "        WHEN gated_out = 1 THEN 'filtered'"
                 "        WHEN status IN ('new','classified') THEN 'open'"
                 "        ELSE status END s,"
                 f" COUNT(*) n FROM items WHERE {scope_sql} GROUP BY s", tuple(scope_args))}
@@ -437,6 +443,44 @@ def item_detail(request: Request, item_id: int):
                       similar=similar_prepped, suggestion=suggestion)
     finally:
         db.close()
+
+
+@app.post("/item/{item_id}/attribute")
+async def item_attribute(request: Request, item_id: int):
+    """A human overturns the alias-match rejection: this item IS the
+    entity's. Same scope as reviewing -- your team's items only -- since
+    it is the same kind of judgement. The item re-enters classification,
+    and the gate is told a human has already settled whose item it is."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        row = one(db, "SELECT * FROM items WHERE id = ?", (item_id,))
+        if not row:
+            raise HTTPException(404, "Item not found")
+        if user["role"] != "superadmin" and row["entity_id"] != user["entity_id"]:
+            raise HTTPException(403, "Item belongs to another entity's team")
+        if row["attribution"] != "rejected":
+            raise HTTPException(400, "Only a rejected item can be attributed")
+        x(db, "UPDATE items SET attribution='human', status='new', gated_out=0,"
+              " gate_reason=NULL, classifier=NULL, classified_at=NULL"
+              " WHERE id=?", (item_id,))
+    finally:
+        db.close()
+
+    def _classify_one():
+        cdb = connect()
+        try:
+            item = one(cdb, "SELECT * FROM items WHERE id = ?", (item_id,))
+            if item:
+                classify_item(cdb, item)
+        finally:
+            cdb.close()
+    _spawn(asyncio.to_thread(_classify_one))
+    return RedirectResponse(
+        f"/item/{item_id}?msg=" + quote(
+            "Attributed to the entity — classification is running; "
+            "refresh in a few seconds."),
+        status_code=303)
 
 
 @app.post("/item/{item_id}/review")

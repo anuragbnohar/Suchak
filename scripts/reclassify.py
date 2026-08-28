@@ -68,7 +68,9 @@ def main() -> int:
     init_db()
     db = connect()
     try:
-        where, params = ["1=1"], []
+        # Attribution rejects re-enter only by a human ruling on the
+        # queue's Rejected tab -- a bulk reclassify must not un-reject them.
+        where, params = ["COALESCE(attribution,'') != 'rejected'"], []
         if args.entity:
             ent = one(db, "SELECT id FROM entities WHERE name = ?", (args.entity,))
             if not ent:

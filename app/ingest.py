@@ -859,6 +859,14 @@ def ingest_entity(db, entity, registry: Registry | None = None,
 
         # Free disambiguation, before anything is stored or classified:
         # "State Bank of India ..." must not be filed under Bank of India.
+        # URL dedup runs before attribution so a reject stored on the last
+        # fetch is not stored again on this one.
+        if one(db, "SELECT 1 FROM items WHERE entity_id=? AND url=?", (entity["id"], link)):
+            continue
+        if one(db, "SELECT 1 FROM item_sources s JOIN items i ON i.id=s.item_id"
+                   " WHERE i.entity_id=? AND s.url=?", (entity["id"], link)):
+            continue
+
         if not cand.get("attribution_confident") and \
                 not registry.mentions(entity["id"], f"{title} {cand['snippet']}"):
             near = near_miss(title, cand["snippet"] or "",
@@ -890,13 +898,28 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                         result["near_miss"] = {"score": near[0], "title": title,
                                                "alias": near[1],
                                                "missing": near[3]}
+                # A rejected headline is a judgement, and judgements get an
+                # appeal: the item is stored on the queue's Rejected tab,
+                # where a human can rule it IS this entity's and send it to
+                # classification. Social rejects stay unstored -- a
+                # site-wide Reddit search rejects mostly true noise, and
+                # volume would bury the genuine near-misses.
+                if cand["source_type"] != "social":
+                    x(db, "INSERT INTO items (entity_id, title, url, source_name,"
+                          " snippet, published_at, source_type, source_tier,"
+                          " status, gated_out, gate_reason, attribution,"
+                          " classifier, relevance, risk_areas, severity,"
+                          " actionability, summary)"
+                          " VALUES (?,?,?,?,?,?,?,?,'classified',1,?,"
+                          "'rejected','attribution',0,'[]','low','monitor',?)",
+                      (entity["id"], title, link, cand["source_name"],
+                       cand["snippet"][:500], cand["published_at"],
+                       cand["source_type"],
+                       tier_for(cand["source_type"], cand["source_name"], link,
+                                trusted_norms),
+                       "another entity's news — no stored alias appears in "
+                       "the headline or snippet", title))
                 continue
-
-        if one(db, "SELECT 1 FROM items WHERE entity_id=? AND url=?", (entity["id"], link)):
-            continue
-        if one(db, "SELECT 1 FROM item_sources s JOIN items i ON i.id=s.item_id"
-                   " WHERE i.entity_id=? AND s.url=?", (entity["id"], link)):
-            continue
 
         # the publisher suffix Google News appends differs per outlet, so it
         # poisons similarity and clutters the queue; the outlet is shown
@@ -980,6 +1003,7 @@ def _log_fetch(db, entity_id: int, result: dict,
                        "but not as one phrase")
             rejected += (f'. Closest: "{head}" — {why}. If that is this '
                          "entity, add the press's spelling as an alias.")
+        rejected += " Rejects are held on the queue's Rejected tab."
         note = f"{note}; {rejected}" if note else rejected
     x(db, "INSERT INTO fetch_log (entity_id, source, found, added, merged, note)"
           " VALUES (?,?,?,?,?,?)",

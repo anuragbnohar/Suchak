@@ -180,6 +180,10 @@ def connect() -> sqlite3.Connection:
 MIGRATIONS = [
     ("entities", "exclude_terms", "TEXT NOT NULL DEFAULT '[]'"),
     ("items", "gated_out", "INTEGER NOT NULL DEFAULT 0"),
+    # NULL = attributed by alias match; 'rejected' = no alias matched, held
+    # on the queue's Rejected tab for a human to overturn; 'human' = a team
+    # member confirmed the item is this entity's, which outranks the gate.
+    ("items", "attribution", "TEXT"),
     ("items", "gate_reason", "TEXT"),
     ("items", "source_type", "TEXT NOT NULL DEFAULT 'news'"),
     ("entities", "x_handle", "TEXT"),
