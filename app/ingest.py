@@ -85,6 +85,13 @@ LOOKBACK_CHOICES = (7, 30, 90, 365)
 # body says the full registered name; only the body knows.
 BODY_CHECKS = max(0, min(int(os.environ.get("SUCHAK_BODY_CHECKS", "3")), 10))
 
+# A reject is held for human appeal only when it resembles the entity's
+# name at all. Google pads thin phrase searches with loosely regional
+# stories -- "No Vehicle Day in Parbhani" arrived in a Jalna bank feed --
+# and storing those would bury the genuine near-misses the Rejected tab
+# exists to surface. Half the alias's words is the floor.
+REJECT_STORE_MIN = 0.5
+
 # Social complaints age differently from news: a complaint forum's value is
 # the pattern across months, and a bank the size of these gets few posts a
 # week, so the news window (7 days by default) would return almost nothing.
@@ -906,10 +913,12 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 # A rejected headline is a judgement, and judgements get an
                 # appeal: the item is stored on the queue's Rejected tab,
                 # where a human can rule it IS this entity's and send it to
-                # classification. Social rejects stay unstored -- a
-                # site-wide Reddit search rejects mostly true noise, and
-                # volume would bury the genuine near-misses.
-                if cand["source_type"] != "social":
+                # classification. Only near-name rejects are held -- regional
+                # filler that shares less than half an alias's words is
+                # noise with certainty, and social rejects stay unstored for
+                # the same volume reason.
+                if (cand["source_type"] != "social"
+                        and near and near[0] >= REJECT_STORE_MIN):
                     x(db, "INSERT INTO items (entity_id, title, url, source_name,"
                           " snippet, published_at, source_type, source_tier,"
                           " status, gated_out, gate_reason, attribution,"
@@ -1008,7 +1017,8 @@ def _log_fetch(db, entity_id: int, result: dict,
                        "but not as one phrase")
             rejected += (f'. Closest: "{head}" — {why}. If that is this '
                          "entity, add the press's spelling as an alias.")
-        rejected += " Rejects are held on the queue's Rejected tab."
+        rejected += (" Near-name rejects are held on the queue's "
+                     "Rejected tab.")
         note = f"{note}; {rejected}" if note else rejected
     x(db, "INSERT INTO fetch_log (entity_id, source, found, added, merged, note)"
           " VALUES (?,?,?,?,?,?)",
