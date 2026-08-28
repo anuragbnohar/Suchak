@@ -19,8 +19,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import forums, insights as insights_mod, reddit_source, taxonomy, x_scrape
 from .auth import get_user, require_login, require_role, verify_password
-from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_SEVERITY_DEFS,
-                       EXCLUSION_RULES_KEY, SEVERITY_DEFS_KEY,
+from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_RISK_DEFS,
+                       DEFAULT_SEVERITY_DEFS,
+                       EXCLUSION_RULES_KEY, RISK_DEFS_KEY, SEVERITY_DEFS_KEY,
                        similar_reviewed, suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
@@ -91,7 +92,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-08-25.4"
+APP_BUILD = "2026-08-25.5"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1155,10 +1156,12 @@ def factors_page(request: Request):
                          " WHERE f.entity_id IS NULL OR f.entity_id = ?"
                          " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
         severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
+        risk_defs = get_setting(db, RISK_DEFS_KEY, DEFAULT_RISK_DEFS)
         exclusion_rules = get_setting(db, EXCLUSION_RULES_KEY, DEFAULT_EXCLUSION_RULES)
         trusted_sources = get_setting(db, TRUSTED_SOURCES_KEY, DEFAULT_TRUSTED_SOURCES)
         return render(request, "factors.html", user=user, factors=rows,
-                      severity_defs=severity_defs, exclusion_rules=exclusion_rules,
+                      severity_defs=severity_defs, risk_defs=risk_defs,
+                      exclusion_rules=exclusion_rules,
                       trusted_sources=trusted_sources)
     finally:
         db.close()
@@ -1185,6 +1188,24 @@ async def factors_add(request: Request):
     finally:
         db.close()
     return RedirectResponse("/factors?msg=Factor+added", status_code=303)
+
+
+@app.post("/settings/risk")
+async def settings_risk(request: Request):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        text = " ".join((form.get("risk_defs") or "").split())
+        if not text:
+            raise HTTPException(400, "Risk definitions cannot be empty")
+        set_setting(db, RISK_DEFS_KEY, text, user["id"])
+    finally:
+        db.close()
+    return RedirectResponse(
+        "/factors?msg=Risk+definitions+updated+—+applies+to+new+classifications",
+        status_code=303)
 
 
 @app.post("/settings/severity")

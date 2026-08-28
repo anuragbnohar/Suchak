@@ -39,6 +39,31 @@
   </section>
 
   <section class="panel">
+    <h2>Risk area definitions</h2>
+    {% if user.role == 'superadmin' %}
+    <form method="post" action="/settings/risk" class="stack-form">
+      <label>Definitions the classifier applies, anchored to the RBI guidance
+        notes on Credit Risk Management (2002), Market Risk Management (2002,
+        which also covers liquidity) and Operational Risk Management &amp;
+        Operational Resilience (2024)
+        <textarea name="risk_defs" rows="16" required>{{ risk_defs }}</textarea>
+      </label>
+      <button type="submit" class="btn btn-primary">Save definitions</button>
+      <p class="meta-dim small">Applies to items classified from now on;
+        already-classified items keep their verdicts (re-run old ones with
+        <code>python -m scripts.reclassify</code>). Refine this text against
+        the guidance notes themselves — the classifier follows whatever is
+        written here. The category names are fixed; this text decides what
+        belongs in each.</p>
+    </form>
+    {% else %}
+    <p class="conditions">{{ risk_defs }}</p>
+    <p class="meta-dim small">Editable by the super admin. Your risk-area
+      corrections on individual reviews also teach the classifier.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
     <h2>Severity criteria</h2>
     {% if user.role == 'superadmin' %}
     <form method="post" action="/settings/severity" class="stack-form">

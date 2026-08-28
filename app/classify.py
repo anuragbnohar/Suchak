@@ -41,6 +41,56 @@ DEFAULT_EXCLUSION_RULES = (
     "underlying event at the institution."
 )
 
+# Risk-area definitions the classifier applies. The default is drawn from
+# the three RBI guidance notes the supervisor anchored this taxonomy to --
+# Credit Risk Management (Oct 2002), Market Risk Management (Oct 2002,
+# which treats liquidity as integral to market risk management), and
+# Operational Risk Management and Operational Resilience (Apr 2024). The
+# text is editable on the Factors page, so the team can refine it against
+# the documents themselves; the classifier follows whatever is stored.
+RISK_DEFS_KEY = "risk_definitions"
+DEFAULT_RISK_DEFS = (
+    "Credit Risk (per RBI Guidance Note on Credit Risk Management, 2002): "
+    "possibility of losses associated with diminution in the credit quality "
+    "of borrowers or counterparties -- defaults and NPAs, slippages and "
+    "restructuring, wilful default, weak recovery and write-offs, "
+    "concentration in a borrower, group or sector, counterparty settlement "
+    "failure, invoked guarantees. This is about the bank's asset quality; "
+    "a borrower's complaint about loan service is Conduct, not Credit. "
+    "Market Risk (per RBI Guidance Note on Market Risk Management, 2002): "
+    "possibility of loss from adverse movement of market prices -- interest "
+    "rates, foreign exchange, equity and commodity prices -- on trading and "
+    "investment portfolios: treasury and derivative losses, mark-to-market "
+    "hits, interest-rate risk in the banking book. "
+    "Liquidity Risk (treated by the same Market Risk guidance note as "
+    "integral to it): inability to meet obligations as they fall due or to "
+    "fund asset growth without unacceptable cost -- deposit runs and "
+    "withdrawal stress, withdrawal caps, redemption pressure, loss of "
+    "funding-market access, severe asset-liability mismatch. "
+    "Operational Risk (per RBI Guidance Note on Operational Risk Management "
+    "and Operational Resilience, 2024): risk of loss from inadequate or "
+    "failed internal processes, people and systems, or from external "
+    "events; includes legal risk; excludes strategic and reputational "
+    "risk. Internal and external fraud in operations, process and payment "
+    "failures, system outages and service disruption, third-party and "
+    "outsourcing failures, business-continuity events. "
+    "Cybersecurity Risk (ICT and cyber, treated under operational "
+    "resilience by the 2024 note but tracked separately here): cyber "
+    "attacks and data breaches, digital-channel and card/ATM compromise, "
+    "phishing and OTP fraud, ransomware. Use this, not Operational, when "
+    "the vector is cyber. "
+    "Governance Risk (supervisory judgement; outside the three notes): "
+    "board and senior-management failures, auditor concerns or exits, "
+    "related-party dealings, disclosure lapses, strictures on management. "
+    "Conduct & Consumer Protection (supervisory judgement; outside the "
+    "three notes): mis-selling, unfair or hidden charges, harassment in "
+    "recovery, grievance-handling failure, wrongful freezes or denials of "
+    "service to customers. "
+    "An item may genuinely engage several areas -- a cyber fraud the bank "
+    "then mishandled with the customer is Cybersecurity and Conduct; "
+    "classify by the nature of each deficiency the text shows."
+)
+
 SEVERITY_DEFS_KEY = "severity_definitions"
 DEFAULT_SEVERITY_DEFS = (
     "high = potential supervisory concern needing prompt attention "
@@ -207,7 +257,8 @@ def suggest_action(similar: list) -> str | None:
 
 def _build_system(entity, factors, examples,
                   severity_defs: str = DEFAULT_SEVERITY_DEFS,
-                  exclusion_rules: str = DEFAULT_EXCLUSION_RULES) -> str:
+                  exclusion_rules: str = DEFAULT_EXCLUSION_RULES,
+                  risk_defs: str = DEFAULT_RISK_DEFS) -> str:
     lines = [
         "You are a supervisory triage assistant for the Banking Supervisor of India.",
         "You classify public news items about a regulated entity so a small "
@@ -226,8 +277,9 @@ def _build_system(entity, factors, examples,
         "write the summary and every other text field in English. Do not "
         "translate the entity's name; leave proper nouns as they are.",
         "",
-        "Risk areas (choose zero or more that genuinely apply): "
-        + "; ".join(taxonomy.RISK_AREAS) + ".",
+        "Risk areas -- choose zero or more that genuinely apply, guided by "
+        "these definitions, which follow the RBI guidance notes the "
+        "supervisory team works to: " + risk_defs,
         f"Severity: {severity_defs}.",
         "Actionability: action_recommended = the team likely must act; "
         "review_recommended = a person should read this soon; monitor = ambient awareness only.",
@@ -274,7 +326,8 @@ def _build_system(entity, factors, examples,
 
 def _llm_classify(entity, factors, examples, title, snippet, source, published,
                   severity_defs: str = DEFAULT_SEVERITY_DEFS,
-                  exclusion_rules: str = DEFAULT_EXCLUSION_RULES):
+                  exclusion_rules: str = DEFAULT_EXCLUSION_RULES,
+                  risk_defs: str = DEFAULT_RISK_DEFS):
     client = _get_client()
     user_msg = (
         f"Classify this item.\n"
@@ -287,7 +340,7 @@ def _llm_classify(entity, factors, examples, title, snippet, source, published,
         model=MODEL,
         max_tokens=2048,
         system=_build_system(entity, factors, examples, severity_defs,
-                             exclusion_rules),
+                             exclusion_rules, risk_defs),
         messages=[{"role": "user", "content": user_msg}],
         output_config={"format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
     )
@@ -455,11 +508,12 @@ def classify_item(db, item) -> None:
     factors = active_factors(db, item["entity_id"])
     examples = similar_reviewed(db, item["entity_id"], f"{item['title']} {item['snippet'] or ''}")
     severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
+    risk_defs = get_setting(db, RISK_DEFS_KEY, DEFAULT_RISK_DEFS)
     try:
         verdict, classifier, model = _llm_classify(
             entity, factors, examples,
             item["title"], item["snippet"], item["source_name"], item["published_at"],
-            severity_defs, exclusion_rules,
+            severity_defs, exclusion_rules, risk_defs,
         )
     except Exception as exc:  # missing key, network, rate limit, refusal, bad JSON
         log.warning("LLM classification failed (%s: %s); using heuristic", type(exc).__name__, exc)
