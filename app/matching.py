@@ -141,7 +141,19 @@ def build_query(registry: Registry, entity_id: int, days: int | None = None,
     ent = registry.entities[entity_id]
     # `aliases` lets the caller decide which spellings matter for this feed --
     # a Marathi edition wants the Devanagari forms, not the Latin ones.
-    aliases = (aliases if aliases is not None else ent["aliases"])[:max_aliases]
+    aliases = aliases if aliases is not None else ent["aliases"]
+    # Drop any alias that merely extends a shorter one already in the list:
+    # a phrase search for "Motiram Agrawal Jalna Merchants Co-operative Bank
+    # Ltd." can only return a subset of what "Jalna Merchants Co-operative
+    # Bank" returns, so carrying both spends a slot to narrow the search.
+    # Attribution still uses the full list; this is only about the query.
+    kept: list[str] = []
+    for alias in aliases:
+        low = alias.lower()
+        if any(shorter.lower() in low for shorter in kept):
+            continue
+        kept.append(alias)
+    aliases = kept[:max_aliases]
     query = f" {or_token} ".join(f'"{a}"' for a in aliases)
     if len(aliases) > 1:
         query = f"({query})"
@@ -198,6 +210,22 @@ def derive_aliases(names: list[str]) -> list[str]:
             if low.endswith(" " + suffix):
                 add(base[: -len(suffix)].rstrip(" ,"))
                 break
+
+    # Singular/plural of the trade word. The Times of India writes "Jalna
+    # Merchant Co-op Bank" and "Jalna Merchants Co-operative Bank" of the
+    # same institution, and a phrase match treats one letter as a different
+    # name. Only words a bank's name actually inflects this way.
+    _PLURALISED = ("merchant", "trader", "weaver", "worker", "employee",
+                   "citizen", "resident", "grain", "oilseed", "sugar")
+    for name in list(names):
+        for word in name.split():
+            bare = word.strip(",.").lower()
+            if bare in _PLURALISED:
+                add(name.replace(word, word.rstrip("sS") + "s", 1))
+                add(name.replace(word, word.rstrip("sS"), 1))
+            elif bare.rstrip("s") in _PLURALISED:
+                add(name.replace(word, word.rstrip("sS"), 1))
+                add(name.replace(word, word.rstrip("sS") + "s", 1))
 
     # spelling variants, over the names and anything just derived
     for name in list(names) + list(out):
