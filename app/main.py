@@ -18,6 +18,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import forums, insights as insights_mod, reddit_source, taxonomy, x_scrape
+from .matching import derive_aliases
 from .auth import get_user, require_login, require_role, verify_password
 from .classify import (DEFAULT_EXCLUSION_RULES, DEFAULT_RISK_DEFS,
                        DEFAULT_SEVERITY_DEFS,
@@ -92,7 +93,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-08-25.6"
+APP_BUILD = "2026-08-25.7"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1341,6 +1342,11 @@ async def entities_add(request: Request):
             raise HTTPException(400, "Entity name is required")
         if name not in aliases:
             aliases.insert(0, name)
+        # A roster entry carrying only its legal name finds nothing: the
+        # press writes "X Co-operative Bank", never "X Co-Operative Bank
+        # Ltd.". The mechanical variants are appended, after whatever the
+        # team typed, so a human's chosen spellings still lead the query.
+        aliases += derive_aliases(aliases)
         if kind not in taxonomy.ENTITY_KINDS:
             raise HTTPException(400, "Unknown entity kind")
         x(db, "INSERT INTO entities (name, kind, aliases, languages) VALUES (?,?,?,?)",
@@ -1425,6 +1431,7 @@ async def entities_aliases(request: Request, entity_id: int):
         aliases = [a.strip() for a in (form.get("aliases") or "").split(",") if a.strip()]
         if not aliases:
             raise HTTPException(400, "At least one alias is required")
+        aliases += derive_aliases(aliases)
         # The form posts both fields together; when it omits languages, keep
         # whatever the entity already had rather than resetting it to English.
         langs = (_parse_languages(form.get("languages")) if form.get("languages") is not None

@@ -152,3 +152,71 @@ def build_query(registry: Registry, entity_id: int, days: int | None = None,
     if days:
         query += f" when:{days}d"
     return query
+
+
+# Corporate suffixes the press drops. "X Bank Ltd." and "X Bank" are the
+# same institution in every sentence ever written about them, so a roster
+# entry carrying only the legal name should still match the coverage.
+_LEGAL_SUFFIXES = (
+    "private limited", "pvt. ltd.", "pvt ltd", "limited", "ltd.", "ltd",
+)
+
+# Indian cooperative banks are spelled every one of these ways, often in
+# the same article. Attribution is a strict phrase match, so each spelling
+# has to be present as an alias or the headline is discarded unread.
+_COOP_FORMS = ("co-operative", "cooperative", "co operative", "co-op")
+
+
+def derive_aliases(names: list[str]) -> list[str]:
+    """Spelling variants of an entity's own names, for attribution.
+
+    Purely mechanical: a dropped legal suffix, and the interchangeable
+    spellings of "co-operative". Nothing here guesses which words the
+    press omits -- shortening "Motiram Agrawal Jalna Merchants Bank" to
+    "Jalna Merchants Bank" is editorial judgement and stays with the
+    team. Returned in the order generated, with anything already present
+    left out, so callers can append without disturbing the aliases a
+    human chose to put first.
+    """
+    seen = {n.strip().lower() for n in names if n.strip()}
+    out: list[str] = []
+
+    def add(candidate: str) -> None:
+        candidate = " ".join(candidate.split()).strip(" ,")
+        key = candidate.lower()
+        if candidate and key not in seen:
+            seen.add(key)
+            out.append(candidate)
+
+    for name in list(names):
+        base = " ".join((name or "").split())
+        if not base:
+            continue
+        # drop a trailing legal suffix, once
+        low = base.lower()
+        for suffix in _LEGAL_SUFFIXES:
+            if low.endswith(" " + suffix):
+                add(base[: -len(suffix)].rstrip(" ,"))
+                break
+
+    # spelling variants, over the names and anything just derived
+    for name in list(names) + list(out):
+        low = (name or "").lower()
+        for form in _COOP_FORMS:
+            if form not in low:
+                continue
+            start = low.index(form)
+            original = name[start:start + len(form)]
+            for other in _COOP_FORMS:
+                if other == form:
+                    continue
+                # The team reads these aliases on the Entities page, so a
+                # variant of "Co-Operative Bank" should not arrive as
+                # "cooperative Bank".
+                if original[:1].isupper():
+                    other = "-".join(w.capitalize() for w in other.split("-")) \
+                        if "-" in other else \
+                        " ".join(w.capitalize() for w in other.split(" "))
+                add(name[:start] + other + name[start + len(form):])
+            break
+    return out
