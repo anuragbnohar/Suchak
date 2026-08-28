@@ -97,15 +97,18 @@
             <div class="todo-more-body">
               <form method="post" action="/entities/{{ r.entity.id }}/aliases"
                     class="stack-form entity-edit-form">
-                <label>Aliases — how the press actually writes this name, most
-                  common first, separated by commas
-                  <textarea name="aliases" rows="3" required>{{ r.aliases | join(', ') }}</textarea>
+                <label>Aliases — how the press actually writes this name,
+                  most common first, one per line
+                  <textarea name="aliases" required
+                            rows="{{ [10, [4, r.aliases | length] | max] | min }}"
+                  >{{ r.aliases | join('\n') }}</textarea>
                 </label>
                 <p class="meta-dim small">Attribution is an exact phrase match, so a
                   headline is only kept if it contains one of these. The legal name
                   alone rarely appears in print — add the short forms a journalist
-                  would use. Spelling variants (dropped "Ltd.", co-operative /
-                  cooperative / co-op) are added automatically when you save.</p>
+                  would use. One alias per line (commas work too); duplicates are
+                  dropped on save, and spelling variants (dropped "Ltd.",
+                  co-operative / cooperative / co-op) are added automatically.</p>
                 <div class="edit-pair">
                   <label>News languages
                     <input name="languages" value="{{ r.languages | join(', ') }}"

@@ -93,7 +93,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-08-25.8"
+APP_BUILD = "2026-08-25.9"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1328,6 +1328,23 @@ def _parse_languages(raw: str | None) -> list[str]:
     return codes or ["en"]
 
 
+def _parse_aliases(raw: str | None) -> list[str]:
+    """Aliases from a form, split on commas AND newlines.
+
+    The edit box is a textarea, and a textarea invites one-name-per-line;
+    splitting on commas alone silently glued two names into a single alias
+    that matched nothing -- and the variant derivation then faithfully
+    produced spelling variants of the glued garbage. Order is preserved,
+    inner whitespace collapsed, case-insensitive duplicates dropped."""
+    out, seen = [], set()
+    for part in re.split(r"[,\r\n]+", raw or ""):
+        part = " ".join(part.split())
+        if part and part.lower() not in seen:
+            seen.add(part.lower())
+            out.append(part)
+    return out
+
+
 @app.post("/entities")
 async def entities_add(request: Request):
     form = await request.form()
@@ -1337,10 +1354,10 @@ async def entities_add(request: Request):
         require_role(user, "superadmin")
         name = (form.get("name") or "").strip()
         kind = form.get("kind") or taxonomy.ENTITY_KINDS[0]
-        aliases = [a.strip() for a in (form.get("aliases") or "").split(",") if a.strip()]
+        aliases = _parse_aliases(form.get("aliases"))
         if not name:
             raise HTTPException(400, "Entity name is required")
-        if name not in aliases:
+        if name.lower() not in {a.lower() for a in aliases}:
             aliases.insert(0, name)
         # A roster entry carrying only its legal name finds nothing: the
         # press writes "X Co-operative Bank", never "X Co-Operative Bank
@@ -1428,7 +1445,7 @@ async def entities_aliases(request: Request, entity_id: int):
         e = one(db, "SELECT * FROM entities WHERE id = ?", (entity_id,))
         if not e:
             raise HTTPException(404, "Entity not found")
-        aliases = [a.strip() for a in (form.get("aliases") or "").split(",") if a.strip()]
+        aliases = _parse_aliases(form.get("aliases"))
         if not aliases:
             raise HTTPException(400, "At least one alias is required")
         aliases += derive_aliases(aliases)
