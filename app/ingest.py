@@ -40,7 +40,7 @@ import httpx
 
 from .classify import classify_new_items
 from .db import connect, one, q, x
-from .matching import Registry, build_query
+from .matching import Registry, build_query, near_miss
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
                          strip_publisher)
 from . import forums, reddit_source, x_scrape
@@ -79,6 +79,11 @@ LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "7"))
 # window without changing the default for anything else -- useful for a small
 # entity that goes quiet for weeks, where the standing 7 days says nothing.
 LOOKBACK_CHOICES = (7, 30, 90, 365)
+
+# How many near-miss rejects per entity per fetch may be settled by
+# reading the article itself. The headline says "Jalna Co-op Bank"; the
+# body says the full registered name; only the body knows.
+BODY_CHECKS = max(0, min(int(os.environ.get("SUCHAK_BODY_CHECKS", "3")), 10))
 
 # Social complaints age differently from news: a complaint forum's value is
 # the pattern across months, and a bank the size of these gets few posts a
@@ -744,6 +749,38 @@ def fetch_broadcast_sources(db, registry: Registry) -> dict[int, list[dict]]:
     return routed
 
 
+def _article_names_entity(registry: Registry, entity_id: int, url: str) -> bool:
+    """Whether the article behind this URL names the entity in its body.
+
+    The feed's snippet is a fragment; the press shortens names in
+    headlines and spells them out in the text. Google News links often
+    land on an interstitial rather than the publisher, so one hop to the
+    first non-Google link is followed. Any failure returns False -- the
+    caller then rejects exactly as it always did, so this can only ever
+    rescue an item, never admit one on an error.
+    """
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+               "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
+    try:
+        resp = httpx.get(url, headers=headers, timeout=12, follow_redirects=True)
+        if resp.status_code >= 400:
+            return False
+        if registry.mentions(entity_id, _strip_html(resp.text)):
+            return True
+        if "news.google.com" in str(resp.url):
+            m = re.search(r'href="(https?://(?!news\.google\.com|www\.google\.com)'
+                          r'[^"]+)"', resp.text)
+            if m:
+                hop = httpx.get(html.unescape(m.group(1)), headers=headers,
+                                timeout=12, follow_redirects=True)
+                if hop.status_code < 400 and \
+                        registry.mentions(entity_id, _strip_html(hop.text)):
+                    return True
+    except httpx.HTTPError:
+        pass
+    return False
+
+
 def ingest_entity(db, entity, registry: Registry | None = None,
                   extra_candidates: list[dict] | None = None,
                   days: int | None = None, channel: str = "all") -> dict:
@@ -754,8 +791,9 @@ def ingest_entity(db, entity, registry: Registry | None = None,
     "news", "social", or "all"."""
     registry = registry or load_registry(db)
     result = {"found": 0, "added": 0, "merged": 0, "rejected": 0,
-              "billed": 0, "note": None}
+              "billed": 0, "body_confirmed": 0, "note": None}
     notes = []
+    body_checks = 0
 
     if channel == "news":
         notes.append("news sources only")
@@ -823,13 +861,36 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         # "State Bank of India ..." must not be filed under Bank of India.
         if not cand.get("attribution_confident") and \
                 not registry.mentions(entity["id"], f"{title} {cand['snippet']}"):
-            result["rejected"] += 1
-            # The count alone cannot be acted on. Naming the headline turns
-            # "6 rejected" into a question someone can answer -- usually
-            # "the press spells the name differently from the alias".
-            log.info("Rejected for %s (no alias match): %r",
-                     entity["name"], title[:120])
-            continue
+            near = near_miss(title, cand["snippet"] or "",
+                             registry.entities[entity["id"]]["aliases"])
+            # A headline lexically this close deserves one more look before
+            # rejection: the press shortens names in headlines and spells
+            # them out in the text, so the article body -- not the feed's
+            # snippet -- is what settles "Jalna Co-op Bank". Budgeted, news
+            # only, and an unreachable page rejects as before: reading the
+            # body can rescue an item, never admit one on an error.
+            if (near and near[0] >= 0.6 and cand["source_type"] == "news"
+                    and body_checks < BODY_CHECKS):
+                body_checks += 1
+                if _article_names_entity(registry, entity["id"], link):
+                    result["body_confirmed"] += 1
+                    log.info("Kept for %s after reading the body: %r",
+                             entity["name"], title[:120])
+                    near = None
+            if near is not None:
+                result["rejected"] += 1
+                # The count alone cannot be acted on. Naming the headline
+                # turns "6 rejected" into a question someone can answer --
+                # usually "the press spells the name differently".
+                log.info("Rejected for %s (no alias match): %r",
+                         entity["name"], title[:120])
+                if near and near[0] >= 0.6:
+                    prev = result.get("near_miss")
+                    if prev is None or near[0] > prev["score"]:
+                        result["near_miss"] = {"score": near[0], "title": title,
+                                               "alias": near[1],
+                                               "missing": near[3]}
+                continue
 
         if one(db, "SELECT 1 FROM items WHERE entity_id=? AND url=?", (entity["id"], link)):
             continue
@@ -902,8 +963,23 @@ def ingest_entity(db, entity, registry: Registry | None = None,
 def _log_fetch(db, entity_id: int, result: dict,
                channel: str = "all") -> None:
     note = result["note"]
+    if result.get("body_confirmed"):
+        kept = (f"{result['body_confirmed']} kept by reading the article "
+                "body (name absent from the headline)")
+        note = f"{note}; {kept}" if note else kept
     if result.get("rejected"):
         rejected = f"{result['rejected']} rejected as another entity's news"
+        near = result.get("near_miss")
+        if near:
+            head = near["title"][:80] + ("…" if len(near["title"]) > 80 else "")
+            if near["missing"]:
+                why = (f"almost '{near['alias']}' but without "
+                       f"{'/'.join(near['missing'])}")
+            else:
+                why = (f"contains every word of '{near['alias']}' "
+                       "but not as one phrase")
+            rejected += (f'. Closest: "{head}" — {why}. If that is this '
+                         "entity, add the press's spelling as an alias.")
         note = f"{note}; {rejected}" if note else rejected
     x(db, "INSERT INTO fetch_log (entity_id, source, found, added, merged, note)"
           " VALUES (?,?,?,?,?,?)",

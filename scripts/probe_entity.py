@@ -26,43 +26,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.db import connect, init_db, q
 from app.ingest import (LOOKBACK_CHOICES, entity_languages, fetch_google_news,
                         google_news_url)
-from app.matching import Registry, alias_patterns
+from app.matching import (Registry, alias_patterns, near_miss as _near_miss,
+                          _match_tokens as _tokens, _token_present as _present)
 
 # Not \w+: in Devanagari the vowel signs are combining marks, which \w does
 # not match, so \w+ shreds "नागरीक" into fragments and every comparison
 # against it becomes noise. Splitting on whitespace and trimming punctuation
 # keeps words of any script intact.
-_PUNCT = ".,;:!?\"'()[]{}<>«»—–-·|/\u0964\u0965\u2018\u2019\u201c\u201d"
-
-
-def _tokens(text: str) -> list[str]:
-    return [w for w in ((raw.strip(_PUNCT).lower()) for raw in (text or "").split()) if w]
-
-
-def _present(token: str, hay: list[str]) -> bool:
-    """A token counts as present if some word in the text starts with it, so
-    an inflected form (बँक -> बँकेवर, Bank -> Bank's) still counts."""
-    return any(w.startswith(token) for w in hay)
-
-
-def _near_miss(title: str, snippet: str, aliases: list[str]):
-    """The alias sharing the most words with this text, and which of its
-    words are absent. This ranks candidates for a human to look at -- a
-    lexically close headline can still be a different institution, and the
-    caller prints the headline so that judgement stays with the reader."""
-    hay = _tokens(f"{title} {snippet}")
-    best = None
-    for alias in aliases:
-        want = _tokens(alias)
-        if not want:
-            continue
-        missing = [w for w in want if not _present(w, hay)]
-        score = (len(want) - len(missing)) / len(want)
-        if best is None or score > best[0]:
-            best = (score, alias, len(want) - len(missing), missing)
-    return best
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--entity", required=True, help="name or alias substring")

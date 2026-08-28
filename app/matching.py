@@ -220,3 +220,41 @@ def derive_aliases(names: list[str]) -> list[str]:
                 add(name[:start] + other + name[start + len(form):])
             break
     return out
+
+
+_PUNCT = ".,;:!?\"'()[]{}<>«»—–-·|/।॥‘’“”"
+
+
+def _match_tokens(text: str) -> list[str]:
+    return [w for w in ((raw.strip(_PUNCT).lower())
+                        for raw in (text or "").split()) if w]
+
+
+def _token_present(token: str, hay: list[str]) -> bool:
+    """A token counts as present if some word in the text starts with it, so
+    an inflected form (बँक -> बँकेवर, Bank -> Bank's) still counts."""
+    return any(w.startswith(token) for w in hay)
+
+
+def near_miss(title: str, snippet: str, aliases: list[str]):
+    """The alias sharing the most words with this text, and which of its
+    words are absent: (score, alias, matched_count, missing_words).
+
+    This ranks a rejected headline for a human to look at -- a lexically
+    close headline can still be a different institution, so the caller
+    shows the headline and the judgement stays with the reader. Lives here
+    rather than in the probe script because the fetch itself now reports
+    the closest reject: a supervisor should not need a terminal to learn
+    that the press spells the bank's name differently.
+    """
+    hay = _match_tokens(f"{title} {snippet}")
+    best = None
+    for alias in aliases:
+        want = _match_tokens(alias)
+        if not want:
+            continue
+        missing = [w for w in want if not _token_present(w, hay)]
+        score = (len(want) - len(missing)) / len(want)
+        if best is None or score > best[0]:
+            best = (score, alias, len(want) - len(missing), missing)
+    return best
