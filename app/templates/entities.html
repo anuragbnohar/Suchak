@@ -4,7 +4,8 @@
 <div class="page-head">
   <div>
     <h1>Regulated entities</h1>
-    <p class="page-sub">Aliases drive news matching — include brand names, abbreviations and vernacular spellings.</p>
+    <p class="page-sub">Aliases drive news matching — open an entity's Edit
+      panel to see and tune them.</p>
   </div>
   {% if user.role in ('lead','superadmin') %}
   <div>
@@ -35,7 +36,6 @@
       <tr>
         <th scope="col">Entity</th>
         <th scope="col">Kind</th>
-        <th scope="col">Aliases</th>
         <th scope="col">News in</th>
         <th scope="col">X handle</th>
         <th scope="col" class="num">Items</th>
@@ -46,7 +46,6 @@
       <tr>
         <td><strong>{{ r.entity.name }}</strong></td>
         <td class="meta-dim">{{ r.entity.kind }}</td>
-        <td class="alias-cell">{{ r.aliases | join(', ') }}</td>
         <td class="meta-dim">{{ r.languages | join(', ') }}</td>
         <td class="meta-dim">{{ ('@' ~ r.entity.x_handle) if r.entity.x_handle else '—' }}</td>
         <td class="num">{{ r.n_items }}</td>
@@ -91,7 +90,7 @@
          to members too, whose save the route then refused with a 403. #}
       {% if user.role == 'superadmin' or (user.role == 'lead' and user.entity_id == r.entity.id) %}
       <tr class="entity-edit-row">
-        <td colspan="8">
+        <td colspan="7">
           <details class="todo-more">
             <summary>Edit {{ r.entity.name }} — aliases, news languages, X handle</summary>
             <div class="todo-more-body">
