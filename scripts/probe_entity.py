@@ -70,7 +70,9 @@ def _per_alias_report(registry, entity, aliases, langs, days, extra):
     for lang in langs:
         ordered = aliases_for_language(aliases, lang)
         in_query = set(ordered[:NEWS_QUERY_ALIASES])
-        candidates = list(dict.fromkeys(ordered + list(extra)))
+        # Tried phrases first: they are the question being asked, and with
+        # a dozen stored aliases the cap must never squeeze them out.
+        candidates = list(dict.fromkeys(list(extra) + ordered))
         for alias in candidates[:14]:
             if tested:
                 time.sleep(1.0)
