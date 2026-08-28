@@ -207,14 +207,19 @@ def aliases_for_language(aliases: list[str], lang: str) -> list[str]:
 
 
 def google_news_url(registry: Registry, entity_id: int, lang: str = "en",
-                    days: int | None = None) -> str:
+                    days: int | None = None,
+                    aliases: list[str] | None = None) -> str:
     """Feed URL for one entity in one language: its aliases, minus the longer
-    names that contain them, limited to the lookback window."""
+    names that contain them, limited to the lookback window. `aliases`
+    overrides the entity's own list -- the probe uses it to test one
+    spelling at a time, since Google's answer to a six-phrase OR is not the
+    union of its answers to each phrase."""
     # max_aliases is 3 by default. An entity the press names several ways --
     # "Nagpur Nagarik Bank", "Nagpur Nagarik Sah Bank" -- needs more than
     # three in the query, or the feed never returns the headline that
     # attribution would have accepted.
-    ordered = aliases_for_language(registry.entities[entity_id]["aliases"], lang)
+    ordered = (aliases if aliases is not None else
+               aliases_for_language(registry.entities[entity_id]["aliases"], lang))
     query = build_query(registry, entity_id, days=effective_days(days) or None,
                         max_aliases=NEWS_QUERY_ALIASES, aliases=ordered)
     hl, gl, ceid = NEWS_EDITIONS.get(lang, NEWS_EDITIONS["en"])
