@@ -103,6 +103,16 @@ YOUTUBE_SEARCH = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_KEY = os.environ.get("SUCHAK_YOUTUBE_KEY", "")
 # search.list costs 100 quota units; the free daily allowance is 10,000, so
 # 33 banks cost 3,300 units per sweep. maxResults is capped at 50 by the API.
+YOUTUBE_COMMENTS_URL = "https://www.googleapis.com/youtube/v3/commentThreads"
+# Comments under an entity's videos are grievance-bearing social text, so
+# they run in the social channel. A search.list call costs 100 quota units
+# -- the expensive part -- while reading a video's comments costs 1, so a
+# comments run is one search plus pennies.
+YT_COMMENTS = os.environ.get("SUCHAK_YT_COMMENTS", "1").strip().lower() not in ("0", "false", "no")
+YT_COMMENT_VIDEOS = max(1, min(int(os.environ.get("SUCHAK_YT_COMMENT_VIDEOS", "6")), 15))
+YT_COMMENTS_PER_VIDEO = max(5, min(int(os.environ.get("SUCHAK_YT_COMMENTS_PER_VIDEO", "20")), 100))
+YT_COMMENTS_MAX = max(10, min(int(os.environ.get("SUCHAK_YT_COMMENTS_MAX", "60")), 200))
+
 YOUTUBE_MAX_RESULTS = min(int(os.environ.get("SUCHAK_YOUTUBE_MAX", "25")), 50)
 
 # --- X / Twitter -------------------------------------------------------------
@@ -540,6 +550,103 @@ def fetch_x_scrape(registry: Registry, entity, days: int | None = None) -> list[
     return x_scrape.scrape_query(f"to:{handle} -filter:retweets", x_scrape.MAX_POSTS)
 
 
+def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) -> list[dict]:
+    """Comments under the entity's recent videos.
+
+    The video supplies what the comment lacks: a comment saying "worst
+    service, my money is stuck" never names the bank, but it sits under a
+    video that does. So only videos that themselves pass the alias check
+    contribute comments, and those comments are marked confidently
+    attributed -- the same rule that admits posts sent to the bank's own
+    X handle. Comments run in the social channel: they are grievances or
+    noise, and the classifier's no-grievance gate decides which.
+    """
+    if not YOUTUBE_KEY or not YT_COMMENTS:
+        return []
+    window = effective_days(days)
+    since = None
+    params = {
+        "key": YOUTUBE_KEY,
+        "q": build_query(registry, entity["id"], or_token="|"),
+        "part": "snippet",
+        "type": "video",
+        "order": "date",
+        "maxResults": YT_COMMENT_VIDEOS,
+        "regionCode": "IN",
+    }
+    if window:
+        since = datetime.now(timezone.utc) - timedelta(days=window)
+        params["publishedAfter"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    resp = httpx.get(YOUTUBE_SEARCH, params=params, timeout=20)
+    if resp.status_code == 403:
+        raise RuntimeError(f"YouTube API refused the search: {resp.text[:200]}")
+    resp.raise_for_status()
+
+    items: list[dict] = []
+    for entry in resp.json().get("items", []):
+        if len(items) >= YT_COMMENTS_MAX:
+            break
+        video_id = (entry.get("id") or {}).get("videoId")
+        snip = entry.get("snippet") or {}
+        video_title = _strip_html(snip.get("title", ""))
+        description = _strip_html(snip.get("description", ""))
+        if not video_id or not video_title:
+            continue
+        # Only a video that names this entity may lend its context to its
+        # comments; otherwise a rival bank's video would donate grievances.
+        if not registry.mentions(entity["id"], f"{video_title} {description}"):
+            continue
+        try:
+            c_resp = httpx.get(YOUTUBE_COMMENTS_URL, params={
+                "key": YOUTUBE_KEY, "part": "snippet", "videoId": video_id,
+                "maxResults": YT_COMMENTS_PER_VIDEO, "order": "relevance",
+                "textFormat": "plainText",
+            }, timeout=20)
+        except httpx.HTTPError as exc:
+            log.info("Comments unreachable for video %s: %s", video_id, exc)
+            continue
+        if c_resp.status_code == 403 and "commentsDisabled" in c_resp.text:
+            continue                      # that video's choice, not an error
+        if c_resp.status_code == 403:
+            raise RuntimeError(
+                f"YouTube API refused comments: {c_resp.text[:200]}")
+        if c_resp.status_code >= 400:
+            log.info("Comments error %s for video %s", c_resp.status_code, video_id)
+            continue
+        for thread in c_resp.json().get("items", []):
+            if len(items) >= YT_COMMENTS_MAX:
+                break
+            top = (((thread.get("snippet") or {}).get("topLevelComment") or {})
+                   .get("snippet") or {})
+            text = " ".join((top.get("textDisplay") or "").split())
+            comment_id = (thread.get("snippet") or {}).get("topLevelComment", {}).get("id")                 or thread.get("id")
+            published = top.get("publishedAt")
+            if not text or not comment_id:
+                continue
+            # The video passed the window; its old comments must too.
+            if since and published:
+                try:
+                    when = datetime.fromisoformat(published.replace("Z", "+00:00"))
+                    if when < since:
+                        continue
+                except ValueError:
+                    pass
+            items.append({
+                "title": f'Comment on: {video_title}'[:200],
+                "url": f"https://www.youtube.com/watch?v={video_id}&lc={comment_id}",
+                "source_name": "YouTube comment",
+                "snippet": text[:1500],
+                "published_at": published,
+                "source_type": "social",
+                # The video's alias match is the attribution; the comment
+                # text alone would fail the name check, as posts to the
+                # bank's own X handle do.
+                "attribution_confident": True,
+            })
+    return items
+
+
 def fetch_reddit(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """Posts naming the entity on Reddit, site-wide and in the Indian
     finance subreddits. Always the last SOCIAL_LOOKBACK_DAYS, whatever
@@ -571,6 +678,12 @@ def fetch_forums(registry: Registry, entity, days: int | None = None) -> list[di
                          forums.MAX_ITEMS)
 
 
+def fetch_yt_comments_social(registry: Registry, entity, days: int | None = None) -> list[dict]:
+    """Social-channel wrapper: comments always cover the social window,
+    like the other complaint sources, whatever the news lookback."""
+    return fetch_youtube_comments(registry, entity, SOCIAL_LOOKBACK_DAYS)
+
+
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
@@ -578,6 +691,7 @@ SOURCES = {
     "x_scrape": fetch_x_scrape,
     "reddit": fetch_reddit,
     "forums": fetch_forums,
+    "youtube_comments": fetch_yt_comments_social,
 }
 
 # Two channels a fetch can run: press coverage and customer complaints.
@@ -587,6 +701,7 @@ SOURCES = {
 SOURCE_CHANNELS = {
     "google_news": "news", "youtube": "news",
     "x": "social", "x_scrape": "social", "reddit": "social", "forums": "social",
+    "youtube_comments": "social",
 }
 CHANNELS = ("all", "news", "social")
 
@@ -679,6 +794,9 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 # when it read nothing, so a zero really is "searched and
                 # matched nothing".
                 notes.append(f"{len(got)} from consumercomplaints.in")
+            elif name == "youtube_comments" and YOUTUBE_KEY and YT_COMMENTS:
+                # Stated even at zero, like the other social sources.
+                notes.append(f"{len(got)} from YouTube comments")
             elif name == "reddit" and reddit_source.ENABLED:
                 # Stated even at zero. Reddit raises when it could not read
                 # anything, so a zero here really does mean "searched and

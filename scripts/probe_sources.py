@@ -34,7 +34,7 @@ from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
 
-PROBE_BUILD = "2026-08-24.9-company-via-complaint"
+PROBE_BUILD = "2026-08-25.1-youtube-comments"
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -421,6 +421,32 @@ def _dump_raw(term: str) -> None:
         print(text[start_i:min(end_i, start_i + 2600)])
 
 
+def _probe_youtube_comments(reg: Registry, ent) -> None:
+    """Run the real comments collector once and show what came back."""
+    import logging
+    logging.basicConfig(level=logging.INFO, format="    %(message)s")
+    from app import ingest
+    print(f"\n=== YOUTUBE COMMENTS -- {ent['name']}")
+    print(f"    key set    : {'yes' if ingest.YOUTUBE_KEY else 'NO -- set SUCHAK_YOUTUBE_KEY in this terminal first'}")
+    print(f"    enabled    : {ingest.YT_COMMENTS}  |  up to "
+          f"{ingest.YT_COMMENT_VIDEOS} videos x {ingest.YT_COMMENTS_PER_VIDEO} comments,"
+          f" cap {ingest.YT_COMMENTS_MAX}")
+    if not ingest.YOUTUBE_KEY:
+        return
+    try:
+        items = ingest.fetch_youtube_comments(reg, dict(ent), ingest.SOCIAL_LOOKBACK_DAYS)
+    except Exception as exc:
+        print(f"\n    COULD NOT RUN: {type(exc).__name__}: {exc}")
+        return
+    print(f"\n    {len(items)} comment(s) collected\n")
+    for it in items[:8]:
+        print(f"      [{(it['published_at'] or 'no date')[:10]}] {it['title'][:72]}")
+        print(f"                   {it['snippet'][:110]}")
+    if not items:
+        print("      (No comments matched. Either the entity's recent videos "
+              "carry none, or none of the found videos names the entity.)")
+
+
 def _probe_reddit(reg: Registry, ent, days: int) -> None:
     print(f"\n=== REDDIT -- {ent['name']} (last {days} days)")
     print(f"    user-agent : {reddit_source.USER_AGENT[:70]}")
@@ -483,6 +509,8 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=365)
     ap.add_argument("--reddit-only", action="store_true")
     ap.add_argument("--forums-only", action="store_true")
+    ap.add_argument("--youtube", action="store_true",
+                    help="test YouTube comment collection for the entity")
     ap.add_argument("--routes", action="store_true",
                     help="try every Reddit route and report which answer")
     ap.add_argument("--dump", action="store_true",
@@ -527,6 +555,10 @@ def main() -> int:
             # finds the page where the legal name ("... Ltd.") may not.
             names = json.loads(ent["aliases"] or "[]") or [ent["name"]]
             term = names[0]
+
+        if args.youtube:
+            _probe_youtube_comments(reg, ent)
+            return 0
 
         if not args.forums_only:
             _probe_reddit(reg, ent, args.days)
