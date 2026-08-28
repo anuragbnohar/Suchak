@@ -46,23 +46,9 @@
       <tr>
         <td><strong>{{ r.entity.name }}</strong></td>
         <td class="meta-dim">{{ r.entity.kind }}</td>
-        {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
-        <td colspan="3">
-          <form method="post" action="/entities/{{ r.entity.id }}/aliases" class="inline-form">
-            <input name="aliases" value="{{ r.aliases | join(', ') }}">
-            <input name="languages" value="{{ r.languages | join(', ') }}"
-                   class="lang-input" title="Google News language codes, e.g. en, mr">
-            <input name="x_handle" value="{{ r.entity.x_handle or '' }}"
-                   class="handle-input" placeholder="@care handle"
-                   title="The entity's grievance handle on X — complaints addressed to it are collected">
-            <button type="submit" class="btn btn-small">Save</button>
-          </form>
-        </td>
-        {% else %}
-        <td>{{ r.aliases | join(', ') }}</td>
+        <td class="alias-cell">{{ r.aliases | join(', ') }}</td>
         <td class="meta-dim">{{ r.languages | join(', ') }}</td>
         <td class="meta-dim">{{ ('@' ~ r.entity.x_handle) if r.entity.x_handle else '—' }}</td>
-        {% endif %}
         <td class="num">{{ r.n_items }}</td>
         <td class="meta-dim small">
           {% if r.last_fetch %}
@@ -100,6 +86,48 @@
         </td>
         {% endif %}
       </tr>
+      {# Mirrors /entities/{id}/aliases exactly: leads may edit their own
+         entity, the superadmin any. The old inline form offered these boxes
+         to members too, whose save the route then refused with a 403. #}
+      {% if user.role == 'superadmin' or (user.role == 'lead' and user.entity_id == r.entity.id) %}
+      <tr class="entity-edit-row">
+        <td colspan="8">
+          <details class="todo-more">
+            <summary>Edit {{ r.entity.name }} — aliases, news languages, X handle</summary>
+            <div class="todo-more-body">
+              <form method="post" action="/entities/{{ r.entity.id }}/aliases"
+                    class="stack-form entity-edit-form">
+                <label>Aliases — how the press actually writes this name, most
+                  common first, separated by commas
+                  <textarea name="aliases" rows="3" required>{{ r.aliases | join(', ') }}</textarea>
+                </label>
+                <p class="meta-dim small">Attribution is an exact phrase match, so a
+                  headline is only kept if it contains one of these. The legal name
+                  alone rarely appears in print — add the short forms a journalist
+                  would use. Spelling variants (dropped "Ltd.", co-operative /
+                  cooperative / co-op) are added automatically when you save.</p>
+                <div class="edit-pair">
+                  <label>News languages
+                    <input name="languages" value="{{ r.languages | join(', ') }}"
+                           class="lang-input"
+                           placeholder="en, mr"
+                           title="Google News edition codes: en, mr, hi ...">
+                  </label>
+                  <label>X grievance handle
+                    <input name="x_handle" value="{{ r.entity.x_handle or '' }}"
+                           class="handle-input" placeholder="care handle, without @">
+                  </label>
+                </div>
+                <p class="meta-dim small">A regional entity is covered in the local
+                  press first — add <code>mr</code> for Maharashtra, <code>hi</code>
+                  for the Hindi belt, alongside <code>en</code>.</p>
+                <button type="submit" class="btn btn-primary">Save changes</button>
+              </form>
+            </div>
+          </details>
+        </td>
+      </tr>
+      {% endif %}
       {% endfor %}
     </table>
     </div>

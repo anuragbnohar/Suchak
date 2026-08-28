@@ -455,3 +455,11 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--paper); bo
   text-align: right;
   border-top: 1px solid var(--line, #e5e7eb);
 }
+
+/* Entity editing: a labelled panel under the row, because three unlabelled
+   inputs wedged into a table cell did not read as an editor at all. */
+.entity-edit-row > td { padding-top: 0; border-top: 0; }
+.entity-edit-form textarea { width: 100%; font-family: inherit; }
+.entity-edit-form .edit-pair { display: flex; gap: 1.2rem; flex-wrap: wrap; }
+.entity-edit-form label { display: block; margin-bottom: 0.4rem; }
+.alias-cell { max-width: 26rem; }
