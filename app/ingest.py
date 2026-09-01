@@ -921,6 +921,13 @@ def ingest_entity(db, entity, registry: Registry | None = None,
             elif name == "youtube_comments" and YOUTUBE_KEY and YT_COMMENTS:
                 # Stated even at zero, like the other social sources.
                 notes.append(f"{len(got)} from YouTube comments")
+            elif name == "youtube_comments" and YT_COMMENTS and not YOUTUBE_KEY:
+                # A missing key looks exactly like a quiet week unless said.
+                notes.append("YouTube comments are off: no API key saved "
+                             "on this computer (SUCHAK_YOUTUBE_KEY)")
+            elif name == "youtube" and not YOUTUBE_KEY:
+                notes.append("YouTube videos are off: no API key saved "
+                             "on this computer (SUCHAK_YOUTUBE_KEY)")
             elif name == "reddit" and reddit_source.ENABLED:
                 # Stated even at zero. Reddit raises when it could not read
                 # anything, so a zero here really does mean "searched and
