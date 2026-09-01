@@ -56,11 +56,18 @@ def main() -> int:
             ingest.X_STRATEGY = args.strategy
         ingest.X_MAX_POSTS = max(10, min(args.max, 1000))
 
+        # This trial predates the news/social channel split; without this
+        # it would sweep every source. Only X runs here -- that is the
+        # thing being tested, and the only thing that can bill.
+        ingest.SOURCES = {"x": ingest.fetch_x}
+
         registry = ingest.load_registry(db)
         query = ingest.x_query(registry, entity)
         worst_case = ingest.X_MAX_POSTS * ingest.X_PRICE_PER_POST
 
         print(f"Entity   : {entity['name']}")
+        print(f"Sources  : X only (news and the other social sources are "
+              f"not part of this trial)")
         print(f"Strategy : {ingest.X_STRATEGY}"
               f"{'  (handle @' + entity['x_handle'] + ')' if entity['x_handle'] else ''}")
         print(f"Window   : last {ingest.X_RECENT_SEARCH_DAYS} days "
@@ -78,7 +85,7 @@ def main() -> int:
                 print("Cancelled. Nothing fetched, nothing billed.")
                 return 0
 
-        result = ingest.ingest_entity(db, entity, registry)
+        result = ingest.ingest_entity(db, entity, registry, channel="social")
         billed = result.get("billed", 0)
         print(f"\nFetched {billed} post(s) -> actual cost about "
               f"${billed * ingest.X_PRICE_PER_POST:.2f}")
