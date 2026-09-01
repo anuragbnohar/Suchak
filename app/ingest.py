@@ -702,10 +702,10 @@ def fetch_yt_comments_social(registry: Registry, entity, days: int | None = None
 
 
 def fetch_brightdata(registry: Registry, entity, days: int | None = None) -> list[dict]:
-    """X posts through Bright Data's scraper farm. Off unless both
-    SUCHAK_BRIGHTDATA_KEY and SUCHAK_BRIGHTDATA_DATASET are set. A pending
-    snapshot raises with its id and is harvested by the next social fetch,
-    so a slow collection costs patience, not credits."""
+    """X posts through Bright Data's scraper farm. Off unless
+    SUCHAK_BRIGHTDATA_KEY is set (the dataset id ships with a default).
+    A pending snapshot raises with its id and is harvested by the next
+    social fetch, so a slow collection costs patience, not credits."""
     if not brightdata_x.ENABLED:
         return []
     aliases = json.loads(entity["aliases"] or "[]")
@@ -871,7 +871,13 @@ def ingest_entity(db, entity, registry: Registry | None = None,
             elif name != "google_news" and got:
                 notes.append(f"{len(got)} from {name}")
         except Exception as exc:
-            msg = f"{name} failed: {type(exc).__name__}: {exc}"
+            if isinstance(exc, (brightdata_x.SnapshotPending,
+                                brightdata_x.BrightDataUnavailable)):
+                # Not stack noise for the reviewer: pending means "come
+                # back next fetch", unavailable carries its own advice.
+                msg = f"X (Bright Data): {exc}"
+            else:
+                msg = f"{name} failed: {type(exc).__name__}: {exc}"
             notes.append(msg)
             log.warning("%s for %s", msg, entity["name"])
 

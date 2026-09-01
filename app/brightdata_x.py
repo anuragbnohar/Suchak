@@ -6,10 +6,17 @@ to restrict. Their API is asynchronous -- trigger a collection, poll the
 snapshot, download JSON -- so one social fetch may only *start* a
 collection and the next one harvests it.
 
+The "X (formerly Twitter) - Posts" scraper in their library offers NO
+keyword search (confirmed on the real dashboard): its only discovery
+mode is a profile URL. So collection reads the timeline of the bank's
+own X handle -- the care/support handle is the strongest choice, since
+its timeline is complaint conversations by construction. An entity
+without a handle cannot be collected and says so in the fetch note.
+
 Free plans meter by record, so this module is defensive about credits:
 a snapshot that was not ready in time is remembered in a local file and
 polled again on the next fetch instead of re-triggered, and the per-run
-record cap is low. Field names differ between Bright Data's X scrapers,
+record cap is low. Field names differ between Bright Data's scrapers,
 so parsing is tolerant and the probe prints one raw record verbatim --
 the mapping gets corrected against reality, not guessed.
 """
@@ -17,7 +24,6 @@ import json
 import logging
 import os
 import time
-import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -25,13 +31,15 @@ import httpx
 
 log = logging.getLogger("suchak.brightdata")
 
-BUILD = "2026-08-26.1-brightdata"
+BUILD = "2026-09-01.1-profile-discovery"
 
 KEY = os.environ.get("SUCHAK_BRIGHTDATA_KEY", "")
-# The gd_... id of the X scraper chosen in the Bright Data dashboard
-# (Web Scrapers -> the X/Twitter scraper -> API request builder).
-DATASET = os.environ.get("SUCHAK_BRIGHTDATA_DATASET", "")
-ENABLED = bool(KEY and DATASET)
+# Bright Data's library id for "X (formerly Twitter) - Posts". It is the
+# same public id for every customer (it names the scraper, not the
+# account), so it ships as the default; the env var overrides it if a
+# different scraper is ever chosen in the dashboard.
+DATASET = os.environ.get("SUCHAK_BRIGHTDATA_DATASET", "gd_lwxkxvnf1cynvib9co")
+ENABLED = bool(KEY)
 
 API = "https://api.brightdata.com/datasets/v3"
 MAX_RECORDS = max(10, min(int(os.environ.get("SUCHAK_BD_MAX", "50")), 500))
@@ -78,34 +86,50 @@ def _save_state(state: dict) -> None:
         log.warning("Could not persist snapshot state: %s", exc)
 
 
-def search_url_for(entity: dict, aliases: list[str]) -> str:
-    """What to ask X for. A care handle is the strongest signal -- replies
-    to it are complaints by construction. Without one, the entity's most
-    common press spelling."""
+def profile_url_for(entity: dict) -> str:
+    """The profile whose timeline is collected. Only a handle works: this
+    scraper has no keyword search, so an entity without one is skipped
+    with advice rather than silently returning nothing."""
     handle = (entity.get("x_handle") or "").strip().lstrip("@")
-    if handle:
-        query = f"to:{handle} -filter:retweets"
-    else:
-        first = next((a for a in aliases if a.isascii()), entity["name"])
-        query = f'"{first}"'
-    return ("https://x.com/search?q="
-            + urllib.parse.quote(query) + "&f=live")
-
-
-def trigger(search_url: str) -> str:
-    """Start a collection; returns the snapshot id."""
-    resp = httpx.post(
-        f"{API}/trigger",
-        params={"dataset_id": DATASET, "include_errors": "true",
-                "type": "discover_new", "discover_by": "search_url",
-                "limit_per_input": str(MAX_RECORDS)},
-        headers=_headers(),
-        json=[{"url": search_url}],
-        timeout=TIMEOUT)
-    if resp.status_code in (401, 403):
+    if not handle:
         raise BrightDataUnavailable(
-            f"Bright Data refused the API key (HTTP {resp.status_code}): "
-            f"{resp.text[:200]}")
+            f"{entity.get('name', 'entity')} has no X handle set. Bright "
+            "Data's X scraper can only read a profile's timeline (it has "
+            "no keyword search), so add the bank's care/support handle "
+            "(like HDFCBank_Cares) via Entities -> Edit.")
+    return f"https://x.com/{handle}"
+
+
+def trigger(profile_url: str, days: int | None = None) -> str:
+    """Start a discover-by-profile-URL collection; returns the snapshot id.
+
+    start/end dates are the one input field not yet confirmed against a
+    real run, so a rejected payload retries once with the bare URL rather
+    than failing the whole fetch over a date-format guess."""
+    body: dict = {"url": profile_url}
+    if days:
+        now = datetime.now(timezone.utc)
+        body["start_date"] = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+        body["end_date"] = now.strftime("%Y-%m-%d")
+    attempts = [body] if len(body) == 1 else [body, {"url": profile_url}]
+    resp = None
+    for payload in attempts:
+        resp = httpx.post(
+            f"{API}/trigger",
+            params={"dataset_id": DATASET, "include_errors": "true",
+                    "type": "discover_new", "discover_by": "profile_url",
+                    "limit_per_input": str(MAX_RECORDS)},
+            headers=_headers(),
+            json=[payload],
+            timeout=TIMEOUT)
+        if resp.status_code in (401, 403):
+            raise BrightDataUnavailable(
+                f"Bright Data refused the API key (HTTP {resp.status_code}): "
+                f"{resp.text[:200]}")
+        if resp.status_code < 400:
+            break
+        log.warning("Trigger rejected (HTTP %s): %s", resp.status_code,
+                    resp.text[:200])
     if resp.status_code >= 400:
         raise BrightDataUnavailable(
             f"Bright Data trigger failed (HTTP {resp.status_code}): "
@@ -180,14 +204,14 @@ def parse_post(rec: dict) -> dict | None:
 def collect(entity: dict, aliases: list[str], days: int | None = None) -> list[dict]:
     """Posts for one entity: harvest the pending snapshot if one exists,
     else trigger a new collection and wait a bounded time for it."""
+    profile = profile_url_for(entity)
     state = _load_state()
     key = str(entity["id"])
     snapshot = state.get(key)
     fresh_trigger = False
-    search = search_url_for(entity, aliases)
 
     if not snapshot:
-        snapshot = trigger(search)
+        snapshot = trigger(profile, days)
         fresh_trigger = True
         state[key] = snapshot
         _save_state(state)
@@ -200,7 +224,7 @@ def collect(entity: dict, aliases: list[str], days: int | None = None) -> list[d
 
     LAST_DIAGNOSIS.clear()
     LAST_DIAGNOSIS.update({"snapshot": snapshot, "status": status,
-                           "search": search, "fresh_trigger": fresh_trigger})
+                           "profile": profile, "fresh_trigger": fresh_trigger})
 
     if status == "running":
         raise SnapshotPending(
@@ -232,10 +256,10 @@ def collect(entity: dict, aliases: list[str], days: int | None = None) -> list[d
                     continue
             except ValueError:
                 pass
-        # Replies to the entity's own care handle are attributed by
-        # construction, like the API and browser collectors before this.
-        if (entity.get("x_handle") or "").strip():
-            item["attribution_confident"] = True
+        # The timeline belongs to the entity's own handle, so every post
+        # is attributed by construction -- same as the earlier collectors
+        # that read replies to the care handle.
+        item["attribution_confident"] = True
         items.append(item)
     LAST_DIAGNOSIS.update({"records": len(records), "parsed": len(items),
                            "unparsable": skipped})

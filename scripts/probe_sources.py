@@ -34,7 +34,7 @@ from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
 
-PROBE_BUILD = "2026-08-26.1-brightdata"
+PROBE_BUILD = "2026-09-01.1-bd-profile"
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -429,12 +429,16 @@ def _probe_brightdata(ent) -> None:
     from app import brightdata_x as bd
     print(f"\n=== BRIGHT DATA X -- {ent['name']}  (module {bd.BUILD})")
     print(f"    key set    : {'yes' if bd.KEY else 'NO -- set SUCHAK_BRIGHTDATA_KEY in this terminal'}")
-    print(f"    dataset id : {bd.DATASET or 'NOT SET -- set SUCHAK_BRIGHTDATA_DATASET (gd_...)'}")
+    print(f"    dataset id : {bd.DATASET}")
     print(f"    caps       : {bd.MAX_RECORDS} records, wait up to {bd.WAIT_SECONDS}s")
     if not bd.ENABLED:
         return
     aliases = _json.loads(ent["aliases"] or "[]")
-    print(f"    search     : {bd.search_url_for(dict(ent), aliases)}")
+    try:
+        print(f"    profile    : {bd.profile_url_for(dict(ent))}")
+    except bd.BrightDataUnavailable as exc:
+        print(f"    CANNOT RUN : {exc}")
+        return
     try:
         orig_download = bd.download
         raw_box = {}
