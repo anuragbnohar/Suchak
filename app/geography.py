@@ -254,6 +254,176 @@ STATE_DISTRICTS = {
 }
 
 
+# Devanagari spellings of place names, for Marathi and Hindi press text
+# (the two Devanagari-script languages this app fetches). Keyed by the
+# English name used above; both Marathi and Hindi forms are given where
+# they differ (Marathi \u0928\u093e\u0917\u092a\u0942\u0930 vs Hindi \u0928\u093e\u0917\u092a\u0941\u0930). A place whose
+# Devanagari spelling is an everyday word -- \u0917\u092f\u093e (went), \u092e\u0902\u0921\u0940 (market),
+# \u0915\u094b\u091f\u093e (quota), \u092c\u0938\u094d\u0924\u0940 (settlement), \u0917\u0941\u0928\u093e (times), \u092a\u0928\u094d\u0928\u093e (page), \u0927\u093e\u0930
+# (stream), \u0906\u0930\u093e (saw), \u0938\u093e\u0917\u0930 (sea), \u092e\u090a (soft), \u092c\u0942\u0902\u0926\u0940 (a sweet), \u0915\u094b\u0930\u093f\u092f\u093e
+# (Korea) -- gets NO Devanagari form: its English name still matches
+# English text, and a common noun would flood the tab with false regions.
+DEVANAGARI = {
+    # Maharashtra + Goa (Marathi first, Hindi variant where different)
+    "Maharashtra": ["महाराष्ट्र"], "Vidarbha": ["विदर्भ"],
+    "Mumbai": ["मुंबई", "मुम्बई"], "Navi Mumbai": ["नवी मुंबई"],
+    "Thane": ["ठाणे"], "Palghar": ["पालघर"], "Raigad": ["रायगड"],
+    "Ratnagiri": ["रत्नागिरी"], "Sindhudurg": ["सिंधुदुर्ग"],
+    "Pune": ["पुणे"], "Satara": ["सातारा"], "Sangli": ["सांगली"],
+    "Solapur": ["सोलापूर", "सोलापुर"], "Kolhapur": ["कोल्हापूर", "कोल्हापुर"],
+    "Nashik": ["नाशिक", "नासिक"], "Ahmednagar": ["अहमदनगर"],
+    "Ahilyanagar": ["अहिल्यानगर"], "Dhule": ["धुळे", "धुले"],
+    "Nandurbar": ["नंदुरबार"], "Jalgaon": ["जळगाव", "जलगांव"],
+    "Aurangabad": ["औरंगाबाद"], "Sambhajinagar": ["संभाजीनगर"],
+    "Jalna": ["जालना"], "Beed": ["बीड"], "Latur": ["लातूर", "लातुर"],
+    "Osmanabad": ["उस्मानाबाद"], "Dharashiv": ["धाराशिव"],
+    "Nanded": ["नांदेड"], "Parbhani": ["परभणी"], "Hingoli": ["हिंगोली"],
+    "Nagpur": ["नागपूर", "नागपुर"], "Wardha": ["वर्धा"],
+    "Bhandara": ["भंडारा"], "Gondia": ["गोंदिया"],
+    "Chandrapur": ["चंद्रपूर", "चंद्रपुर"], "Gadchiroli": ["गडचिरोली"],
+    "Amravati": ["अमरावती"], "Akola": ["अकोला"], "Washim": ["वाशिम"],
+    "Buldhana": ["बुलढाणा"], "Yavatmal": ["यवतमाळ", "यवतमाल"],
+    "Goa": ["गोवा"], "Panaji": ["पणजी"], "Margao": ["मडगाव"],
+    "Mapusa": ["म्हापसा"], "Ponda": ["फोंडा"],
+    # Uttar Pradesh
+    "Uttar Pradesh": ["उत्तर प्रदेश"],
+    "Lucknow": ["लखनऊ"], "Kanpur": ["कानपुर"], "Agra": ["आगरा"],
+    "Varanasi": ["वाराणसी"], "Prayagraj": ["प्रयागराज"],
+    "Allahabad": ["इलाहाबाद"], "Meerut": ["मेरठ"],
+    "Ghaziabad": ["गाजियाबाद", "गाज़ियाबाद"], "Noida": ["नोएडा"],
+    "Aligarh": ["अलीगढ़"], "Bareilly": ["बरेली"], "Moradabad": ["मुरादाबाद"],
+    "Saharanpur": ["सहारनपुर"], "Gorakhpur": ["गोरखपुर"],
+    "Jhansi": ["झांसी", "झाँसी"], "Mathura": ["मथुरा"],
+    "Firozabad": ["फिरोजाबाद"], "Ayodhya": ["अयोध्या"],
+    "Faizabad": ["फैजाबाद"], "Rampur": ["रामपुर"],
+    "Shahjahanpur": ["शाहजहांपुर"], "Muzaffarnagar": ["मुजफ्फरनगर"],
+    "Bulandshahr": ["बुलंदशहर"], "Etawah": ["इटावा"], "Mainpuri": ["मैनपुरी"],
+    "Etah": ["एटा"], "Badaun": ["बदायूं", "बदायूँ"], "Pilibhit": ["पीलीभीत"],
+    "Sitapur": ["सीतापुर"], "Hardoi": ["हरदोई"], "Unnao": ["उन्नाव"],
+    "Rae Bareli": ["रायबरेली"], "Fatehpur": ["फतेहपुर"], "Banda": ["बांदा"],
+    "Hamirpur": ["हमीरपुर"], "Mahoba": ["महोबा"], "Chitrakoot": ["चित्रकूट"],
+    "Jalaun": ["जालौन"], "Lalitpur": ["ललितपुर"], "Kannauj": ["कन्नौज"],
+    "Farrukhabad": ["फर्रुखाबाद"], "Auraiya": ["औरैया"], "Amethi": ["अमेठी"],
+    "Sultanpur": ["सुल्तानपुर"], "Pratapgarh": ["प्रतापगढ़"],
+    "Kaushambi": ["कौशांबी"], "Mirzapur": ["मिर्जापुर"],
+    "Sonbhadra": ["सोनभद्र"], "Bhadohi": ["भदोही"], "Chandauli": ["चंदौली"],
+    "Ghazipur": ["गाजीपुर"], "Jaunpur": ["जौनपुर"], "Azamgarh": ["आजमगढ़"],
+    "Ballia": ["बलिया"], "Deoria": ["देवरिया"], "Kushinagar": ["कुशीनगर"],
+    "Maharajganj": ["महाराजगंज"], "Siddharthnagar": ["सिद्धार्थनगर"],
+    "Gonda": ["गोंडा"], "Balrampur": ["बलरामपुर"], "Bahraich": ["बहराइच"],
+    "Shravasti": ["श्रावस्ती"], "Ambedkar Nagar": ["अंबेडकर नगर"],
+    "Barabanki": ["बाराबंकी"], "Lakhimpur Kheri": ["लखीमपुर खीरी"],
+    "Hathras": ["हाथरस"], "Kasganj": ["कासगंज"], "Sambhal": ["संभल"],
+    "Amroha": ["अमरोहा"], "Bijnor": ["बिजनौर"], "Shamli": ["शामली"],
+    "Baghpat": ["बागपत"], "Hapur": ["हापुड़"],
+    # Madhya Pradesh
+    "Madhya Pradesh": ["मध्य प्रदेश", "मध्यप्रदेश"],
+    "Bhopal": ["भोपाल"], "Indore": ["इंदौर"], "Gwalior": ["ग्वालियर"],
+    "Jabalpur": ["जबलपुर"], "Ujjain": ["उज्जैन"], "Rewa": ["रीवा"],
+    "Satna": ["सतना"], "Ratlam": ["रतलाम"], "Dewas": ["देवास"],
+    "Katni": ["कटनी"], "Chhindwara": ["छिंदवाड़ा"], "Vidisha": ["विदिशा"],
+    "Sehore": ["सीहोर"], "Raisen": ["रायसेन"], "Hoshangabad": ["होशंगाबाद"],
+    "Narmadapuram": ["नर्मदापुरम"], "Betul": ["बैतूल"], "Harda": ["हरदा"],
+    "Khandwa": ["खंडवा"], "Khargone": ["खरगोन"], "Burhanpur": ["बुरहानपुर"],
+    "Barwani": ["बड़वानी"], "Jhabua": ["झाबुआ"], "Alirajpur": ["अलीराजपुर"],
+    "Mandsaur": ["मंदसौर"], "Neemuch": ["नीमच"], "Shajapur": ["शाजापुर"],
+    "Agar Malwa": ["आगर मालवा"], "Rajgarh": ["राजगढ़"],
+    "Ashoknagar": ["अशोकनगर"], "Shivpuri": ["शिवपुरी"], "Datia": ["दतिया"],
+    "Bhind": ["भिंड"], "Morena": ["मुरैना"], "Sheopur": ["श्योपुर"],
+    "Tikamgarh": ["टीकमगढ़"], "Chhatarpur": ["छतरपुर"], "Damoh": ["दमोह"],
+    "Narsinghpur": ["नरसिंहपुर"], "Seoni": ["सिवनी"], "Mandla": ["मंडला"],
+    "Dindori": ["डिंडोरी"], "Balaghat": ["बालाघाट"], "Shahdol": ["शहडोल"],
+    "Umaria": ["उमरिया"], "Anuppur": ["अनूपपुर"], "Sidhi": ["सीधी"],
+    "Singrauli": ["सिंगरौली"], "Maihar": ["मैहर"], "Niwari": ["निवाड़ी"],
+    # Bihar
+    "Bihar": ["बिहार"], "Patna": ["पटना"], "Bhagalpur": ["भागलपुर"],
+    "Muzaffarpur": ["मुजफ्फरपुर"], "Darbhanga": ["दरभंगा"],
+    "Purnia": ["पूर्णिया"], "Bhojpur": ["भोजपुर"], "Begusarai": ["बेगूसराय"],
+    "Katihar": ["कटिहार"], "Munger": ["मुंगेर"], "Chhapra": ["छपरा"],
+    "Saran": ["सारण"], "Samastipur": ["समस्तीपुर"], "Motihari": ["मोतिहारी"],
+    "Champaran": ["चंपारण"], "Bettiah": ["बेतिया"], "Siwan": ["सीवान"],
+    "Gopalganj": ["गोपालगंज"], "Vaishali": ["वैशाली"], "Hajipur": ["हाजीपुर"],
+    "Sitamarhi": ["सीतामढ़ी"], "Sheohar": ["शिवहर"], "Madhubani": ["मधुबनी"],
+    "Supaul": ["सुपौल"], "Araria": ["अररिया"], "Kishanganj": ["किशनगंज"],
+    "Madhepura": ["मधेपुरा"], "Saharsa": ["सहरसा"], "Khagaria": ["खगड़िया"],
+    "Nalanda": ["नालंदा"], "Biharsharif": ["बिहारशरीफ"], "Nawada": ["नवादा"],
+    "Jehanabad": ["जहानाबाद"], "Arwal": ["अरवल"], "Jamui": ["जमुई"],
+    "Lakhisarai": ["लखीसराय"], "Sheikhpura": ["शेखपुरा"],
+    "Rohtas": ["रोहतास"], "Sasaram": ["सासाराम"], "Buxar": ["बक्सर"],
+    "Kaimur": ["कैमूर"],
+    # Rajasthan
+    "Rajasthan": ["राजस्थान"], "Jaipur": ["जयपुर"], "Jodhpur": ["जोधपुर"],
+    "Udaipur": ["उदयपुर"], "Ajmer": ["अजमेर"], "Bikaner": ["बीकानेर"],
+    "Alwar": ["अलवर"], "Bharatpur": ["भरतपुर"], "Sikar": ["सीकर"],
+    "Jhunjhunu": ["झुंझुनूं", "झुंझुनू"], "Churu": ["चूरू"],
+    "Ganganagar": ["गंगानगर"], "Hanumangarh": ["हनुमानगढ़"],
+    "Nagaur": ["नागौर"], "Barmer": ["बाड़मेर"], "Jaisalmer": ["जैसलमेर"],
+    "Jalore": ["जालोर"], "Sirohi": ["सिरोही"], "Bhilwara": ["भीलवाड़ा"],
+    "Chittorgarh": ["चित्तौड़गढ़"], "Rajsamand": ["राजसमंद"],
+    "Dungarpur": ["डूंगरपुर"], "Banswara": ["बांसवाड़ा"], "Baran": ["बारां"],
+    "Jhalawar": ["झालावाड़"], "Sawai Madhopur": ["सवाई माधोपुर"],
+    "Karauli": ["करौली"], "Dholpur": ["धौलपुर"], "Dausa": ["दौसा"],
+    "Tonk": ["टोंक"],
+    # Haryana + Delhi
+    "Haryana": ["हरियाणा"], "Gurugram": ["गुरुग्राम"], "Gurgaon": ["गुड़गांव"],
+    "Faridabad": ["फरीदाबाद"], "Panipat": ["पानीपत"], "Ambala": ["अंबाला"],
+    "Yamunanagar": ["यमुनानगर"], "Rohtak": ["रोहतक"], "Hisar": ["हिसार"],
+    "Karnal": ["करनाल"], "Sonipat": ["सोनीपत"], "Panchkula": ["पंचकूला"],
+    "Bhiwani": ["भिवानी"], "Sirsa": ["सिरसा"], "Jind": ["जींद"],
+    "Kaithal": ["कैथल"], "Kurukshetra": ["कुरुक्षेत्र"],
+    "Fatehabad": ["फतेहाबाद"], "Rewari": ["रेवाड़ी"],
+    "Mahendragarh": ["महेंद्रगढ़"], "Narnaul": ["नारनौल"],
+    "Jhajjar": ["झज्जर"], "Palwal": ["पलवल"], "Nuh": ["नूंह"],
+    "Mewat": ["मेवात"], "Charkhi Dadri": ["चरखी दादरी"],
+    "Delhi": ["दिल्ली"], "New Delhi": ["नई दिल्ली"],
+    # Jharkhand
+    "Jharkhand": ["झारखंड"], "Ranchi": ["रांची", "राँची"],
+    "Jamshedpur": ["जमशेदपुर"], "Dhanbad": ["धनबाद"], "Bokaro": ["बोकारो"],
+    "Deoghar": ["देवघर"], "Hazaribagh": ["हजारीबाग"], "Giridih": ["गिरिडीह"],
+    "Dumka": ["दुमका"], "Palamu": ["पलामू"], "Daltonganj": ["डाल्टनगंज"],
+    "Chatra": ["चतरा"], "Koderma": ["कोडरमा"], "Jamtara": ["जामताड़ा"],
+    "Sahibganj": ["साहिबगंज"], "Pakur": ["पाकुड़"], "Godda": ["गोड्डा"],
+    "Lohardaga": ["लोहरदगा"], "Gumla": ["गुमला"], "Simdega": ["सिमडेगा"],
+    "Khunti": ["खूंटी"], "Saraikela": ["सरायकेला"], "Chaibasa": ["चाईबासा"],
+    "Singhbhum": ["सिंहभूम"], "Ramgarh": ["रामगढ़"], "Latehar": ["लातेहार"],
+    "Garhwa": ["गढ़वा"],
+    # Chhattisgarh
+    "Chhattisgarh": ["छत्तीसगढ़"], "Raipur": ["रायपुर"],
+    "Bilaspur": ["बिलासपुर"], "Durg": ["दुर्ग"], "Bhilai": ["भिलाई"],
+    "Korba": ["कोरबा"], "Rajnandgaon": ["राजनांदगांव"], "Raigarh": ["रायगढ़"],
+    "Jagdalpur": ["जगदलपुर"], "Bastar": ["बस्तर"], "Ambikapur": ["अंबिकापुर"],
+    "Surguja": ["सरगुजा"], "Dhamtari": ["धमतरी"], "Mahasamund": ["महासमुंद"],
+    "Kanker": ["कांकेर"], "Kawardha": ["कवर्धा"], "Janjgir": ["जांजगीर"],
+    "Champa": ["चांपा"], "Mungeli": ["मुंगेली"], "Balod": ["बालोद"],
+    "Baloda Bazar": ["बलौदा बाजार"], "Bemetara": ["बेमेतरा"],
+    "Gariaband": ["गरियाबंद"], "Kondagaon": ["कोंडागांव"], "Sukma": ["सुकमा"],
+    "Dantewada": ["दंतेवाड़ा"], "Narayanpur": ["नारायणपुर"],
+    "Jashpur": ["जशपुर"], "Surajpur": ["सूरजपुर"],
+    # Uttarakhand
+    "Uttarakhand": ["उत्तराखंड"], "Dehradun": ["देहरादून"],
+    "Haridwar": ["हरिद्वार"], "Rishikesh": ["ऋषिकेश"], "Roorkee": ["रुड़की"],
+    "Nainital": ["नैनीताल"], "Haldwani": ["हल्द्वानी"],
+    "Udham Singh Nagar": ["उधम सिंह नगर"], "Rudrapur": ["रुद्रपुर"],
+    "Almora": ["अल्मोड़ा"], "Pithoragarh": ["पिथौरागढ़"],
+    "Champawat": ["चंपावत"], "Bageshwar": ["बागेश्वर"], "Chamoli": ["चमोली"],
+    "Rudraprayag": ["रुद्रप्रयाग"], "Tehri": ["टिहरी"], "Pauri": ["पौड़ी"],
+    "Uttarkashi": ["उत्तरकाशी"],
+    # Himachal Pradesh
+    "Himachal Pradesh": ["हिमाचल प्रदेश"], "Shimla": ["शिमला"],
+    "Kangra": ["कांगड़ा"], "Dharamshala": ["धर्मशाला"], "Solan": ["सोलन"],
+    "Kullu": ["कुल्लू"], "Manali": ["मनाली"], "Una": ["ऊना"],
+    "Chamba": ["चंबा"], "Sirmaur": ["सिरमौर"], "Nahan": ["नाहन"],
+    "Kinnaur": ["किन्नौर"], "Lahaul": ["लाहौल"], "Spiti": ["स्पीति"],
+    "Keylong": ["केलांग"],
+    # Jammu & Kashmir + Ladakh (Hindi press forms)
+    "Jammu": ["जम्मू"], "Kashmir": ["कश्मीर"], "Srinagar": ["श्रीनगर"],
+    "Anantnag": ["अनंतनाग"], "Baramulla": ["बारामूला"],
+    "Udhampur": ["उधमपुर"], "Kathua": ["कठुआ"], "Rajouri": ["राजौरी"],
+    "Poonch": ["पुंछ"], "Doda": ["डोडा"], "Ladakh": ["लद्दाख"],
+    "Leh": ["लेह"], "Kargil": ["करगिल", "कारगिल"],
+}
+
+
 def office_places(office: str) -> list[str]:
     """Every place name that counts as this office's region: the state
     name(s) and their districts/major cities. An office this module does
@@ -269,6 +439,13 @@ def office_places(office: str) -> list[str]:
             if term.lower() not in seen:
                 seen.add(term.lower())
                 places.append(term)
+    # Marathi/Hindi press writes these names in Devanagari; add those
+    # spellings so a regional-language story places itself too.
+    for term in list(places):
+        for dev in DEVANAGARI.get(term, []):
+            if dev not in seen:
+                seen.add(dev)
+                places.append(dev)
     return places
 
 
