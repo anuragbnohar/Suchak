@@ -34,7 +34,7 @@ from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
 
-PROBE_BUILD = "2026-09-01.1-bd-profile"
+PROBE_BUILD = "2026-09-01.2-key-safe"
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -477,6 +477,10 @@ def _probe_youtube_comments(reg: Registry, ent) -> None:
     """Run the real comments collector once and show what came back."""
     import logging
     logging.basicConfig(level=logging.INFO, format="    %(message)s")
+    # httpx logs full request URLs at INFO -- for YouTube that URL carries
+    # the API key, and probe output exists to be pasted into a chat. Never.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     from app import ingest
     print(f"\n=== YOUTUBE COMMENTS -- {ent['name']}")
     print(f"    key set    : {'yes' if ingest.YOUTUBE_KEY else 'NO -- set SUCHAK_YOUTUBE_KEY in this terminal first'}")
