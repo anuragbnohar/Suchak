@@ -43,7 +43,7 @@ from .db import connect, one, q, x
 from .matching import Registry, build_query, near_miss
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
                          strip_publisher)
-from . import brightdata_x, forums, reddit_source, x_scrape
+from . import forums, reddit_source, x_scrape
 from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
@@ -759,17 +759,6 @@ def fetch_yt_comments_social(registry: Registry, entity, days: int | None = None
     return fetch_youtube_comments(registry, entity, SOCIAL_LOOKBACK_DAYS)
 
 
-def fetch_brightdata(registry: Registry, entity, days: int | None = None) -> list[dict]:
-    """X posts through Bright Data's scraper farm. Off unless
-    SUCHAK_BRIGHTDATA_KEY is set (the dataset id ships with a default).
-    A pending snapshot raises with its id and is harvested by the next
-    social fetch, so a slow collection costs patience, not credits."""
-    if not brightdata_x.ENABLED:
-        return []
-    aliases = json.loads(entity["aliases"] or "[]")
-    return brightdata_x.collect(dict(entity), aliases, SOCIAL_LOOKBACK_DAYS)
-
-
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
@@ -778,7 +767,6 @@ SOURCES = {
     "reddit": fetch_reddit,
     "forums": fetch_forums,
     "youtube_comments": fetch_yt_comments_social,
-    "brightdata_x": fetch_brightdata,
 }
 
 # Two channels a fetch can run: press coverage and customer complaints.
@@ -789,7 +777,6 @@ SOURCE_CHANNELS = {
     "google_news": "news", "youtube": "news",
     "x": "social", "x_scrape": "social", "reddit": "social", "forums": "social",
     "youtube_comments": "social",
-    "brightdata_x": "social",
 }
 CHANNELS = ("all", "news", "social")
 
@@ -915,9 +902,6 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 # when it read nothing, so a zero really is "searched and
                 # matched nothing".
                 notes.append(f"{len(got)} from consumercomplaints.in")
-            elif name == "brightdata_x" and brightdata_x.ENABLED:
-                # Stated even at zero, like the other social sources.
-                notes.append(f"{len(got)} from X (Bright Data)")
             elif name == "youtube_comments" and YOUTUBE_KEY and YT_COMMENTS:
                 # Stated even at zero, like the other social sources.
                 notes.append(f"{len(got)} from YouTube comments")
@@ -936,13 +920,7 @@ def ingest_entity(db, entity, registry: Registry | None = None,
             elif name != "google_news" and got:
                 notes.append(f"{len(got)} from {name}")
         except Exception as exc:
-            if isinstance(exc, (brightdata_x.SnapshotPending,
-                                brightdata_x.BrightDataUnavailable)):
-                # Not stack noise for the reviewer: pending means "come
-                # back next fetch", unavailable carries its own advice.
-                msg = f"X (Bright Data): {exc}"
-            else:
-                msg = f"{name} failed: {type(exc).__name__}: {exc}"
+            msg = f"{name} failed: {type(exc).__name__}: {exc}"
             notes.append(msg)
             log.warning("%s for %s", msg, entity["name"])
 

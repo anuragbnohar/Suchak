@@ -34,7 +34,7 @@ from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
 
-PROBE_BUILD = "2026-09-01.2-key-safe"
+PROBE_BUILD = "2026-09-01.3-no-brightdata"
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -421,58 +421,6 @@ def _dump_raw(term: str) -> None:
         print(text[start_i:min(end_i, start_i + 2600)])
 
 
-def _probe_brightdata(ent) -> None:
-    """Run the real Bright Data collector once, printing every stage and
-    one raw record verbatim -- the field map gets corrected against that
-    record, never guessed."""
-    import json as _json
-    from app import brightdata_x as bd
-    print(f"\n=== BRIGHT DATA X -- {ent['name']}  (module {bd.BUILD})")
-    print(f"    key set    : {'yes' if bd.KEY else 'NO -- set SUCHAK_BRIGHTDATA_KEY in this terminal'}")
-    print(f"    dataset id : {bd.DATASET}")
-    print(f"    caps       : {bd.MAX_RECORDS} records, wait up to {bd.WAIT_SECONDS}s")
-    if not bd.ENABLED:
-        return
-    aliases = _json.loads(ent["aliases"] or "[]")
-    try:
-        print(f"    profile    : {bd.profile_url_for(dict(ent))}")
-    except bd.BrightDataUnavailable as exc:
-        print(f"    CANNOT RUN : {exc}")
-        return
-    try:
-        orig_download = bd.download
-        raw_box = {}
-        def spy(snapshot_id):
-            records = orig_download(snapshot_id)
-            if records:
-                raw_box["rec"] = records[0]
-            return records
-        bd.download = spy
-        try:
-            items = bd.collect(dict(ent), aliases, 365)
-        finally:
-            bd.download = orig_download
-    except bd.SnapshotPending as exc:
-        print(f"\n    PENDING: {exc}")
-        print("    Run this same command again in a few minutes.")
-        return
-    except Exception as exc:
-        print(f"\n    COULD NOT RUN: {type(exc).__name__}: {exc}")
-        if bd.LAST_DIAGNOSIS:
-            print(f"    diagnosis: {_json.dumps(bd.LAST_DIAGNOSIS)[:300]}")
-        return
-    d = bd.LAST_DIAGNOSIS
-    print(f"\n    snapshot {d.get('snapshot')} -> {d.get('records')} record(s), "
-          f"{d.get('parsed')} parsed, {d.get('unparsable')} unparsable")
-    if raw_box.get("rec") is not None:
-        print("\n    --- first raw record (for the field map):")
-        print("    " + _json.dumps(raw_box["rec"], ensure_ascii=False)[:1500])
-    print()
-    for it in items[:8]:
-        print(f"      [{(it['published_at'] or 'no date')[:10]}] "
-              f"{it['source_name']}  {it['title'][:80]}")
-
-
 def _probe_youtube_comments(reg: Registry, ent) -> None:
     """Run the real comments collector once and show what came back."""
     import logging
@@ -572,8 +520,6 @@ def main() -> int:
     ap.add_argument("--forums-only", action="store_true")
     ap.add_argument("--youtube", action="store_true",
                     help="test YouTube comment collection for the entity")
-    ap.add_argument("--brightdata", action="store_true",
-                    help="test X collection through Bright Data for the entity")
     ap.add_argument("--routes", action="store_true",
                     help="try every Reddit route and report which answer")
     ap.add_argument("--dump", action="store_true",
@@ -619,8 +565,6 @@ def main() -> int:
             names = json.loads(ent["aliases"] or "[]") or [ent["name"]]
             term = names[0]
 
-        if args.brightdata:
-            _probe_brightdata(ent)
             return 0
 
         if args.youtube:
