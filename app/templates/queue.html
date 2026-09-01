@@ -78,8 +78,7 @@
   <span>Showing:</span>
   {% for k, v in extras.items() %}
   <span class="filter-chip">
-    {%- if k == 'days' %}last {{ v }} days
-    {%- elif k == 'on' %}published {{ v }}
+    {%- if k == 'on' %}published {{ v }}
     {%- elif k == 'sev' %}severity {{ v }}
     {%- elif k == 'risk' %}{{ v }}
     {%- elif k == 'factor' %}factor: {{ v }}

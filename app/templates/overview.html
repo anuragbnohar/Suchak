@@ -10,7 +10,7 @@
 <div class="page-head">
   <div>
     <h1>{{ titles[view] }}</h1>
-    <p class="page-sub">Last {{ days }} days · {{ subs[view] }}</p>
+    <p class="page-sub">All collected items · {{ subs[view] }}</p>
   </div>
 </div>
 
@@ -27,26 +27,23 @@
   <tr>
     <th scope="col">Entity</th>
     <th scope="col">Kind</th>
-    <th scope="col" class="num">Items (7d)</th>
-    <th scope="col" class="num">High severity (7d)</th>
-    <th scope="col" class="num">Awaiting review<br><span class="th-note">all time</span></th>
-    <th scope="col">Top risk area (7d)</th>
+    <th scope="col" class="num">Items</th>
+    <th scope="col" class="num">High severity</th>
+    <th scope="col" class="num">Awaiting review</th>
+    <th scope="col">Top risk area</th>
     <th scope="col">Latest item</th>
     <th scope="col"></th>
   </tr>
   {% for r in rows %}
-  <tr class="{% if r.high7 %}row-serious{% endif %}">
+  <tr class="{% if r.high %}row-serious{% endif %}">
     <td><strong>{{ r.entity.name }}</strong></td>
     <td class="meta-dim">{{ r.entity.kind }}</td>
     <td class="num">
-      <a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7">{{ r.total7 }}</a>
-      {% if r.older %}<br><a class="older-note"
-         href="/queue?entity={{ r.entity.id }}&amp;status=all"
-         title="Items published before this window — still collected, still reviewable">+{{ r.older }} older</a>{% endif %}
+      <a href="/queue?entity={{ r.entity.id }}&amp;status=all">{{ r.total }}</a>
     </td>
-    <td class="num">{% if r.high7 %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7&amp;sev=high"><span class="sev-chip sev-chip-high">{{ r.high7 }} high</span></a>{% else %}0{% endif %}</td>
+    <td class="num">{% if r.high %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;sev=high"><span class="sev-chip sev-chip-high">{{ r.high }} high</span></a>{% else %}0{% endif %}</td>
     <td class="num"><a href="/queue?entity={{ r.entity.id }}&amp;status=open">{{ r.open }}</a></td>
-    <td>{% if r.top_risk != '—' %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;days=7&amp;risk={{ r.top_risk | urlencode }}">{{ r.top_risk }}</a>{% else %}—{% endif %}</td>
+    <td>{% if r.top_risk != '—' %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;risk={{ r.top_risk | urlencode }}">{{ r.top_risk }}</a>{% else %}—{% endif %}</td>
     <td class="meta-dim">{{ r.last | timeago }}</td>
     <td><a href="/dashboard?entity={{ r.entity.id }}">Dashboard</a> ·
         <a href="/queue?entity={{ r.entity.id }}">Queue</a></td>
@@ -59,7 +56,7 @@
   {% if r.entities %}
   <div class="split-row">
     {% for e in r.entities %}
-    <a class="split-chip" href="/queue?entity={{ e.id }}&amp;status=all&amp;days={{ days }}{{ qs }}"
+    <a class="split-chip" href="/queue?entity={{ e.id }}&amp;status=all{{ qs }}"
        title="Open these items in {{ e.name }}'s queue">{{ e.name }}<span>{{ e.count }}</span></a>
     {% endfor %}
   </div>
@@ -70,17 +67,17 @@
 <table class="data-table overview-table">
   <tr>
     <th scope="col">Severity</th>
-    <th scope="col" class="num">Items ({{ days }}d)</th>
+    <th scope="col" class="num">Items</th>
     <th scope="col" class="num">Awaiting review<br><span class="th-note">all time</span></th>
-    <th scope="col">Across entities ({{ days }}d)</th>
+    <th scope="col">Across entities</th>
     <th scope="col">Latest item</th>
   </tr>
   {% for r in sev_rows %}
   {% set sev_qs = '&sev=' ~ r.category %}
   <tr class="{% if r.category == 'high' and r.total %}row-serious{% endif %}">
-    <td><a href="/queue?entity=all&amp;status=all&amp;days={{ days }}{{ sev_qs }}"
+    <td><a href="/queue?entity=all&amp;status=all{{ sev_qs }}"
            class="cat-link"><span class="sev-chip sev-chip-{{ r.category }}">{{ r.category }}</span></a></td>
-    <td class="num"><a href="/queue?entity=all&amp;status=all&amp;days={{ days }}{{ sev_qs }}">{{ r.total }}</a></td>
+    <td class="num"><a href="/queue?entity=all&amp;status=all{{ sev_qs }}">{{ r.total }}</a></td>
     <td class="num"><a href="/queue?entity=all&amp;status=open{{ sev_qs }}">{{ r.open }}</a></td>
     <td>{{ entity_split(r, sev_qs) }}</td>
     <td class="meta-dim">{{ r.last | timeago }}</td>
@@ -93,15 +90,15 @@
 <table class="data-table overview-table">
   <tr>
     <th scope="col">Risk area</th>
-    <th scope="col" class="num">Items ({{ days }}d)</th>
-    <th scope="col" class="num">High ({{ days }}d)</th>
+    <th scope="col" class="num">Items</th>
+    <th scope="col" class="num">High</th>
     <th scope="col" class="num">Awaiting review<br><span class="th-note">all time</span></th>
-    <th scope="col">Across entities ({{ days }}d)</th>
+    <th scope="col">Across entities</th>
     <th scope="col">Latest item</th>
   </tr>
   {% for r in risk_rows %}
   {% set risk_qs = '&risk=' ~ (r.category | urlencode) %}
-  {% set risk_base = '/queue?entity=all&amp;status=all&amp;days=' ~ days ~ risk_qs %}
+  {% set risk_base = '/queue?entity=all&amp;status=all' ~ risk_qs %}
   <tr class="{% if r.high %}row-serious{% endif %}">
     <td><a href="{{ risk_base }}" class="cat-link"><strong>{{ r.category }}</strong></a></td>
     <td class="num"><a href="{{ risk_base }}">{{ r.total }}</a></td>

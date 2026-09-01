@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Entity dashboard</h1>
-    <p class="page-sub">{{ entity.name }} · {{ entity.kind }} · last {{ stats.days }} days</p>
+    <p class="page-sub">{{ entity.name }} · {{ entity.kind }} · all collected items</p>
   </div>
   {% if entities|length > 1 %}
   <form method="get" action="/dashboard" class="entity-picker">
@@ -19,10 +19,10 @@
   {% endif %}
 </div>
 
-{% set base = "/queue?entity=" ~ entity.id ~ "&status=all&days=" ~ stats.days %}
+{% set base = "/queue?entity=" ~ entity.id ~ "&status=all" %}
 <div class="tile-row">
   <a class="tile" href="{{ base }}">
-    <p class="tile-label">Items ({{ stats.days }}d)</p>
+    <p class="tile-label">Items</p>
     <p class="tile-value">{{ stats.total }}</p>
     {% if stats.older %}<p class="tile-note tile-note-quiet">+{{ stats.older }} older</p>{% endif %}
   </a>
@@ -40,7 +40,7 @@
   </a>
   <a class="tile tile-complaint" href="{{ base }}&complaints=1"
      title="Customer-grievance items from news and social posts, grouped by topic">
-    <p class="tile-label">Complaints ({{ stats.days }}d)</p>
+    <p class="tile-label">Complaints</p>
     <p class="tile-value">{{ stats.complaints_total }}</p>
   </a>
   <a class="tile tile-accent" href="/queue?entity={{ entity.id }}&status=open">
@@ -49,7 +49,7 @@
   </a>
   <a class="tile {% if stats.actions_overdue %}tile-serious{% else %}tile-accent{% endif %}"
      href="/todo?status=open&entity={{ entity.id }}"
-     title="Follow-ups opened by reviews on this entity. Deliberately not limited to the {{ stats.days }}-day window -- an action opened earlier is still owed.">
+     title="Follow-ups opened by reviews on this entity.">
     <p class="tile-label">Open actions</p>
     <p class="tile-value">{{ stats.actions_open }}</p>
     {% if stats.actions_overdue %}<p class="tile-note">{{ stats.actions_overdue }} overdue</p>{% endif %}
@@ -80,13 +80,13 @@
       {% endif %}
       {% endfor %}
     </div>
-    {% else %}<p class="meta-dim">No categorized items in this window.</p>{% endif %}
+    {% else %}<p class="meta-dim">No categorized items yet.</p>{% endif %}
   </section>
 
   <section class="panel">
-    <h2>Daily volume</h2>
+    <h2>Daily volume <span class="meta-dim small">· last {{ stats.trend_days }} days</span></h2>
     {% if stats.max_trend %}
-    <div class="trend" role="img" aria-label="Daily item counts over the last {{ stats.days }} days">
+    <div class="trend" role="img" aria-label="Daily item counts over the last {{ stats.trend_days }} days">
       {% for t in stats.trend %}
       {% if t.count %}
       <a class="trend-col" href="/queue?entity={{ entity.id }}&status=all&on={{ t.iso }}"
@@ -103,7 +103,7 @@
       {% endfor %}
     </div>
     <p class="meta-dim small">Peak: {{ stats.max_trend }} items/day. Hover a bar for the date.</p>
-    {% else %}<p class="meta-dim">No items in this window.</p>{% endif %}
+    {% else %}<p class="meta-dim">No items yet.</p>{% endif %}
   </section>
 
   <section class="panel">
@@ -118,7 +118,7 @@
       </li>
       {% endfor %}
     </ul>
-    {% else %}<p class="meta-dim">None in this window.</p>{% endif %}
+    {% else %}<p class="meta-dim">None yet.</p>{% endif %}
   </section>
 
   <section class="panel">
@@ -131,7 +131,7 @@
           <td class="num">{{ count }}</td></tr>
       {% endfor %}
     </table>
-    {% else %}<p class="meta-dim">No factor matches in this window.
+    {% else %}<p class="meta-dim">No factor matches yet.
       Define factors on the <a href="/factors">Factors</a> page.</p>{% endif %}
   </section>
 
@@ -146,7 +146,7 @@
       {% endfor %}
     </table>
     <p class="meta-dim small">Grievances identified in news coverage and social posts.</p>
-    {% else %}<p class="meta-dim">No complaint items in this window.</p>{% endif %}
+    {% else %}<p class="meta-dim">No complaint items yet.</p>{% endif %}
   </section>
 
   <section class="panel">
@@ -160,7 +160,7 @@
       {% endfor %}
     </table>
     <p class="meta-dim small">Extracted from news text — the seed of second-order risk warnings.</p>
-    {% else %}<p class="meta-dim">No linkages extracted in this window.</p>{% endif %}
+    {% else %}<p class="meta-dim">No linkages extracted yet.</p>{% endif %}
   </section>
 </div>
 {% endblock %}

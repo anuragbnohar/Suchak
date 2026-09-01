@@ -94,7 +94,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-08-26.2"
+APP_BUILD = "2026-08-26.3"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -249,10 +249,10 @@ def queue(request: Request):
         on_day = request.query_params.get("on", "")
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", on_day or ""):
             on_day = ""
-        try:
-            days = max(0, min(int(request.query_params.get("days", "0")), 365))
-        except ValueError:
-            days = 0
+        # No rolling window: supervision reads the whole record, and a
+        # fraud case four months old is exactly what belongs on screen.
+        # A single day is still selectable by clicking the dashboard's
+        # activity chart, which is a drill-down, not a filter.
 
         if entity is None:
             ids = [e["id"] for e in entities]
@@ -289,10 +289,6 @@ def queue(request: Request):
         if sev:
             where.append("COALESCE(i.review_severity, i.severity) = ?")
             params.append(sev)
-        if days:
-            where.append("i.published_at >= ?")
-            params.append((datetime.now(timezone.utc) - timedelta(days=days))
-                          .isoformat())
         if on_day:
             where.append("i.published_at LIKE ?")
             params.append(on_day + "%")
@@ -357,7 +353,7 @@ def queue(request: Request):
                        sorted(buckets.items(), key=lambda kv: (-len(kv[1]), kv[0]))]
 
         extras = {k: v for k, v in (
-            ("risk", risk), ("sev", sev), ("days", days or ""),
+            ("risk", risk), ("sev", sev),
             ("on", on_day), ("factor", factor), ("org", org), ("src", src),
             ("complaints", "1" if complaints else ""), ("topic", topic)) if v}
         filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
@@ -969,12 +965,16 @@ def social_page(request: Request):
 
 # --- dashboards -------------------------------------------------------------
 
-def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+# The activity chart is a picture of recent tempo, not a filter on what
+# the page counts: every tile and list below covers the whole record.
+TREND_DAYS = 30
+
+
+def _entity_stats(db, entity_id: int) -> dict:
     rows = [prep_item(r) for r in q(
-        db, "SELECT * FROM items WHERE entity_id = ? AND published_at >= ?"
+        db, "SELECT * FROM items WHERE entity_id = ?"
             " AND gated_out = 0 AND source_type != 'social'",
-        (entity_id, since))]
+        (entity_id,))]
 
     by_risk, by_sev, by_factor, by_day = Counter(), Counter(), Counter(), Counter()
     by_topic, complaints_total = Counter(), 0
@@ -997,7 +997,7 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
 
     today = datetime.now(timezone.utc).date()
     trend = []
-    for offset in range(days - 1, -1, -1):
+    for offset in range(TREND_DAYS - 1, -1, -1):
         d = today - timedelta(days=offset)
         trend.append({"date": d.strftime("%d %b"), "iso": d.isoformat(),
                       "count": by_day.get(d.isoformat(), 0)})
@@ -1020,9 +1020,9 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
                       " FROM items WHERE entity_id = ?", (entity_id,))
     high_recent = [prep_item(r) for r in q(
         db, "SELECT * FROM items WHERE entity_id=?"
-            " AND COALESCE(review_severity, severity)='high' AND published_at >= ?"
+            " AND COALESCE(review_severity, severity)='high'"
             " AND gated_out = 0 AND source_type != 'social'"
-            " ORDER BY published_at DESC LIMIT 6", (entity_id, since))]
+            " ORDER BY published_at DESC LIMIT 6", (entity_id,))]
 
     return {
         "total": len(rows),
@@ -1043,7 +1043,7 @@ def _entity_stats(db, entity_id: int, days: int = 14) -> dict:
             {"type": t, "name": n, "count": c}
             for (t, n), c in linkages.most_common(10)
         ],
-        "days": days,
+        "trend_days": TREND_DAYS,
     }
 
 
@@ -1060,8 +1060,8 @@ def dashboard(request: Request):
         db.close()
 
 
-def _category_rows(db, entities, since, key_fn, categories):
-    """Group the window's classified items by a category instead of by entity.
+def _category_rows(db, entities, key_fn, categories):
+    """Group every classified item by a category instead of by entity.
 
     `key_fn` returns the categories one item belongs to -- one for severity,
     zero or more for risk areas. Each row keeps its per-entity split so every
@@ -1082,17 +1082,15 @@ def _category_rows(db, entities, since, key_fn, categories):
             db, "SELECT * FROM items WHERE entity_id = ? AND gated_out = 0"
                 " AND status != 'new' AND source_type != 'social'", (e["id"],))]
         for it in rows:
-            fresh = (it["published_at"] or "") >= since
             awaiting = it["status"] == "classified"
             for cat in key_fn(it):
                 if cat not in by_cat:
                     continue
                 bucket = by_cat[cat]
-                if fresh:
-                    bucket["total"] += 1
-                    bucket["per_entity"][e["id"]] += 1
-                    if it["severity_shown"] == "high":
-                        bucket["high"] += 1
+                bucket["total"] += 1
+                bucket["per_entity"][e["id"]] += 1
+                if it["severity_shown"] == "high":
+                    bucket["high"] += 1
                 if awaiting:
                     bucket["open"] += 1
                     bucket["open_per_entity"][e["id"]] += 1
@@ -1121,14 +1119,13 @@ def overview(request: Request):
     try:
         user = require_login(db, request)
         require_role(user, "superadmin")
-        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         entities = q(db, "SELECT * FROM entities ORDER BY name")
         rows = []
         for e in entities:
             items = [prep_item(r) for r in q(
-                db, "SELECT * FROM items WHERE entity_id=? AND published_at >= ?"
+                db, "SELECT * FROM items WHERE entity_id=?"
                     " AND gated_out = 0 AND source_type != 'social'",
-                (e["id"], since))]
+                (e["id"],))]
             by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
             top_risk = by_risk.most_common(1)
             open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
@@ -1138,39 +1135,30 @@ def overview(request: Request):
             last = one(db, "SELECT MAX(published_at) m FROM items WHERE entity_id=?"
                            " AND source_type != 'social'",
                        (e["id"],))["m"]
-            # Items older than the window still exist and are still reviewable.
-            # Without this the row reads as a contradiction -- 0 items beside 4
-            # awaiting review -- when the truth is simply that the coverage is
-            # older than seven days, which for a small entity is normal.
-            total_all = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=?"
-                                " AND gated_out = 0 AND source_type != 'social'",
-                            (e["id"],))["n"]
             rows.append({
                 "entity": e,
-                "total7": len(items),
-                "total_all": total_all,
-                "older": total_all - len(items),
-                "high7": sum(1 for it in items if it["severity_shown"] == "high"),
+                "total": len(items),
+                "high": sum(1 for it in items if it["severity_shown"] == "high"),
                 "open": open_count,
                 "top_risk": top_risk[0][0] if top_risk else "—",
                 "last": last,
             })
-        rows.sort(key=lambda r: (-r["high7"], -r["total7"]))
+        rows.sort(key=lambda r: (-r["high"], -r["total"]))
 
-        # The same seven days, grouped three ways. Entity answers "who needs
-        # attention", severity "how bad is the week", risk "what kind of
-        # problem is showing up" -- questions a supervisor asks separately.
+        # The same record, grouped three ways. Entity answers "who needs
+        # attention", severity "how bad is it", risk "what kind of problem
+        # keeps showing up" -- questions a supervisor asks separately.
         view = request.query_params.get("view") or "entity"
         if view not in ("entity", "severity", "risk"):
             view = "entity"
         sev_rows = risk_rows = None
         if view == "severity":
             sev_rows = _category_rows(
-                db, entities, since,
+                db, entities,
                 lambda it: [it["severity_shown"]], taxonomy.SEVERITIES)
         elif view == "risk":
             risk_rows = [r for r in _category_rows(
-                db, entities, since,
+                db, entities,
                 lambda it: it["risk_areas_shown"], taxonomy.RISK_AREAS)]
             risk_rows.sort(key=lambda r: (-r["high"], -r["total"], r["category"]))
         unclassified = one(db, "SELECT COUNT(*) n FROM items"
@@ -1178,7 +1166,7 @@ def overview(request: Request):
                                " AND source_type != 'social'")["n"]
         return render(request, "overview.html", user=user, rows=rows, view=view,
                       sev_rows=sev_rows, risk_rows=risk_rows,
-                      unclassified=unclassified, days=7)
+                      unclassified=unclassified)
     finally:
         db.close()
 
