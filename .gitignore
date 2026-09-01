@@ -8,3 +8,6 @@ suchak.db-*
 # a live X session and its cookies — never commit this
 .x_session.json
 .x_login_debug.png
+
+# Bright Data pending-snapshot ids — local state, never committed
+.bd_snapshots.json

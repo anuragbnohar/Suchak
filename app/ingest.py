@@ -43,7 +43,7 @@ from .db import connect, one, q, x
 from .matching import Registry, build_query, near_miss
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
                          strip_publisher)
-from . import forums, reddit_source, x_scrape
+from . import brightdata_x, forums, reddit_source, x_scrape
 from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
@@ -701,6 +701,17 @@ def fetch_yt_comments_social(registry: Registry, entity, days: int | None = None
     return fetch_youtube_comments(registry, entity, SOCIAL_LOOKBACK_DAYS)
 
 
+def fetch_brightdata(registry: Registry, entity, days: int | None = None) -> list[dict]:
+    """X posts through Bright Data's scraper farm. Off unless both
+    SUCHAK_BRIGHTDATA_KEY and SUCHAK_BRIGHTDATA_DATASET are set. A pending
+    snapshot raises with its id and is harvested by the next social fetch,
+    so a slow collection costs patience, not credits."""
+    if not brightdata_x.ENABLED:
+        return []
+    aliases = json.loads(entity["aliases"] or "[]")
+    return brightdata_x.collect(dict(entity), aliases, SOCIAL_LOOKBACK_DAYS)
+
+
 SOURCES = {
     "google_news": fetch_google_news,
     "youtube": fetch_youtube,
@@ -709,6 +720,7 @@ SOURCES = {
     "reddit": fetch_reddit,
     "forums": fetch_forums,
     "youtube_comments": fetch_yt_comments_social,
+    "brightdata_x": fetch_brightdata,
 }
 
 # Two channels a fetch can run: press coverage and customer complaints.
@@ -719,6 +731,7 @@ SOURCE_CHANNELS = {
     "google_news": "news", "youtube": "news",
     "x": "social", "x_scrape": "social", "reddit": "social", "forums": "social",
     "youtube_comments": "social",
+    "brightdata_x": "social",
 }
 CHANNELS = ("all", "news", "social")
 
@@ -844,6 +857,9 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 # when it read nothing, so a zero really is "searched and
                 # matched nothing".
                 notes.append(f"{len(got)} from consumercomplaints.in")
+            elif name == "brightdata_x" and brightdata_x.ENABLED:
+                # Stated even at zero, like the other social sources.
+                notes.append(f"{len(got)} from X (Bright Data)")
             elif name == "youtube_comments" and YOUTUBE_KEY and YT_COMMENTS:
                 # Stated even at zero, like the other social sources.
                 notes.append(f"{len(got)} from YouTube comments")
