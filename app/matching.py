@@ -264,6 +264,26 @@ def _token_present(token: str, hay: list[str]) -> bool:
     return any(w.startswith(token) for w in hay)
 
 
+def place_mentions(text: str, place: str) -> bool:
+    """Does the text mention this place? Every word of the place name must
+    appear as an exact word -- prefix matching is right for entity aliases
+    but wrong for places, where Kota would swallow Kotak and Pune would
+    swallow Puneet. Devanagari tokens keep the prefix tolerance, because
+    inflected forms (Nagpur -> \u0928\u093e\u0917\u092a\u0942\u0930\u091a\u094d\u092f\u093e) are the norm there."""
+    toks = _match_tokens(place)
+    if not toks:
+        return False
+    hay = _match_tokens(text)
+    hay_set = set(hay)
+    for t in toks:
+        if t.isascii():
+            if t not in hay_set:
+                return False
+        elif not any(w.startswith(t) for w in hay):
+            return False
+    return True
+
+
 def near_miss(title: str, snippet: str, aliases: list[str]):
     """The alias sharing the most words with this text, and which of its
     words are absent: (score, alias, matched_count, missing_words).

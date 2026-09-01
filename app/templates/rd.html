@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}RD screen · Suchak{% endblock %}
+{% block title %}RD View · Suchak{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>RD screen</h1>
-    <p class="page-sub">News monitoring by RBI office · entities headquartered in the region</p>
+    <h1>RD View</h1>
+    <p class="page-sub">Monitoring by RBI office · entities headquartered in the region, and regional news about others</p>
   </div>
 </div>
 
 {% if not offices %}
 <p class="meta-dim">No entity has an RBI office yet. Set each bank's office via
-  <a href="/entities">Entities</a> → Edit, and this screen will group them by region.</p>
+  <a href="/entities">Entities</a> → Edit, and this view will group them by region.</p>
 {% else %}
 <div class="toolbar">
   <nav class="tabs" aria-label="RBI office">
@@ -20,11 +20,23 @@
   </nav>
 </div>
 
+{% if has_region_tab %}
+<div class="toolbar">
+  <nav class="tabs" aria-label="View">
+    <a class="tab {% if tab == 'hq' %}active{% endif %}"
+       href="/rd?office={{ selected | urlencode }}&tab=hq">Headquartered here</a>
+    <a class="tab {% if tab == 'region' %}active{% endif %}"
+       href="/rd?office={{ selected | urlencode }}&tab=region">In-region news · other entities</a>
+  </nav>
+</div>
+{% endif %}
+
 {% if selected == unassigned_label %}
 <p class="meta-dim small">These entities have no RBI office set yet — assign one via
   <a href="/entities">Entities</a> → Edit and they move to their region.</p>
 {% endif %}
 
+{% if tab == 'hq' %}
 {% for r in rows %}
 <section class="rd-entity">
   <h2>{{ r.entity.name }}
@@ -52,10 +64,48 @@
   <p class="meta-dim small">No news items collected yet — fetch news for this entity
     from the Entities page.</p>
   {% endif %}
+  <p class="small">
+    <strong>Social media:</strong>
+    {% if r.social_total %}
+      {{ r.social_total }} grievance{{ '' if r.social_total == 1 else 's' }}
+      {% if r.social_topics %}· mostly {{ r.social_topics | join(', ') }}{% endif %}
+      · <a href="/social?entity={{ r.entity.id }}">open the Social media tab</a>
+    {% else %}
+      <span class="meta-dim">no grievances collected yet</span>
+    {% endif %}
+  </p>
+  {% for g in r.social_recent %}
+  <p class="small meta-dim">— <a href="/item/{{ g.id }}">{{ g.title }}</a>
+    {{ (g.published_at or '')[:10] }}</p>
+  {% endfor %}
 </section>
 {% endfor %}
 {% if selected and not rows %}
 <p class="meta-dim">No entities are mapped to {{ selected }} yet.</p>
+{% endif %}
+
+{% else %}{# region tab #}
+<p class="meta-dim small">Region: <strong>{{ region_desc }}</strong> — news from
+  entities headquartered under other offices, where the story mentions a place
+  in this region. Matching is by state and district names.</p>
+{% if region_rows %}
+<table class="data-table">
+  <tr><th scope="col">Severity</th><th scope="col">Item</th>
+      <th scope="col">Entity</th><th scope="col">Mentions</th>
+      <th scope="col">Published</th></tr>
+  {% for it in region_rows %}
+  <tr>
+    <td><span class="sev sev-{{ it.severity_shown }}">{{ it.severity_shown }}</span></td>
+    <td><a href="/item/{{ it.id }}">{{ it.title }}</a></td>
+    <td class="meta-dim">{{ it.entity_name }}</td>
+    <td class="meta-dim">{{ it.region_term }}</td>
+    <td class="meta-dim">{{ (it.published_at or '')[:10] or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="meta-dim">No news from other entities currently mentions this region.</p>
+{% endif %}
 {% endif %}
 {% endif %}
 

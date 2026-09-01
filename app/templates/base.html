@@ -21,7 +21,7 @@
     {% endif %}
     <a href="/social">Social media</a>
     <a href="/insights">Insights</a>
-    {% if user.role == 'superadmin' or user.rbi_office %}<a href="/rd">RD screen</a>{% endif %}
+    {% if user.role == 'superadmin' or user.rbi_office %}<a href="/rd">RD View</a>{% endif %}
     <a href="/todo">To-do{% if todo_count %}<span class="nav-badge">{{ todo_count }}</span>{% endif %}</a>
     <a href="/factors">Factors</a>
     <a href="/entities">Entities</a>
