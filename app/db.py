@@ -187,6 +187,14 @@ MIGRATIONS = [
     ("items", "gate_reason", "TEXT"),
     ("items", "source_type", "TEXT NOT NULL DEFAULT 'news'"),
     ("entities", "x_handle", "TEXT"),
+    # The RBI regional office whose region holds the entity's headquarters.
+    # Free text on purpose: office names are a roster, not a constraint.
+    ("entities", "rbi_office", "TEXT"),
+    # A Regional Director's beat. Set on a user instead of entity_id, it
+    # scopes them to every entity of that office. A separate column rather
+    # than a new role value because SQLite cannot widen the role CHECK on
+    # existing databases -- the same reason items grew `attribution`.
+    ("users", "rbi_office", "TEXT"),
     ("items", "review_severity", "TEXT"),
     ("items", "complaint_topics", "TEXT DEFAULT '[]'"),
     ("items", "source_tier", "TEXT NOT NULL DEFAULT ''"),

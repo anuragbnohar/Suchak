@@ -19,7 +19,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import forums, insights as insights_mod, reddit_source, taxonomy, x_scrape
 from .matching import derive_aliases
-from .auth import get_user, require_login, require_role, verify_password
+from .auth import (get_user, hash_password, require_login, require_role,
+                   verify_password)
 from .classify import (classify_item,
                        DEFAULT_EXCLUSION_RULES, DEFAULT_RISK_DEFS,
                        DEFAULT_SEVERITY_DEFS,
@@ -94,10 +95,25 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-01.6"
+APP_BUILD = "2026-09-01.7"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
+
+# RBI regional offices, as datalist suggestions wherever an office is
+# typed. Suggestions only -- the field stays free text, because office
+# rosters change and a prototype should not argue with its user about
+# geography.
+RBI_OFFICES = [
+    "Agartala", "Ahmedabad", "Aizawl", "Belapur", "Bengaluru", "Bhopal",
+    "Bhubaneswar", "Chandigarh", "Chennai", "Dehradun", "Gangtok",
+    "Guwahati", "Hyderabad", "Imphal", "Itanagar", "Jaipur", "Jammu",
+    "Kanpur", "Kolkata", "Lucknow", "Mumbai", "Nagpur", "New Delhi",
+    "Panaji", "Patna", "Raipur", "Ranchi", "Shillong", "Shimla",
+    "Srinagar", "Thiruvananthapuram",
+]
+templates.env.globals["rbi_offices"] = RBI_OFFICES
+UNASSIGNED = "Unassigned"
 
 
 def _timeago(iso: str | None) -> str:
@@ -159,6 +175,12 @@ def prep_item(row) -> dict:
 def visible_entities(db, user) -> list:
     if user["role"] == "superadmin":
         return q(db, "SELECT * FROM entities ORDER BY name")
+    if user["rbi_office"]:
+        # A Regional Director's beat is an office, not one entity: every
+        # entity headquartered in that region is theirs to monitor, across
+        # SSM teams. This one branch scopes every page for them.
+        return q(db, "SELECT * FROM entities WHERE rbi_office = ? ORDER BY name",
+                 (user["rbi_office"],))
     return q(db, "SELECT * FROM entities WHERE id = ? ", (user["entity_id"],))
 
 
@@ -1490,11 +1512,113 @@ async def entities_aliases(request: Request, entity_id: int):
             if form.get("x_handle") is not None else (e["x_handle"] or "")
         if handle and not re.fullmatch(r"[A-Za-z0-9_]{1,15}", handle):
             raise HTTPException(400, "An X handle is 1-15 letters, digits or underscores")
-        x(db, "UPDATE entities SET aliases = ?, languages = ?, x_handle = ? WHERE id = ?",
-          (json.dumps(aliases), json.dumps(langs), handle or None, entity_id))
+        office = (form.get("rbi_office") or "").strip() \
+            if form.get("rbi_office") is not None else (e["rbi_office"] or "")
+        if len(office) > 40:
+            raise HTTPException(400, "An office name is at most 40 characters")
+        x(db, "UPDATE entities SET aliases = ?, languages = ?, x_handle = ?,"
+              " rbi_office = ? WHERE id = ?",
+          (json.dumps(aliases), json.dumps(langs), handle or None,
+           office or None, entity_id))
     finally:
         db.close()
     return RedirectResponse("/entities?msg=Aliases+updated", status_code=303)
+
+
+@app.get("/rd")
+def rd_screen(request: Request):
+    """One screen per RBI office: the news picture for every entity whose
+    headquarters fall in that office's region. A Regional Director
+    monitors across SSM teams, so this groups by office, not by team.
+    News only, like the queue and overview -- social stays on its tab."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        if user["role"] != "superadmin" and not user["rbi_office"]:
+            raise HTTPException(
+                403, "The RD screen is for Regional Directors and the super admin")
+
+        if user["role"] == "superadmin":
+            offices = sorted({r["rbi_office"] for r in q(
+                db, "SELECT DISTINCT rbi_office FROM entities"
+                    " WHERE rbi_office IS NOT NULL")})
+            if one(db, "SELECT COUNT(*) n FROM entities WHERE rbi_office IS NULL")["n"]:
+                offices.append(UNASSIGNED)
+        else:
+            offices = [user["rbi_office"]]
+
+        selected = request.query_params.get("office") or (offices[0] if offices else "")
+        if selected and selected not in offices:
+            raise HTTPException(403, "That office is not visible to you")
+
+        if selected == UNASSIGNED:
+            ents = q(db, "SELECT * FROM entities WHERE rbi_office IS NULL ORDER BY name")
+        elif selected:
+            ents = q(db, "SELECT * FROM entities WHERE rbi_office = ? ORDER BY name",
+                     (selected,))
+        else:
+            ents = []
+
+        rows = []
+        for e in ents:
+            items = [prep_item(r) for r in q(
+                db, "SELECT * FROM items WHERE entity_id=?"
+                    " AND gated_out = 0 AND source_type != 'social'",
+                (e["id"],))]
+            by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
+            recent = sorted(items, key=lambda it: it["published_at"] or "",
+                            reverse=True)[:5]
+            rows.append({
+                "entity": e,
+                "total": len(items),
+                "high": sum(1 for it in items if it["severity_shown"] == "high"),
+                "open": sum(1 for it in items if it["status"] in ("new", "classified")),
+                "top_risk": by_risk.most_common(1)[0][0] if by_risk else "\u2014",
+                "recent": recent,
+            })
+        rows.sort(key=lambda r: (-r["high"], -r["total"]))
+
+        return templates.TemplateResponse(request, "rd.html", {
+            "user": user, "offices": offices, "selected": selected,
+            "rows": rows, "unassigned_label": UNASSIGNED,
+            "msg": request.query_params.get("msg"),
+        })
+    finally:
+        db.close()
+
+
+@app.post("/rd/users")
+async def rd_create_user(request: Request):
+    """A Regional Director login: a user whose beat is an office. Stored
+    as role 'member' with rbi_office set, because the role CHECK on
+    existing databases cannot grow a new value."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        form = await request.form()
+        username = (form.get("username") or "").strip().lower()
+        display = (form.get("display_name") or "").strip()
+        password = form.get("password") or ""
+        office = (form.get("rbi_office") or "").strip()
+        if not re.fullmatch(r"[a-z0-9_.-]{3,30}", username):
+            raise HTTPException(
+                400, "Username: 3-30 lower-case letters, digits, . _ -")
+        if not display:
+            raise HTTPException(400, "A display name is required")
+        if len(password) < 8:
+            raise HTTPException(400, "Password needs at least 8 characters")
+        if not office or office == UNASSIGNED or len(office) > 40:
+            raise HTTPException(400, "A real RBI office is required")
+        if one(db, "SELECT 1 x FROM users WHERE username = ?", (username,)):
+            raise HTTPException(400, "That username is taken")
+        x(db, "INSERT INTO users (username, password_hash, display_name, role,"
+              " entity_id, rbi_office) VALUES (?,?,?,'member',NULL,?)",
+          (username, hash_password(password), display, office))
+    finally:
+        db.close()
+    return RedirectResponse(
+        f"/rd?office={quote(office)}&msg=RD+login+created", status_code=303)
 
 
 @app.post("/fetch")

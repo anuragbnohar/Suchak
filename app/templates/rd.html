@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}RD screen · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>RD screen</h1>
+    <p class="page-sub">News monitoring by RBI office · entities headquartered in the region</p>
+  </div>
+</div>
+
+{% if not offices %}
+<p class="meta-dim">No entity has an RBI office yet. Set each bank's office via
+  <a href="/entities">Entities</a> → Edit, and this screen will group them by region.</p>
+{% else %}
+<div class="toolbar">
+  <nav class="tabs" aria-label="RBI office">
+    {% for o in offices %}
+    <a class="tab {% if selected == o %}active{% endif %}" href="/rd?office={{ o | urlencode }}">{{ o }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+{% if selected == unassigned_label %}
+<p class="meta-dim small">These entities have no RBI office set yet — assign one via
+  <a href="/entities">Entities</a> → Edit and they move to their region.</p>
+{% endif %}
+
+{% for r in rows %}
+<section class="rd-entity">
+  <h2>{{ r.entity.name }}
+    <span class="meta-dim small">· {{ r.entity.kind }}</span></h2>
+  <p class="meta-dim small">
+    {{ r.total }} news item{{ '' if r.total == 1 else 's' }} all time ·
+    {{ r.high }} high severity ·
+    {{ r.open }} awaiting review ·
+    top risk area: {{ r.top_risk }}
+  </p>
+  {% if r.recent %}
+  <table class="data-table">
+    <tr><th scope="col">Severity</th><th scope="col">Item</th>
+        <th scope="col">Source</th><th scope="col">Published</th></tr>
+    {% for it in r.recent %}
+    <tr>
+      <td><span class="sev sev-{{ it.severity_shown }}">{{ it.severity_shown }}</span></td>
+      <td><a href="/item/{{ it.id }}">{{ it.title }}</a></td>
+      <td class="meta-dim">{{ it.source_name }}</td>
+      <td class="meta-dim">{{ (it.published_at or '')[:10] or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="meta-dim small">No news items collected yet — fetch news for this entity
+    from the Entities page.</p>
+  {% endif %}
+</section>
+{% endfor %}
+{% if selected and not rows %}
+<p class="meta-dim">No entities are mapped to {{ selected }} yet.</p>
+{% endif %}
+{% endif %}
+
+{% if user.role == 'superadmin' %}
+<details class="rd-user-form">
+  <summary>Create a Regional Director login</summary>
+  <form method="post" action="/rd/users" class="edit-form">
+    <div class="edit-pair">
+      <label>Display name
+        <input name="display_name" required placeholder="RD, Mumbai">
+      </label>
+      <label>Username
+        <input name="username" required pattern="[A-Za-z0-9_.\-]{3,30}"
+               placeholder="rd.mumbai" title="3-30 letters, digits, . _ -">
+      </label>
+    </div>
+    <div class="edit-pair">
+      <label>Password
+        <input name="password" type="password" required minlength="8">
+      </label>
+      <label>RBI office
+        <input name="rbi_office" required list="rbi-offices" placeholder="Mumbai">
+      </label>
+    </div>
+    <p class="meta-dim small">The RD signs in like anyone else; every page they open
+      is scoped to their office's entities.</p>
+    <button type="submit" class="btn btn-primary">Create login</button>
+  </form>
+  <datalist id="rbi-offices">
+    {% for o in rbi_offices %}<option value="{{ o }}">{% endfor %}
+  </datalist>
+</details>
+{% endif %}
+{% endblock %}

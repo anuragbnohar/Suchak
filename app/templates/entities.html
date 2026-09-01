@@ -1,5 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Entities · Suchak{% endblock %}
+{% block title %}Entities · Suchak<datalist id="rbi-offices">
+  {% for o in rbi_offices %}<option value="{{ o }}">{% endfor %}
+</datalist>
+{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -119,6 +122,10 @@
                     <input name="x_handle" value="{{ r.entity.x_handle or '' }}"
                            class="handle-input" placeholder="care handle, without @">
                   </label>
+                  <label>RBI office (headquarters region)
+                    <input name="rbi_office" value="{{ r.entity.rbi_office or '' }}"
+                           list="rbi-offices" placeholder="e.g. Mumbai">
+                  </label>
                 </div>
                 <p class="meta-dim small">A regional entity is covered in the local
                   press first — add <code>mr</code> for Maharashtra, <code>hi</code>
@@ -167,4 +174,7 @@
   </section>
   {% endif %}
 </div>
+<datalist id="rbi-offices">
+  {% for o in rbi_offices %}<option value="{{ o }}">{% endfor %}
+</datalist>
 {% endblock %}

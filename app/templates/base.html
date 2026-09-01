@@ -21,13 +21,14 @@
     {% endif %}
     <a href="/social">Social media</a>
     <a href="/insights">Insights</a>
+    {% if user.role == 'superadmin' or user.rbi_office %}<a href="/rd">RD screen</a>{% endif %}
     <a href="/todo">To-do{% if todo_count %}<span class="nav-badge">{{ todo_count }}</span>{% endif %}</a>
     <a href="/factors">Factors</a>
     <a href="/entities">Entities</a>
   </nav>
   <div class="userbox">
     <span class="username">{{ user.display_name }}</span>
-    <span class="role-chip role-{{ user.role }}">{{ user.role }}</span>
+    <span class="role-chip role-{{ user.role }}">{% if user.rbi_office %}RD · {{ user.rbi_office }}{% else %}{{ user.role }}{% endif %}</span>
     <a class="logout" href="/logout">Sign out</a>
   </div>
   {% endif %}
