@@ -31,7 +31,7 @@ import httpx
 
 log = logging.getLogger("suchak.brightdata")
 
-BUILD = "2026-09-01.1-profile-discovery"
+BUILD = "2026-09-01.2-reach-advice"
 
 KEY = os.environ.get("SUCHAK_BRIGHTDATA_KEY", "")
 # Bright Data's library id for "X (formerly Twitter) - Posts". It is the
@@ -68,6 +68,22 @@ class SnapshotPending(RuntimeError):
 def _headers() -> dict:
     return {"Authorization": f"Bearer {KEY}",
             "Content-Type": "application/json"}
+
+
+def _send(fn, url, **kw):
+    """One HTTP call with network failures translated into advice. Bank
+    and office networks commonly block scraping services outright (the
+    dashboard still opens in a browser via the office proxy), which
+    surfaces here as a bare Windows timeout -- say what it means."""
+    try:
+        return fn(url, **kw)
+    except httpx.TransportError as exc:
+        raise BrightDataUnavailable(
+            f"Could not reach api.brightdata.com ({type(exc).__name__}: "
+            f"{exc}). This usually means the current network blocks "
+            "scraping services, or routes web traffic through a proxy "
+            "that Python does not use. Try the same fetch on another "
+            "network (a phone hotspot proves it in one run).") from exc
 
 
 def _load_state() -> dict:
@@ -114,7 +130,8 @@ def trigger(profile_url: str, days: int | None = None) -> str:
     attempts = [body] if len(body) == 1 else [body, {"url": profile_url}]
     resp = None
     for payload in attempts:
-        resp = httpx.post(
+        resp = _send(
+            httpx.post,
             f"{API}/trigger",
             params={"dataset_id": DATASET, "include_errors": "true",
                     "type": "discover_new", "discover_by": "profile_url",
@@ -142,8 +159,8 @@ def trigger(profile_url: str, days: int | None = None) -> str:
 
 
 def snapshot_status(snapshot_id: str) -> str:
-    resp = httpx.get(f"{API}/progress/{snapshot_id}",
-                     headers=_headers(), timeout=TIMEOUT)
+    resp = _send(httpx.get, f"{API}/progress/{snapshot_id}",
+                 headers=_headers(), timeout=TIMEOUT)
     if resp.status_code >= 400:
         raise BrightDataUnavailable(
             f"Progress check failed (HTTP {resp.status_code}): {resp.text[:200]}")
@@ -151,9 +168,9 @@ def snapshot_status(snapshot_id: str) -> str:
 
 
 def download(snapshot_id: str) -> list[dict]:
-    resp = httpx.get(f"{API}/snapshot/{snapshot_id}",
-                     params={"format": "json"},
-                     headers=_headers(), timeout=60)
+    resp = _send(httpx.get, f"{API}/snapshot/{snapshot_id}",
+                 params={"format": "json"},
+                 headers=_headers(), timeout=60)
     if resp.status_code >= 400:
         raise BrightDataUnavailable(
             f"Snapshot download failed (HTTP {resp.status_code}): "
