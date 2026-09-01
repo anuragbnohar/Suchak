@@ -126,6 +126,18 @@ YT_COMMENTS_PER_VIDEO = max(5, min(int(os.environ.get("SUCHAK_YT_COMMENTS_PER_VI
 YT_COMMENTS_MAX = max(10, min(int(os.environ.get("SUCHAK_YT_COMMENTS_MAX", "60")), 200))
 
 YOUTUBE_MAX_RESULTS = min(int(os.environ.get("SUCHAK_YOUTUBE_MAX", "25")), 50)
+# Complaint vocabulary for the grievance-targeted video search. English and
+# Hindi both, because complaint videos about Indian banks are titled in
+# either; | is YouTube's OR. Editable without code via the env var.
+YT_GRIEVANCE_TERMS = [t.strip() for t in os.environ.get(
+    "SUCHAK_YT_GRIEVANCE_TERMS",
+    "complaint,fraud,scam,customer care,harassment,"
+    "\u0936\u093f\u0915\u093e\u092f\u0924,"
+    "\u0927\u094b\u0916\u093e\u0927\u0921\u093c\u0940,"
+    "\u092b\u094d\u0930\u0949\u0921").split(",") if t.strip()]
+# What the last comments fetch saw, for the probe: both queries, every
+# candidate video with its origin and fate, comments per video.
+YT_LAST: dict = {}
 
 # --- X / Twitter -------------------------------------------------------------
 # The only source that costs money, and it bills per post RETURNED, so the
@@ -567,6 +579,17 @@ def fetch_x_scrape(registry: Registry, entity, days: int | None = None) -> list[
     return x_scrape.scrape_query(f"to:{handle} -filter:retweets", x_scrape.MAX_POSTS)
 
 
+def yt_grievance_query(registry: Registry, entity) -> str:
+    """A search aimed at complaint videos ABOUT the bank, not the bank's
+    own uploads: the shortest press name, quoted, plus complaint
+    vocabulary. YouTube's relevance ranking then surfaces the expose
+    videos whose comment sections carry the grievances."""
+    ent = registry.entities[entity["id"]]
+    ascii_aliases = [a for a in ent["aliases"] if a.isascii() and len(a) >= 4]
+    name = min(ascii_aliases, key=len) if ascii_aliases else entity["name"]
+    return f'"{name}" ' + "|".join(YT_GRIEVANCE_TERMS)
+
+
 def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """Comments under the entity's recent videos.
 
@@ -582,38 +605,64 @@ def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) 
         return []
     window = effective_days(days)
     since = None
-    params = {
+    base = {
         "key": YOUTUBE_KEY,
-        "q": build_query(registry, entity["id"], or_token="|"),
         "part": "snippet",
         "type": "video",
-        "order": "date",
         "maxResults": YT_COMMENT_VIDEOS,
         "regionCode": "IN",
     }
     if window:
         since = datetime.now(timezone.utc) - timedelta(days=window)
-        params["publishedAfter"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+        base["publishedAfter"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    resp = httpx.get(YOUTUBE_SEARCH, params=params, timeout=20)
-    if resp.status_code == 403:
-        raise RuntimeError(f"YouTube API refused the search: {resp.text[:200]}")
-    resp.raise_for_status()
+    def search_entries(params: dict) -> list[dict]:
+        resp = httpx.get(YOUTUBE_SEARCH, params=params, timeout=20)
+        if resp.status_code == 403:
+            raise RuntimeError(
+                f"YouTube API refused the search: {resp.text[:200]}")
+        resp.raise_for_status()
+        return resp.json().get("items", [])
+
+    # Two searches. The complaint-focused one runs FIRST and by relevance:
+    # exposé videos ("<bank> fraud", "<bank> complaint") are where grievance
+    # comments concentrate, so their videos get first claim on the comment
+    # budget. The name search by date keeps what the old single search saw.
+    grievance_q = yt_grievance_query(registry, entity)
+    candidates: list[tuple[str, str, str, str]] = []
+    seen_videos: set[str] = set()
+
+    def gather(entries: list[dict], origin: str) -> None:
+        for entry in entries:
+            video_id = (entry.get("id") or {}).get("videoId")
+            snip = entry.get("snippet") or {}
+            title = _strip_html(snip.get("title", ""))
+            desc = _strip_html(snip.get("description", ""))
+            if not video_id or not title or video_id in seen_videos:
+                continue
+            seen_videos.add(video_id)
+            candidates.append((video_id, title, desc, origin))
+
+    gather(search_entries({**base, "q": grievance_q, "order": "relevance"}),
+           "complaint-search")
+    gather(search_entries({**base, "q": build_query(registry, entity["id"], or_token="|"),
+                           "order": "date"}), "name-search")
+
+    YT_LAST.clear()
+    YT_LAST.update({"grievance_query": grievance_q, "videos": []})
 
     items: list[dict] = []
-    for entry in resp.json().get("items", []):
+    for video_id, video_title, description, origin in candidates:
         if len(items) >= YT_COMMENTS_MAX:
             break
-        video_id = (entry.get("id") or {}).get("videoId")
-        snip = entry.get("snippet") or {}
-        video_title = _strip_html(snip.get("title", ""))
-        description = _strip_html(snip.get("description", ""))
-        if not video_id or not video_title:
-            continue
         # Only a video that names this entity may lend its context to its
         # comments; otherwise a rival bank's video would donate grievances.
         if not registry.mentions(entity["id"], f"{video_title} {description}"):
+            YT_LAST["videos"].append(
+                {"id": video_id, "title": video_title[:80], "origin": origin,
+                 "fate": "does not name the entity"})
             continue
+        before = len(items)
         try:
             c_resp = httpx.get(YOUTUBE_COMMENTS_URL, params={
                 "key": YOUTUBE_KEY, "part": "snippet", "videoId": video_id,
@@ -622,8 +671,14 @@ def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) 
             }, timeout=20)
         except httpx.HTTPError as exc:
             log.info("Comments unreachable for video %s: %s", video_id, exc)
+            YT_LAST["videos"].append(
+                {"id": video_id, "title": video_title[:80], "origin": origin,
+                 "fate": "comments unreachable"})
             continue
         if c_resp.status_code == 403 and "commentsDisabled" in c_resp.text:
+            YT_LAST["videos"].append(
+                {"id": video_id, "title": video_title[:80], "origin": origin,
+                 "fate": "comments disabled"})
             continue                      # that video's choice, not an error
         if c_resp.status_code == 403:
             raise RuntimeError(
@@ -661,6 +716,9 @@ def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) 
                 # bank's own X handle do.
                 "attribution_confident": True,
             })
+        YT_LAST["videos"].append(
+            {"id": video_id, "title": video_title[:80], "origin": origin,
+             "fate": f"{len(items) - before} comment(s)"})
     return items
 
 

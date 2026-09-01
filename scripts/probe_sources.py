@@ -490,6 +490,11 @@ def _probe_youtube_comments(reg: Registry, ent) -> None:
     except Exception as exc:
         print(f"\n    COULD NOT RUN: {type(exc).__name__}: {exc}")
         return
+    d = getattr(ingest, "YT_LAST", {})
+    if d.get("grievance_query"):
+        print(f"\n    complaint search : {d['grievance_query']}")
+    for v in d.get("videos", []):
+        print(f"      [{v['origin']:<16}] {v['fate']:<26} {v['title'][:60]}")
     print(f"\n    {len(items)} comment(s) collected\n")
     for it in items[:8]:
         print(f"      [{(it['published_at'] or 'no date')[:10]}] {it['title'][:72]}")
