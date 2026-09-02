@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Settings · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="page-sub">Fetching windows, budgets and caps · superadmin only</p>
+  </div>
+</div>
+
+<section class="panel">
+  <form method="post" action="/settings" class="stack-form">
+    {% for key, label, help, bounds, default in spec %}
+    <label>{{ label }}
+      <input type="number" name="{{ key }}" min="{{ bounds[0] }}" max="{{ bounds[1] }}"
+             value="{{ overrides.get(key, '') }}" placeholder="{{ default }}">
+    </label>
+    <p class="meta-dim small">{{ help }}
+      Default: <strong>{{ default }}</strong>
+      ({{ bounds[0] }}–{{ bounds[1] }}){% if key in overrides %} ·
+      <strong>currently overridden</strong>{% endif %}.</p>
+    {% endfor %}
+    <p class="meta-dim small">Leave a field blank to use its default. Changes apply
+      from the next fetch — nothing already collected is touched.</p>
+    <button type="submit" class="btn btn-primary">Save settings</button>
+  </form>
+</section>
+
+<p class="meta-dim small">Risk and severity definitions (the RBI guidance-note text
+  the classifier follows) are edited on the <a href="/factors">Factors</a> page.</p>
+{% endblock %}

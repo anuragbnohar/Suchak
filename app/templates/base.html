@@ -28,6 +28,7 @@
     {% endif %}
     <a href="/factors">Factors</a>
     <a href="/entities">Entities</a>
+    {% if user.role == 'superadmin' %}<a href="/settings">Settings</a>{% endif %}
   </nav>
   {% if user %}{% if rd_ctx %}
   <nav class="nav subnav">

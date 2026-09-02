@@ -43,7 +43,7 @@ from .db import connect, one, q, x
 from .matching import Registry, build_query, near_miss
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
                          strip_publisher)
-from . import forums, reddit_source, x_scrape
+from . import forums, reddit_source, tuning, x_scrape
 from .trust import load_trusted_norms, tier_for
 
 log = logging.getLogger("suchak.ingest")
@@ -103,9 +103,19 @@ REJECT_STORE_MIN = float(os.environ.get("SUCHAK_REJECT_STORE_MIN", "0"))
 SOCIAL_LOOKBACK_DAYS = int(os.environ.get("SUCHAK_SOCIAL_LOOKBACK_DAYS", "365"))
 
 
+# The Settings page's knobs, snapshotted at the start of each fetch so a
+# run uses one consistent set. Falls back to the env-var constants when a
+# fetch has not loaded it (tests calling helpers directly).
+TUNING: dict = {}
+
+
+def tun(key: str, fallback: int) -> int:
+    return int(TUNING.get(key, fallback))
+
+
 def effective_days(days: int | None) -> int:
     """The window this fetch should use: a valid override, else the default."""
-    return days if days in LOOKBACK_CHOICES else LOOKBACK_DAYS
+    return days if days in LOOKBACK_CHOICES else tun("lookback_days", LOOKBACK_DAYS)
 # Pause between entity feeds so a 33-entity sweep is not seen as abuse.
 FETCH_DELAY_SECONDS = float(os.environ.get("SUCHAK_FETCH_DELAY", "1.5"))
 DUP_WINDOW_DAYS = 7
@@ -244,7 +254,8 @@ def google_news_url(registry: Registry, entity_id: int, lang: str = "en",
     ordered = (aliases if aliases is not None else
                aliases_for_language(registry.entities[entity_id]["aliases"], lang))
     query = build_query(registry, entity_id, days=effective_days(days) or None,
-                        max_aliases=NEWS_QUERY_ALIASES, aliases=ordered)
+                        max_aliases=tun("news_query_aliases", NEWS_QUERY_ALIASES),
+                        aliases=ordered)
     hl, gl, ceid = NEWS_EDITIONS.get(lang, NEWS_EDITIONS["en"])
     return GOOGLE_NEWS_RSS.format(query=urllib.parse.quote(query),
                                   hl=hl, gl=gl, ceid=ceid)
@@ -613,7 +624,7 @@ def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) 
         "key": YOUTUBE_KEY,
         "part": "snippet",
         "type": "video",
-        "maxResults": YT_COMMENT_VIDEOS,
+        "maxResults": tun("yt_comment_videos", YT_COMMENT_VIDEOS),
         "regionCode": "IN",
     }
     if window:
@@ -657,7 +668,7 @@ def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) 
 
     items: list[dict] = []
     for video_id, video_title, description, origin in candidates:
-        if len(items) >= YT_COMMENTS_MAX:
+        if len(items) >= tun("yt_comments_max", YT_COMMENTS_MAX):
             break
         # Only a video that names this entity may lend its context to its
         # comments; otherwise a rival bank's video would donate grievances.
@@ -670,7 +681,7 @@ def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) 
         try:
             c_resp = httpx.get(YOUTUBE_COMMENTS_URL, params={
                 "key": YOUTUBE_KEY, "part": "snippet", "videoId": video_id,
-                "maxResults": YT_COMMENTS_PER_VIDEO, "order": "relevance",
+                "maxResults": tun("yt_comments_per_video", YT_COMMENTS_PER_VIDEO), "order": "relevance",
                 "textFormat": "plainText",
             }, timeout=20)
         except httpx.HTTPError as exc:
@@ -691,7 +702,7 @@ def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) 
             log.info("Comments error %s for video %s", c_resp.status_code, video_id)
             continue
         for thread in c_resp.json().get("items", []):
-            if len(items) >= YT_COMMENTS_MAX:
+            if len(items) >= tun("yt_comments_max", YT_COMMENTS_MAX):
                 break
             top = (((thread.get("snippet") or {}).get("topLevelComment") or {})
                    .get("snippet") or {})
@@ -737,8 +748,9 @@ def fetch_reddit(registry: Registry, entity, days: int | None = None) -> list[di
     """
     if not reddit_source.ENABLED:
         return []
-    return reddit_source.search(registry, entity["id"], SOCIAL_LOOKBACK_DAYS,
-                                reddit_source.MAX_POSTS)
+    return reddit_source.search(registry, entity["id"],
+                                tun("social_lookback_days", SOCIAL_LOOKBACK_DAYS),
+                                tun("reddit_max", reddit_source.MAX_POSTS))
 
 
 def fetch_forums(registry: Registry, entity, days: int | None = None) -> list[dict]:
@@ -753,14 +765,16 @@ def fetch_forums(registry: Registry, entity, days: int | None = None) -> list[di
     """
     if not forums.ENABLED:
         return []
-    return forums.search(registry, entity["id"], SOCIAL_LOOKBACK_DAYS,
-                         forums.MAX_ITEMS)
+    return forums.search(registry, entity["id"],
+                         tun("social_lookback_days", SOCIAL_LOOKBACK_DAYS),
+                         tun("forums_max", forums.MAX_ITEMS))
 
 
 def fetch_yt_comments_social(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """Social-channel wrapper: comments always cover the social window,
     like the other complaint sources, whatever the news lookback."""
-    return fetch_youtube_comments(registry, entity, SOCIAL_LOOKBACK_DAYS)
+    return fetch_youtube_comments(
+        registry, entity, tun("social_lookback_days", SOCIAL_LOOKBACK_DAYS))
 
 
 SOURCES = {
@@ -863,6 +877,8 @@ def ingest_entity(db, entity, registry: Registry | None = None,
     this entity from broadcast feeds (RBI, exchanges). `days` widens this
     fetch's window only; `channel` limits it to one kind of source --
     "news", "social", or "all"."""
+    global TUNING
+    TUNING = tuning.load(db)
     registry = registry or load_registry(db)
     result = {"found": 0, "added": 0, "merged": 0, "rejected": 0,
               "billed": 0, "body_confirmed": 0, "body_skipped": 0,
@@ -875,7 +891,8 @@ def ingest_entity(db, entity, registry: Registry | None = None,
     elif channel == "social":
         # The lookback picker widens news; social always covers its own
         # fixed year, so a days note here would describe the wrong window.
-        notes.append(f"social sources only (last {SOCIAL_LOOKBACK_DAYS} days)")
+        notes.append(f"social sources only (last "
+                     f"{tun('social_lookback_days', SOCIAL_LOOKBACK_DAYS)} days)")
 
     window = effective_days(days)
     if window != LOOKBACK_DAYS and channel != "social":
@@ -959,7 +976,7 @@ def ingest_entity(db, entity, registry: Registry | None = None,
             # not the feed's snippet, is what settles it. Budgeted, news
             # only, and an unreachable page rejects as before: reading the
             # body can rescue an item, never admit one on an error.
-            if cand["source_type"] == "news" and body_checks < BODY_CHECKS:
+            if cand["source_type"] == "news" and body_checks < tun("body_checks", BODY_CHECKS):
                 body_checks += 1
                 if _article_names_entity(registry, entity["id"], link):
                     result["body_confirmed"] += 1
@@ -1075,7 +1092,7 @@ def _log_fetch(db, entity_id: int, result: dict,
         note = f"{note}; {kept}" if note else kept
     if result.get("body_skipped"):
         missed = (f"{result['body_skipped']} reject(s) not body-checked -- "
-                  f"the budget of {BODY_CHECKS} article reads was spent; "
+                  f"the budget of {tun('body_checks', BODY_CHECKS)} article reads was spent; "
                   "they wait on the Rejected tab")
         note = f"{note}; {missed}" if note else missed
     if result.get("rejected"):

@@ -18,7 +18,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import (forums, geography, hq_lookup, insights as insights_mod,
-               reddit_source, taxonomy, x_scrape)
+               reddit_source, taxonomy, tuning, x_scrape)
 from .matching import derive_aliases, place_mentions
 from .auth import (get_user, hash_password, require_login, require_role,
                    verify_password)
@@ -127,7 +127,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-03.1"
+APP_BUILD = "2026-09-03.2"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1899,15 +1899,53 @@ async def fetch_now(request: Request):
     _spawn(asyncio.to_thread(_fetch_job, job_id,
                              int(entity_id) if entity_id else None,
                              days, channel))
+    db = connect()
+    try:
+        knobs = tuning.load(db)
+    finally:
+        db.close()
     if channel == "social":
         msg = (f"Social media fetch started — complaints from the last "
-               f"{SOCIAL_LOOKBACK_DAYS} days. You will be notified when done.")
+               f"{knobs['social_lookback_days']} days. You will be notified when done.")
     else:
-        window = days or LOOKBACK_DAYS
+        window = days or knobs["lookback_days"]
         msg = (f"{what} started — searching the last {window} days. "
                "You will be notified when done.")
     return RedirectResponse(f"/entities?msg={quote(msg)}&job={job_id}",
                             status_code=303)
+
+
+@app.get("/settings")
+def settings_page(request: Request):
+    """Operational knobs, stored in the database: windows, budgets and
+    caps that were env-vars-only before. Superadmin territory."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        return templates.TemplateResponse(request, "settings.html", {
+            "user": user, "spec": tuning.SPEC,
+            "overrides": tuning.overrides(db),
+            "msg": request.query_params.get("msg"),
+        })
+    finally:
+        db.close()
+
+
+@app.post("/settings")
+async def settings_save(request: Request):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        try:
+            tuning.save(db, form, user["id"])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+    finally:
+        db.close()
+    return RedirectResponse("/settings?msg=Settings+saved", status_code=303)
 
 
 @app.get("/fetch/status")
