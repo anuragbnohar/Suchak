@@ -42,6 +42,7 @@ from .classify import classify_new_items
 from .db import connect, one, q, x
 from .matching import Registry, build_query, near_miss
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
+                         strong_shared,
                          strip_publisher)
 from . import forums, reddit_source, tuning, x_scrape
 from .trust import load_trusted_norms, tier_for
@@ -124,6 +125,13 @@ DUP_WINDOW_DAYS = 7
 # overlap floor stops a high cosine built on one or two shared words.
 DUP_THRESHOLD = 0.40
 DUP_MIN_SHARED = 3
+# ...unless the shared words are ones that pin down a single event -- a
+# person's name, a place, a product. "CEO Sashidhar Jagdishan resigns"
+# and "Jagdishan resignation: shares fall" share two words only, and are
+# plainly one story; "Q1 profit rises" and "Q2 profit rises" also share
+# two, and are not. The difference is whether the shared words are
+# distinctive or the vocabulary every story about this bank uses.
+DUP_MIN_STRONG = 2
 
 YOUTUBE_SEARCH = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_KEY = os.environ.get("SUCHAK_YOUTUBE_KEY", "")
@@ -1112,8 +1120,12 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 score = event_similarity(title, r["title"], entity_stop)
                 if score > best:
                     dup_id, best, best_title = r["id"], score, r["title"]
-        if dup_id and best >= DUP_THRESHOLD and \
-                distinctive_overlap(title, best_title, entity_stop) >= DUP_MIN_SHARED:
+        shared = (distinctive_overlap(title, best_title, entity_stop)
+                  if dup_id else 0)
+        strong = strong_shared(title, best_title, entity_stop) if dup_id else 0
+        if dup_id and best >= DUP_THRESHOLD and (
+                shared >= DUP_MIN_SHARED
+                or (shared >= 2 and strong >= DUP_MIN_STRONG)):
             x(db, "INSERT INTO item_sources (item_id, url, source_name, title, published_at)"
                   " VALUES (?,?,?,?,?)",
               (dup_id, link, cand["source_name"], title, published))

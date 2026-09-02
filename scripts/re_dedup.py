@@ -24,9 +24,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import connect, init_db, q, x
-from app.ingest import DUP_MIN_SHARED, DUP_THRESHOLD
+from app.ingest import DUP_MIN_SHARED, DUP_MIN_STRONG, DUP_THRESHOLD
 from app.similarity import (alias_tokens, distinctive_overlap,
-                            event_similarity, strip_publisher)
+                            event_similarity, strip_publisher, strong_shared)
 
 
 def cluster_entity(db, entity, apply: bool) -> dict:
@@ -56,8 +56,13 @@ def cluster_entity(db, entity, apply: bool) -> dict:
         for c in clusters:
             for t in c["titles"]:
                 score = event_similarity(r["title"], t, stop)
-                if score > best_score and \
-                        distinctive_overlap(r["title"], t, stop) >= DUP_MIN_SHARED:
+                shared = distinctive_overlap(r["title"], t, stop)
+                strong = strong_shared(r["title"], t, stop)
+                # same rule as the live fetch: three shared words, or two
+                # that actually pin down one event
+                if score > best_score and (
+                        shared >= DUP_MIN_SHARED
+                        or (shared >= 2 and strong >= DUP_MIN_STRONG)):
                     best, best_score = c, score
         if best is not None and best_score >= DUP_THRESHOLD:
             best["members"].append(r)

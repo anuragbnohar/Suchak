@@ -30,6 +30,42 @@ _MONTHS = {
 }
 
 
+# Words for one event that the press writes half a dozen ways. Folding
+# them to a single token is what lets "CEO resigns", "MD steps down" and
+# "chief executive quits" be recognised as one story -- without this, a
+# resignation covered by five outlets filled the queue five times.
+# Deliberately narrow: only true synonyms of an EVENT, never words that
+# distinguish events (Q1/Q2, crore/lakh, RBI/SEBI stay as they are).
+_EVENT_SYNONYMS = {
+    # departures
+    "resign": "resign", "resignation": "resign", "resigns": "resign",
+    "quit": "resign", "quits": "resign", "quitting": "resign",
+    "steps": "resign", "stepping": "resign", "stepped": "resign",
+    "exits": "resign", "exit": "resign", "departs": "resign",
+    "departure": "resign", "leaves": "resign", "leaving": "resign",
+    # the office being vacated or filled
+    "ceo": "ceo", "md": "ceo", "chief": "ceo", "executive": "ceo",
+    "chairman": "chairman", "chairperson": "chairman",
+    "director": "director", "chairman-cum-managing": "chairman",
+    "appointed": "appoint", "appointment": "appoint", "appoints": "appoint",
+    "names": "appoint", "named": "appoint", "elevates": "appoint",
+    "successor": "appoint",
+    # enforcement
+    "penalty": "penalty", "penalised": "penalty", "penalized": "penalty",
+    "penalises": "penalty", "fine": "penalty", "fines": "penalty",
+    "fined": "penalty", "imposes": "penalty", "imposed": "penalty",
+    # supervisory action
+    "curbs": "curb", "curb": "curb", "restrictions": "curb",
+    "restriction": "curb", "restricts": "curb", "bars": "curb",
+    "barred": "curb", "moratorium": "curb",
+    # failures
+    "outage": "outage", "outages": "outage", "downtime": "outage",
+    "glitch": "outage", "glitches": "outage", "disruption": "outage",
+    "fraud": "fraud", "scam": "fraud", "embezzlement": "fraud",
+    "defrauded": "fraud", "siphoned": "fraud",
+}
+
+
 def _stem(token: str) -> str:
     """Light plural folding so "withdrawals" matches "withdrawal" and
     "charges" matches "charge" -- headline variants of one event routinely
@@ -37,6 +73,8 @@ def _stem(token: str) -> str:
     reason ("from Oct" == "from 1 October")."""
     token = _NUM_WORDS.get(token, token)
     token = _MONTHS.get(token, token)
+    if token in _EVENT_SYNONYMS:
+        return _EVENT_SYNONYMS[token]
     if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
         token = token[:-1]
     return token
@@ -75,6 +113,31 @@ _DOMAIN_GENERIC = {
     "bank", "rs", "inr", "crore", "lakh", "india", "indian", "ltd",
     "limited", "share", "stock", "customer", "account",
 }
+
+
+# Words that recur across unrelated stories about the same bank. Two
+# headlines sharing only these describe one topic, not one event: "Q1
+# profit rises" and "Q2 profit rises" share profit+rise and are different
+# stories. A shared word outside this set -- a person's name, a place, a
+# product -- is real evidence of one event.
+_WEAK_SHARED = {
+    "profit", "loss", "result", "quarter", "year", "growth", "rise",
+    "fall", "gain", "drop", "jump", "surge", "slip", "report", "market",
+    "price", "target", "buy", "sell", "rating", "analyst", "brokerage",
+    "cent", "percent", "pc", "high", "low", "record", "plan", "launch",
+    "new", "say", "sees", "expect", "fy", "q1", "q2", "q3", "q4",
+    "board", "meeting", "approve", "raise", "fund", "branch", "loan",
+    "deposit", "rate", "interest", "credit", "card", "app", "service",
+    "ceo", "chairman", "director",
+}
+
+
+def strong_shared(a: str, b: str, exclude: set | None = None) -> int:
+    """Shared words that actually pin down ONE event -- names, places,
+    products -- rather than the vocabulary every story about this bank
+    uses."""
+    drop = _DOMAIN_GENERIC | _WEAK_SHARED | (exclude or set())
+    return len((set(tokenize(a)) - drop) & (set(tokenize(b)) - drop))
 
 
 def event_similarity(a: str, b: str, exclude: set | None = None) -> float:
