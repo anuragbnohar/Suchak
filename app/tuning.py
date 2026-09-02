@@ -33,6 +33,11 @@ SPEC = [
      "looking for the bank's name in the text. Each read takes a few "
      "seconds; unread rejects wait on the Rejected tab.",
      (0, 20), int(os.environ.get("SUCHAK_BODY_CHECKS", "8"))),
+    ("x_max_posts", "X posts per fetch (paid)",
+     "The hard ceiling on posts one press of Fetch X may read for one "
+     "bank. X bills about $0.005 per post, so this is the spend control: "
+     "10 posts is about $0.05 per press.",
+     (1, 100), int(os.environ.get("SUCHAK_X_MAX_POSTS", "50"))),
     ("reddit_max", "Reddit posts per fetch",
      "Cap on posts collected from Reddit for one bank in one fetch.",
      (10, 200), int(os.environ.get("SUCHAK_REDDIT_MAX", "50"))),

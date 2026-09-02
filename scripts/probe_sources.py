@@ -34,7 +34,7 @@ from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
 
-PROBE_BUILD = "2026-09-02.1-hq-lookup"
+PROBE_BUILD = "2026-09-03.1-x"
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -518,6 +518,11 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=365)
     ap.add_argument("--reddit-only", action="store_true")
     ap.add_argument("--forums-only", action="store_true")
+    ap.add_argument("--x", action="store_true",
+                    help="fetch X posts for the entity and print them with "
+                         "their links. COSTS X credits; asks first")
+    ap.add_argument("--yes", action="store_true",
+                    help="skip the spend confirmation for --x")
     ap.add_argument("--hq", metavar="NAME",
                     help="look up an entity's headquarters district on the web"
                          " (one small Claude call) and print the raw answer")
@@ -567,6 +572,56 @@ def main() -> int:
             # finds the page where the legal name ("... Ltd.") may not.
             names = json.loads(ent["aliases"] or "[]") or [ent["name"]]
             term = names[0]
+
+        if args.x:
+            from app import ingest, tuning
+            print(f"\n=== X POSTS -- {ent['name']}")
+            ingest.TUNING = tuning.load(db)
+            knobs = ingest.TUNING
+            print(f"    key set    : {'yes' if ingest.X_BEARER else 'NO -- set SUCHAK_X_BEARER'}")
+            print(f"    handle     : @{ent['x_handle']}" if ent["x_handle"]
+                  else "    handle     : none set (name + complaint words search)")
+            print(f"    filters    : complaint words "
+                  f"{'ON' if knobs['x_only_complaints'] else 'off'} | "
+                  f"replies {'excluded' if knobs['x_exclude_replies'] else 'included'} | "
+                  f"author handles {'ON (extra cost)' if knobs['x_author_handles'] else 'off'}")
+            try:
+                query = ingest.x_query(reg, dict(ent))
+            except RuntimeError as exc:
+                print(f"    CANNOT RUN : {exc}")
+                return 1
+            print(f"    query      : {query}")
+            cap = knobs["x_max_posts"]
+            print(f"    ceiling    : {cap} posts -> at most "
+                  f"${cap * ingest.X_PRICE_PER_POST:.2f} of X credits "
+                  "(Settings page: X posts per fetch)")
+            if not args.yes:
+                try:
+                    answer = input("\n    Spend up to that amount? [y/N] ")
+                except EOFError:
+                    answer = ""
+                if answer.strip().lower() != "y":
+                    print("    Cancelled. Nothing fetched, nothing billed.")
+                    return 0
+            ingest.X_ENABLED = True     # the probe is an explicit request
+            try:
+                posts = ingest.fetch_x(reg, dict(ent), 7)
+            except Exception as exc:
+                print(f"\n    COULD NOT RUN: {type(exc).__name__}: {exc}")
+                return 1
+            print(f"\n    {len(posts)} post(s) — about "
+                  f"${len(posts) * ingest.X_PRICE_PER_POST:.2f} spent\n")
+            for it in posts:
+                print(f"      [{(it['published_at'] or 'no date')[:10]}] {it['source_name']}")
+                print(f"      {it['url']}")
+                print(f"      {it['snippet'][:200]}\n")
+            if not posts:
+                print("      (Nothing matched. The filters are narrow by "
+                      "design — loosen them on the Settings page if every "
+                      "run comes back empty.)")
+            print("    Nothing was stored and nothing was classified: this "
+                  "is a look, not a fetch.")
+            return 0
 
         if args.hq:
             from app import hq_lookup

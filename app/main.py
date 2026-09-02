@@ -128,7 +128,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-03.6"
+APP_BUILD = "2026-09-03.7"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1910,9 +1910,10 @@ async def fetch_now(request: Request):
         msg = (f"Social media fetch started — complaints from the last "
                f"{knobs['social_lookback_days']} days. You will be notified when done.")
     elif channel == "x":
-        msg = (f"X fetch started — up to {X_MAX_POSTS} posts from the last 7 "
-               f"days (about ${X_MAX_POSTS * X_PRICE_PER_POST:.2f} of X "
-               "credits). You will be notified when done.")
+        cap = knobs["x_max_posts"]
+        msg = (f"X fetch started — up to {cap} posts from the last 7 days "
+               f"(about ${cap * X_PRICE_PER_POST:.2f} of X credits). "
+               "You will be notified when done.")
     else:
         window = days or knobs["lookback_days"]
         msg = (f"{what} started — searching the last {window} days. "

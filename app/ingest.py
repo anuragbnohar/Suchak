@@ -428,7 +428,7 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
     want_authors = bool(tun("x_author_handles", 0))
     params = {
         "query": x_query(registry, entity),
-        "max_results": min(X_MAX_POSTS, 100),   # API ceiling per request
+        "max_results": min(tun("x_max_posts", X_MAX_POSTS), 100),
         "start_time": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "tweet.fields": "created_at,lang,author_id",
     }
@@ -457,7 +457,7 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
              if want_authors else {})
 
     items = []
-    for post in posts[:X_MAX_POSTS]:
+    for post in posts[:tun("x_max_posts", X_MAX_POSTS)]:
         text = " ".join((post.get("text") or "").split())
         if not text:
             continue
