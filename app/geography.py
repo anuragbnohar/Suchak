@@ -436,13 +436,22 @@ def _state_label(state: str) -> str:
 # Built once from the tables above, so adding an office or district in one
 # place updates the lookup too.
 _PLACE_INDEX: dict = {}
+# form (lowercased, English or Devanagari) -> the English district it
+# names. Districts only -- state names are deliberately absent, so "Bank
+# of Maharashtra" never auto-fills a headquarters.
+_FORM_TO_DISTRICT: dict = {}
 for _office, _states in OFFICE_STATES.items():
     for _st in _states:
         _label = _state_label(_st)
-        _terms = STATE_NAMES.get(_st, [_label]) + STATE_DISTRICTS.get(_st, [])
-        for _t in _terms:
+        for _t in STATE_NAMES.get(_st, [_label]):
             for _form in [_t] + DEVANAGARI.get(_t, []):
-                _PLACE_INDEX.setdefault(_form.lower(), {})                     .setdefault(_label, set()).add(_office)
+                _PLACE_INDEX.setdefault(_form.lower(), {}).setdefault(
+                    _label, set()).add(_office)
+        for _t in STATE_DISTRICTS.get(_st, []):
+            for _form in [_t] + DEVANAGARI.get(_t, []):
+                _PLACE_INDEX.setdefault(_form.lower(), {}).setdefault(
+                    _label, set()).add(_office)
+                _FORM_TO_DISTRICT.setdefault(_form.lower(), _t)
 
 
 def offices_for_district(place: str) -> list[tuple[str, list[str]]]:
@@ -466,6 +475,17 @@ def place_index() -> dict:
     live auto-fill: {place: {state: [offices]}}."""
     return {place: {st: sorted(offs) for st, offs in states.items()}
             for place, states in _PLACE_INDEX.items()}
+
+
+def all_districts() -> list[str]:
+    """Every English district/city name, for the add-entity dropdown."""
+    return sorted({d for ds in STATE_DISTRICTS.values() for d in ds})
+
+
+def canonical_district(text: str) -> str | None:
+    """The stored spelling for a typed district, English or Devanagari
+    (\u091c\u093e\u0932\u0928\u093e -> Jalna); None when it is not a district we know."""
+    return _FORM_TO_DISTRICT.get(" ".join((text or "").split()).lower())
 
 
 def office_places(office: str) -> list[str]:

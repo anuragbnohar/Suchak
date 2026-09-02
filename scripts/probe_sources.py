@@ -34,7 +34,7 @@ from app import forums, reddit_source
 from app.db import connect, init_db, q
 from app.matching import Registry
 
-PROBE_BUILD = "2026-09-01.3-no-brightdata"
+PROBE_BUILD = "2026-09-02.1-hq-lookup"
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -518,6 +518,9 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=365)
     ap.add_argument("--reddit-only", action="store_true")
     ap.add_argument("--forums-only", action="store_true")
+    ap.add_argument("--hq", metavar="NAME",
+                    help="look up an entity's headquarters district on the web"
+                         " (one small Claude call) and print the raw answer")
     ap.add_argument("--youtube", action="store_true",
                     help="test YouTube comment collection for the entity")
     ap.add_argument("--routes", action="store_true",
@@ -548,8 +551,8 @@ def main() -> int:
                 for r in rows:
                     print(f"  {r['name']}")
                 return 1
-        elif args.structure or args.dump:
-            # These two only need a search term, not a roster entry.
+        elif args.structure or args.dump or args.hq:
+            # These need a search term or a bare name, not a roster entry.
             pass
         else:
             print("\nGive --entity. On the roster:")
@@ -565,6 +568,19 @@ def main() -> int:
             names = json.loads(ent["aliases"] or "[]") or [ent["name"]]
             term = names[0]
 
+        if args.hq:
+            from app import hq_lookup
+            print(f"\n=== HEADQUARTERS LOOKUP -- {args.hq!r}  (module {hq_lookup.BUILD})")
+            try:
+                r = hq_lookup.lookup_headquarters(args.hq)
+            except hq_lookup.LookupUnavailable as exc:
+                print(f"    COULD NOT RUN: {exc}")
+                return 1
+            for k in ("found", "district", "state", "place_raw", "source", "note"):
+                print(f"    {k:10}: {r.get(k)}")
+            if r.get("district"):
+                from app import geography
+                print(f"    offices   : {geography.offices_for_district(r['district'])}")
             return 0
 
         if args.youtube:

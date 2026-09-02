@@ -12,13 +12,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (forums, geography, insights as insights_mod, reddit_source,
-               taxonomy, x_scrape)
+from . import (forums, geography, hq_lookup, insights as insights_mod,
+               reddit_source, taxonomy, x_scrape)
 from .matching import derive_aliases, place_mentions
 from .auth import (get_user, hash_password, require_login, require_role,
                    verify_password)
@@ -96,7 +96,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-02.1"
+APP_BUILD = "2026-09-02.2"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1412,11 +1412,37 @@ def entities_new(request: Request):
             "user": user, "kinds": taxonomy.ENTITY_KINDS,
             "place_index": json.dumps(geography.place_index(),
                                       ensure_ascii=False),
+            "districts": geography.all_districts(),
             "form": {}, "candidates": [], "need_choice": False,
-            "unknown_district": False,
+            "unknown_district": False, "lookup": None,
         })
     finally:
         db.close()
+
+
+@app.post("/entities/hq")
+async def entities_hq(request: Request):
+    """The add-entity screen's headquarters lookup: entity name in, the
+    district found on the live web out -- verified against the geography
+    tables before anything is filled in."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+    finally:
+        db.close()
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "An entity name is required first")
+    try:
+        result = hq_lookup.lookup_headquarters(name, form.get("kind") or "")
+    except hq_lookup.LookupUnavailable as exc:
+        return JSONResponse({"found": False, "district": None,
+                             "note": str(exc)})
+    if result.get("district"):
+        result["offices"] = geography.offices_for_district(result["district"])
+    return JSONResponse(result)
 
 
 @app.post("/entities/new")
@@ -1428,7 +1454,6 @@ async def entities_new_post(request: Request):
         require_role(user, "superadmin")
         name = (form.get("name") or "").strip()
         kind = form.get("kind") or taxonomy.ENTITY_KINDS[0]
-        location = (form.get("location") or "").strip()
         district = (form.get("district") or "").strip()
         manual = (form.get("office_manual") or "").strip()
         if not name:
@@ -1437,6 +1462,39 @@ async def entities_new_post(request: Request):
             raise HTTPException(400, "Unknown entity kind")
         if one(db, "SELECT 1 x FROM entities WHERE lower(name) = ?", (name.lower(),)):
             raise HTTPException(400, "An entity with this name already exists")
+
+        def ask_again(lookup=None, unknown=False):
+            candidates = (geography.offices_for_district(district)
+                          if district else [])
+            return templates.TemplateResponse(request, "new_entity.html", {
+                "user": user, "kinds": taxonomy.ENTITY_KINDS,
+                "place_index": json.dumps(geography.place_index(),
+                                          ensure_ascii=False),
+                "districts": geography.all_districts(),
+                "form": {"name": name, "kind": kind, "district": district},
+                "candidates": candidates,
+                "need_choice": bool(candidates),
+                "unknown_district": bool(district) and not candidates,
+                "lookup": lookup,
+            })
+
+        # The "Find headquarters online" button without JavaScript: run
+        # the lookup here and show the same screen with the result.
+        if form.get("action") == "lookup":
+            try:
+                found = hq_lookup.lookup_headquarters(name, kind)
+            except hq_lookup.LookupUnavailable as exc:
+                found = {"found": False, "note": str(exc)}
+            if found.get("district"):
+                district = found["district"]
+            return ask_again(lookup=found)
+
+        # The headquarters is always a district from the known list.
+        if district:
+            canon = geography.canonical_district(district)
+            if not canon and not manual:
+                return ask_again(unknown=True)
+            district = canon or district
 
         candidates = geography.offices_for_district(district) if district else []
         allowed = {o for _, offs in candidates for o in offs}
@@ -1449,23 +1507,13 @@ async def entities_new_post(request: Request):
             else:
                 # more than one office (or none we know) -- the person
                 # decides, on the same screen with everything they typed.
-                return templates.TemplateResponse(request, "new_entity.html", {
-                    "user": user, "kinds": taxonomy.ENTITY_KINDS,
-                    "place_index": json.dumps(geography.place_index(),
-                                              ensure_ascii=False),
-                    "form": {"name": name, "kind": kind,
-                             "location": location, "district": district},
-                    "candidates": candidates,
-                    "need_choice": bool(candidates),
-                    "unknown_district": bool(district) and not candidates,
-                })
+                return ask_again()
 
         aliases = [name] + derive_aliases([name])
         x(db, "INSERT INTO entities (name, kind, aliases, languages,"
-              " rbi_office, hq_location, hq_district)"
-              " VALUES (?,?,?,?,?,?,?)",
+              " rbi_office, hq_district) VALUES (?,?,?,?,?,?)",
           (name, kind, json.dumps(aliases), json.dumps(["en"]),
-           ", ".join(chosen) or None, location or None, district or None))
+           ", ".join(chosen) or None, district or None))
     finally:
         db.close()
     return RedirectResponse(

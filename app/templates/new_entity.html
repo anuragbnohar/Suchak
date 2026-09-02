@@ -22,14 +22,26 @@
       </select>
     </label>
     <div class="edit-pair">
-      <label>Headquarters — location (city/town)
-        <input name="location" placeholder="e.g. Ambad" value="{{ form.location or '' }}">
-      </label>
-      <label>Headquarters — district
-        <input name="district" id="district" required placeholder="e.g. Jalna"
+      <label>Headquarters district
+        <input name="district" id="district" list="district-list" required
+               placeholder="start typing, or use the finder"
                value="{{ form.district or '' }}" autocomplete="off">
       </label>
+      <label>&nbsp;
+        <button type="submit" name="action" value="lookup" id="find-hq"
+                class="btn" formnovalidate>Find headquarters online</button>
+      </label>
     </div>
+    <p class="small" id="lookup-line">
+      {%- if lookup -%}
+        {%- if lookup.found -%}
+        Found: <strong>{{ lookup.district }}</strong>{% if lookup.state %}, {{ lookup.state }}{% endif %}
+        {% if lookup.source %}· <a href="{{ lookup.source }}" rel="noreferrer">source</a>{% endif %}
+        {%- else -%}
+        <span class="meta-dim">{{ lookup.note }}</span>
+        {%- endif -%}
+      {%- endif -%}
+    </p>
 
     <div id="office-box">
       {% if need_choice %}
@@ -52,7 +64,8 @@
         <input name="office_manual" list="rbi-offices" placeholder="e.g. Mumbai">
       </label>
       {% else %}
-      <p class="small meta-dim" id="office-hint">Type the district and the office appears here.</p>
+      <p class="small meta-dim" id="office-hint">Pick the district (or let the finder
+        fill it) and the RBI office appears here.</p>
       {% endif %}
     </div>
 
@@ -65,6 +78,9 @@
 
 <datalist id="rbi-offices">
   {% for o in rbi_offices %}<option value="{{ o }}">{% endfor %}
+</datalist>
+<datalist id="district-list">
+  {% for d in districts %}<option value="{{ d }}">{% endfor %}
 </datalist>
 
 <script>
@@ -104,5 +120,36 @@ function refresh() {
 }
 district.addEventListener("input", refresh);
 if (district.value) refresh();
+
+// "Find headquarters online" without a page reload; the same button
+// still works as a plain form submit when JavaScript is off.
+const findBtn = document.getElementById("find-hq");
+const line = document.getElementById("lookup-line");
+findBtn.addEventListener("click", async (ev) => {
+  const name = document.querySelector('input[name="name"]').value.trim();
+  if (!name) return;                      // let the browser ask for a name
+  ev.preventDefault();
+  findBtn.disabled = true;
+  line.innerHTML = 'Searching the web for the headquarters…';
+  try {
+    const body = new URLSearchParams({name: name,
+      kind: document.querySelector('select[name="kind"]').value});
+    const r = await fetch("/entities/hq", {method: "POST", body: body});
+    const d = await r.json();
+    if (d.found && d.district) {
+      district.value = d.district;
+      line.innerHTML = 'Found: <strong>' + d.district + '</strong>' +
+        (d.state ? ', ' + d.state : '') +
+        (d.source ? ' · <a rel="noreferrer" href="' + d.source + '">source</a>' : '');
+      refresh();
+    } else {
+      line.textContent = d.note || 'The web search could not establish the headquarters.';
+    }
+  } catch (e) {
+    line.textContent = 'The lookup could not run: ' + e;
+  } finally {
+    findBtn.disabled = false;
+  }
+});
 </script>
 {% endblock %}
