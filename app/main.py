@@ -30,7 +30,8 @@ from .classify import (classify_item,
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
 from .ingest import (CHANNELS, LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, SOCIAL_LOOKBACK_DAYS,
-                     X_BEARER, X_ENABLED, X_MAX_POSTS, run_cycle)
+                     X_BEARER, X_ENABLED, X_MAX_POSTS, X_PRICE_PER_POST,
+                     run_cycle)
 from .seed import seed_if_empty
 from .trust import (DEFAULT_TRUSTED_SOURCES, TRUSTED_SOURCES_KEY,
                     recompute_source_tiers)
@@ -127,7 +128,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-03.3"
+APP_BUILD = "2026-09-03.4"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1890,7 +1891,8 @@ async def fetch_now(request: Request):
     finally:
         db.close()
     what = ("Social media fetch" if channel == "social"
-            else "News fetch" if channel == "news" else "Fetch")
+            else "News fetch" if channel == "news"
+            else "X fetch" if channel == "x" else "Fetch")
     label = f"{what} — {ent_row['name'] if ent_row else 'all entities'}"
     job_id = secrets.token_hex(8)
     while len(FETCH_JOBS) >= FETCH_JOBS_MAX:
@@ -1907,6 +1909,10 @@ async def fetch_now(request: Request):
     if channel == "social":
         msg = (f"Social media fetch started — complaints from the last "
                f"{knobs['social_lookback_days']} days. You will be notified when done.")
+    elif channel == "x":
+        msg = (f"X fetch started — up to {X_MAX_POSTS} posts from the last 7 "
+               f"days (about ${X_MAX_POSTS * X_PRICE_PER_POST:.2f} of X "
+               "credits). You will be notified when done.")
     else:
         window = days or knobs["lookback_days"]
         msg = (f"{what} started — searching the last {window} days. "

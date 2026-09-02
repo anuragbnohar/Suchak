@@ -799,10 +799,13 @@ SOURCES = {
 # background sweep runs.
 SOURCE_CHANNELS = {
     "google_news": "news", "youtube": "news",
-    "x": "social", "x_scrape": "social", "reddit": "social", "forums": "social",
-    "youtube_comments": "social",
+    "reddit": "social", "forums": "social", "youtube_comments": "social",
+    # X has a channel of its own because it is the one source that bills
+    # per post read. It never rides along with "social" or the "all"
+    # sweep: money is spent only when someone presses the X button.
+    "x": "x", "x_scrape": "x",
 }
-CHANNELS = ("all", "news", "social")
+CHANNELS = ("all", "news", "social", "x")
 
 BROADCAST_SOURCES = {
     "rbi": fetch_rbi,
@@ -899,9 +902,18 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         # fixed year, so a days note here would describe the wrong window.
         notes.append(f"social sources only (last "
                      f"{tun('social_lookback_days', SOCIAL_LOOKBACK_DAYS)} days)")
+    elif channel == "x":
+        notes.append(f"X only (last {X_RECENT_SEARCH_DAYS} days — X recent "
+                     "search covers no more)")
+        if not (X_ENABLED and X_BEARER):
+            notes.append("X is switched off: set SUCHAK_X_BEARER and "
+                         "SUCHAK_X_ENABLED=1 on this computer")
+        elif not (entity["x_handle"] or "").strip():
+            notes.append("no X handle set for this entity — searching its "
+                         "name and complaint words instead")
 
     window = effective_days(days)
-    if window != LOOKBACK_DAYS and channel != "social":
+    if window != LOOKBACK_DAYS and channel not in ("social", "x"):
         notes.append(f"searched {window} days")
 
     trusted_norms = load_trusted_norms(db)
@@ -912,6 +924,8 @@ def ingest_entity(db, entity, registry: Registry | None = None,
     for name, fetch in SOURCES.items():
         if channel != "all" and SOURCE_CHANNELS[name] != channel:
             continue
+        if channel == "all" and SOURCE_CHANNELS[name] == "x":
+            continue        # paid: an explicit X fetch only, never a sweep
         try:
             got = fetch(registry, entity, days)
             candidates.extend(got)
