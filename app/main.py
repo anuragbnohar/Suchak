@@ -127,7 +127,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-02.9"
+APP_BUILD = "2026-09-03.1"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -423,6 +423,7 @@ def queue(request: Request):
         filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
         return render(request, "queue.html", user=user, entity=entity,
                       entity_qs="all" if entity is None else entity["id"],
+                      office=request.query_params.get("office") or None,
                       entities=entities, items=prepped, grouped=grouped,
                       status=status, risk=risk, counts=counts,
                       extras=extras, filter_qs=filter_qs)
@@ -1014,6 +1015,7 @@ def social_page(request: Request):
         handles = [e for e in entities if e["x_handle"]]
         return render(request, "social.html", user=user, entity=entity,
                       entity_qs="all" if entity is None else entity["id"],
+                      office=request.query_params.get("office") or None,
                       entities=entities, rows=shown, topic=topic,
                       by_topic=[(t, by_topic.get(t, 0)) for t in taxonomy.COMPLAINT_TOPICS],
                       total_grievances=len(grievances),

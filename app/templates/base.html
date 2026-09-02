@@ -31,7 +31,9 @@
   </nav>
   {% if user %}{% if rd_ctx %}
   <nav class="nav subnav">
-    {% set osuffix = ('?office=' ~ (office_q | urlencode)) if (office_q and not is_rd_user) else '' %}
+    {% set rd_office = office_q %}
+    {% if selected is defined and selected and unassigned_label is defined and selected != unassigned_label %}{% set rd_office = selected %}{% endif %}
+    {% set osuffix = ('?office=' ~ (rd_office | urlencode)) if (rd_office and not is_rd_user) else '' %}
     <a href="/rd">Region overview</a>
     <a href="/queue{{ osuffix }}">Queue</a>
     <a href="/social{{ osuffix }}">Social media</a>

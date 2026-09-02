@@ -11,6 +11,7 @@
   </div>
   {% if entities|length > 1 %}
   <form method="get" action="/social" class="entity-picker">
+    {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
     <label>Entity
       <select name="entity" onchange="this.form.submit()">
         {% if user.role == 'superadmin' %}<option value="all" {% if not entity %}selected{% endif %}>All entities</option>{% endif %}
@@ -34,10 +35,10 @@
 <div class="toolbar">
   <nav class="tabs" aria-label="Complaint topic">
     <a class="tab {% if not topic %}active{% endif %}"
-       href="/social?entity={{ entity_qs }}">All<span class="tab-count">{{ total_grievances }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}">All<span class="tab-count">{{ total_grievances }}</span></a>
     {% for t, n in by_topic %}{% if n %}
     <a class="tab {% if topic == t %}active{% endif %}"
-       href="/social?entity={{ entity_qs }}&amp;topic={{ t | urlencode }}">{{ t }}<span class="tab-count">{{ n }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;topic={{ t | urlencode }}">{{ t }}<span class="tab-count">{{ n }}</span></a>
     {% endif %}{% endfor %}
   </nav>
 </div>
