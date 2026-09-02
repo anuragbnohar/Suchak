@@ -19,7 +19,7 @@ OFFICE_STATES = {
     "Agartala": ["Tripura"],
     "Ahmedabad": ["Gujarat", "Dadra and Daman"],
     "Aizawl": ["Mizoram"],
-    "Belapur": ["Maharashtra (excluding Vidarbha)"],
+    "Belapur": ["Maharashtra (excluding Vidarbha and Marathwada)"],
     "Bengaluru": ["Karnataka"],
     "Bhopal": ["Madhya Pradesh"],
     "Bhubaneswar": ["Odisha"],
@@ -28,7 +28,7 @@ OFFICE_STATES = {
     "Dehradun": ["Uttarakhand"],
     "Gangtok": ["Sikkim"],
     "Guwahati": ["Assam"],
-    "Hyderabad": ["Telangana", "Andhra Pradesh"],
+    "Hyderabad": ["Telangana"],
     "Imphal": ["Manipur"],
     "Itanagar": ["Arunachal Pradesh"],
     "Jaipur": ["Rajasthan"],
@@ -38,8 +38,8 @@ OFFICE_STATES = {
     "Kohima": ["Nagaland"],
     "Kolkata": ["West Bengal", "Andaman and Nicobar"],
     "Lucknow": ["Uttar Pradesh"],
-    "Mumbai": ["Maharashtra (excluding Vidarbha)"],
-    "Nagpur": ["Maharashtra (Vidarbha)"],
+    "Mumbai": ["Maharashtra (excluding Vidarbha and Marathwada)"],
+    "Nagpur": ["Maharashtra (Vidarbha and Marathwada)"],
     "New Delhi": ["Delhi", "Haryana"],
     "Panaji": ["Goa"],
     "Patna": ["Bihar"],
@@ -59,25 +59,26 @@ STATE_NAMES = {
     "Jammu and Kashmir": ["Jammu", "Kashmir"],
     "Andaman and Nicobar": ["Andaman", "Nicobar"],
     "Dadra and Daman": ["Daman", "Diu", "Silvassa", "Dadra"],
-    "Maharashtra (Vidarbha)": ["Vidarbha"],
-    "Maharashtra (excluding Vidarbha)": ["Maharashtra"],
+    "Maharashtra (Vidarbha and Marathwada)": ["Vidarbha", "Marathwada"],
+    "Maharashtra (excluding Vidarbha and Marathwada)": ["Maharashtra"],
 }
 
-_VIDARBHA = ["Nagpur", "Wardha", "Bhandara", "Gondia", "Chandrapur",
-             "Gadchiroli", "Amravati", "Akola", "Washim", "Buldhana",
-             "Yavatmal"]
+# The Nagpur office's beat per the user's ruling: the 11 Vidarbha
+# districts and the 8 of Marathwada (with old and new district names).
+_NAGPUR_REGION = ["Nagpur", "Wardha", "Bhandara", "Gondia", "Chandrapur",
+                  "Gadchiroli", "Amravati", "Akola", "Washim", "Buldhana",
+                  "Yavatmal", "Aurangabad", "Chhatrapati Sambhajinagar",
+                  "Sambhajinagar", "Nanded", "Latur", "Parbhani", "Jalna",
+                  "Beed", "Hingoli", "Osmanabad", "Dharashiv"]
 
 _MAHA_REST = ["Mumbai", "Thane", "Palghar", "Raigad", "Ratnagiri",
               "Sindhudurg", "Pune", "Satara", "Sangli", "Solapur",
               "Kolhapur", "Nashik", "Ahmednagar", "Ahilyanagar", "Dhule",
-              "Nandurbar", "Jalgaon", "Aurangabad",
-              "Chhatrapati Sambhajinagar", "Sambhajinagar", "Jalna",
-              "Beed", "Latur", "Osmanabad", "Dharashiv", "Nanded",
-              "Parbhani", "Hingoli", "Navi Mumbai"]
+              "Nandurbar", "Jalgaon", "Navi Mumbai"]
 
 STATE_DISTRICTS = {
-    "Maharashtra (Vidarbha)": _VIDARBHA,
-    "Maharashtra (excluding Vidarbha)": _MAHA_REST,
+    "Maharashtra (Vidarbha and Marathwada)": _NAGPUR_REGION,
+    "Maharashtra (excluding Vidarbha and Marathwada)": _MAHA_REST,
     "Gujarat": ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar",
         "Jamnagar", "Junagadh", "Gandhinagar", "Kutch", "Bhuj", "Mehsana",
         "Patan", "Banaskantha", "Palanpur", "Sabarkantha", "Himmatnagar",
@@ -268,6 +269,7 @@ STATE_DISTRICTS = {
 DEVANAGARI = {
     # Maharashtra + Goa (Marathi first, Hindi variant where different)
     "Maharashtra": ["महाराष्ट्र"], "Vidarbha": ["विदर्भ"],
+    "Marathwada": ["मराठवाडा"],
     "Mumbai": ["मुंबई", "मुम्बई"], "Navi Mumbai": ["नवी मुंबई"],
     "Thane": ["ठाणे"], "Palghar": ["पालघर"], "Raigad": ["रायगड"],
     "Ratnagiri": ["रत्नागिरी"], "Sindhudurg": ["सिंधुदुर्ग"],
@@ -518,7 +520,9 @@ def describe(office: str) -> str:
     states = OFFICE_STATES.get(office)
     if not states:
         return office
-    pretty = [s.replace(" (excluding Vidarbha)", " excluding Vidarbha")
-               .replace(" (Vidarbha)", " — Vidarbha districts")
+    pretty = [s.replace(" (excluding Vidarbha and Marathwada)",
+                        " excluding Vidarbha and Marathwada")
+               .replace(" (Vidarbha and Marathwada)",
+                        " — Vidarbha and Marathwada districts")
               for s in states]
     return ", ".join(pretty)
