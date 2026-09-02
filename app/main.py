@@ -48,6 +48,37 @@ BASE_DIR = Path(__file__).resolve().parent
 _bg_tasks: set = set()
 
 
+# Completion notices for background fetches. In-memory on purpose: one
+# process serves the app, and the browser only needs to hear about jobs
+# this process started; a restart simply forgets them and the page's
+# poller drops unknown ids silently.
+FETCH_JOBS: dict[str, dict] = {}
+FETCH_JOBS_MAX = 100
+
+
+def _fetch_job(job_id: str, entity_id: int | None, days: int | None,
+               channel: str) -> None:
+    job = FETCH_JOBS.get(job_id)
+    if job is None:
+        return
+    try:
+        result = run_cycle(entity_id, days, channel)
+        if result.get("skipped"):
+            job.update(state="failed",
+                       note="another fetch was already running — try again "
+                            "in a minute")
+            return
+        bits = [f"{result.get('added', 0)} new item(s)"]
+        if result.get("rejected"):
+            bits.append(f"{result['rejected']} rejected (see the Rejected tab)")
+        if result.get("classified"):
+            bits.append(f"{result['classified']} classified")
+        job.update(state="done", note=", ".join(bits))
+    except Exception as exc:
+        log.exception("Fetch job %s failed", job_id)
+        job.update(state="failed", note=f"{type(exc).__name__}: {exc}")
+
+
 def _spawn(coro) -> None:
     task = asyncio.get_running_loop().create_task(coro)
     _bg_tasks.add(task)
@@ -96,7 +127,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-02.5"
+APP_BUILD = "2026-09-02.6"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1814,13 +1845,44 @@ async def fetch_now(request: Request):
             raise HTTPException(403, "Not your team's entity")
     finally:
         db.close()
-    _spawn(asyncio.to_thread(run_cycle, int(entity_id) if entity_id else None,
+    db = connect()
+    try:
+        ent_row = one(db, "SELECT name FROM entities WHERE id = ?",
+                      (entity_id,)) if entity_id else None
+    finally:
+        db.close()
+    what = ("Social media fetch" if channel == "social"
+            else "News fetch" if channel == "news" else "Fetch")
+    label = f"{what} — {ent_row['name'] if ent_row else 'all entities'}"
+    job_id = secrets.token_hex(8)
+    while len(FETCH_JOBS) >= FETCH_JOBS_MAX:
+        FETCH_JOBS.pop(next(iter(FETCH_JOBS)))
+    FETCH_JOBS[job_id] = {"state": "running", "label": label, "note": ""}
+    _spawn(asyncio.to_thread(_fetch_job, job_id,
+                             int(entity_id) if entity_id else None,
                              days, channel))
     if channel == "social":
         msg = (f"Social media fetch started — complaints from the last "
-               f"{SOCIAL_LOOKBACK_DAYS} days. Refresh in a minute.")
+               f"{SOCIAL_LOOKBACK_DAYS} days. You will be notified when done.")
     else:
         window = days or LOOKBACK_DAYS
-        what = "News fetch" if channel == "news" else "Fetch"
-        msg = f"{what} started — searching the last {window} days. Refresh in a minute."
-    return RedirectResponse(f"/entities?msg={quote(msg)}", status_code=303)
+        msg = (f"{what} started — searching the last {window} days. "
+               "You will be notified when done.")
+    return RedirectResponse(f"/entities?msg={quote(msg)}&job={job_id}",
+                            status_code=303)
+
+
+@app.get("/fetch/status")
+def fetch_status(request: Request):
+    """What the completion toast polls. Unknown ids answer 'unknown'
+    rather than erroring, so a browser holding jobs from before a server
+    restart just lets go of them."""
+    db = connect()
+    try:
+        require_login(db, request)
+    finally:
+        db.close()
+    job = FETCH_JOBS.get(request.query_params.get("job", ""))
+    if not job:
+        return JSONResponse({"state": "unknown"})
+    return JSONResponse(job)

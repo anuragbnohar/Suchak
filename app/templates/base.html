@@ -40,5 +40,62 @@
 <footer class="app-footer">
   <span class="meta-dim small">Suchak build {{ app_build }}</span>
 </footer>
+{% if user %}
+<div id="toasts"></div>
+<script>
+// Completion pop-ups for background fetches. The job id arrives on the
+// redirect after pressing Fetch; it is remembered in sessionStorage so
+// the notice finds you even after moving to another page, and polled
+// every few seconds until the server says done.
+(function () {
+  const KEY = "suchak_fetch_jobs";
+  let jobs;
+  try { jobs = JSON.parse(sessionStorage.getItem(KEY) || "[]"); }
+  catch (e) { jobs = []; }
+  const params = new URLSearchParams(location.search);
+  const fresh = params.get("job");
+  if (fresh && !jobs.includes(fresh)) {
+    jobs.push(fresh);
+    try { sessionStorage.setItem(KEY, JSON.stringify(jobs)); } catch (e) {}
+    params.delete("job");   // a refresh must not re-arm the same job
+    history.replaceState(null, "",
+      location.pathname + (params.toString() ? "?" + params : ""));
+  }
+  if (!jobs.length) return;
+
+  function toast(text, ok) {
+    const box = document.getElementById("toasts");
+    const el = document.createElement("div");
+    el.className = "toast " + (ok ? "toast-ok" : "toast-fail");
+    el.innerHTML = text +
+      ' · <a href="#" class="toast-refresh">refresh</a>' +
+      ' <button class="toast-close" aria-label="Close">×</button>';
+    el.querySelector(".toast-refresh").onclick =
+      function (e) { e.preventDefault(); location.reload(); };
+    el.querySelector(".toast-close").onclick = function () { el.remove(); };
+    box.appendChild(el);
+    setTimeout(function () { el.remove(); }, 20000);
+  }
+
+  async function poll() {
+    const keep = [];
+    for (const id of jobs) {
+      try {
+        const r = await fetch("/fetch/status?job=" + id);
+        const d = await r.json();
+        if (d.state === "running") { keep.push(id); continue; }
+        if (d.state === "done") toast(d.label + " completed — " + d.note, true);
+        else if (d.state === "failed") toast(d.label + " failed — " + d.note, false);
+        // "unknown" (server restarted): let go silently
+      } catch (e) { keep.push(id); }
+    }
+    jobs = keep;
+    try { sessionStorage.setItem(KEY, JSON.stringify(jobs)); } catch (e) {}
+    if (jobs.length) setTimeout(poll, 3000);
+  }
+  poll();
+})();
+</script>
+{% endif %}
 </body>
 </html>
