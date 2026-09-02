@@ -422,6 +422,12 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
                      headers={"Authorization": f"Bearer {X_BEARER}"})
     if resp.status_code in (401, 403):
         raise RuntimeError(f"X rejected the credentials: {resp.text[:200]}")
+    if resp.status_code == 402:
+        # The credits-model developer console: no credits, no data.
+        raise RuntimeError(
+            "X wants payment: the developer account has no credits. Buy a "
+            "small amount at console.x.com (keep auto-recharge off), or set "
+            "SUCHAK_X_ENABLED=0 to quiet this source until then.")
     if resp.status_code == 429:
         raise RuntimeError("X rate limit reached; try again later")
     resp.raise_for_status()
