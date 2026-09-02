@@ -128,7 +128,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-03.7"
+APP_BUILD = "2026-09-03.8"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1675,10 +1675,23 @@ async def entities_aliases(request: Request, entity_id: int):
         langs = (_parse_languages(form.get("languages")) if form.get("languages") is not None
                  else json.loads(e["languages"] or '["en"]'))
         # stored bare: the query builder writes "to:handle" itself
-        handle = (form.get("x_handle") or "").strip().lstrip("@") \
-            if form.get("x_handle") is not None else (e["x_handle"] or "")
-        if handle and not re.fullmatch(r"[A-Za-z0-9_]{1,15}", handle):
-            raise HTTPException(400, "An X handle is 1-15 letters, digits or underscores")
+        if form.get("x_handle") is not None:
+            seen: set[str] = set()
+            handles = []
+            for raw in re.split(r"[,\s]+", form.get("x_handle") or ""):
+                h = raw.strip().lstrip("@")
+                if not h:
+                    continue
+                if not re.fullmatch(r"[A-Za-z0-9_]{1,15}", h):
+                    raise HTTPException(
+                        400, f"'{h}' is not an X handle: 1-15 letters, digits "
+                             "or underscores, separated by commas")
+                if h.lower() not in seen:
+                    seen.add(h.lower())
+                    handles.append(h)
+            handle = ", ".join(handles)
+        else:
+            handle = e["x_handle"] or ""
         office = (form.get("rbi_office") or "").strip() \
             if form.get("rbi_office") is not None else (e["rbi_office"] or "")
         if len(office) > 40:

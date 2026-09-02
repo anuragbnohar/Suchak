@@ -368,6 +368,17 @@ def fetch_youtube(registry: Registry, entity, days: int | None = None) -> list[d
     return items
 
 
+def entity_handles(entity) -> list[str]:
+    """Every X handle this entity is reachable at. Stored comma-separated
+    because complaints go to the care handle and the main one alike."""
+    raw = ""
+    try:
+        raw = entity["x_handle"] or ""
+    except (KeyError, IndexError, TypeError):
+        raw = ""
+    return [h.strip().lstrip("@") for h in raw.split(",") if h.strip().lstrip("@")]
+
+
 def x_query(registry: Registry, entity) -> str:
     """Build a narrow complaint query.
 
@@ -377,7 +388,7 @@ def x_query(registry: Registry, entity) -> str:
     so market chatter and news reposts do not come back.
     """
     ent = registry.entities[entity["id"]]
-    handle = ent.get("handle") or ""
+    handles = ent.get("handles") or ([ent["handle"]] if ent.get("handle") else [])
     names = " OR ".join(f'"{a}"' for a in ent["aliases"][:2])
     complaints = " OR ".join(X_COMPLAINT_TERMS)
     no_replies = bool(tun("x_exclude_replies", 1))
@@ -386,14 +397,17 @@ def x_query(registry: Registry, entity) -> str:
     # X's to: operator matches ONLY replies to that handle, so asking for
     # to:handle without replies would return nothing at all. @handle is
     # the form that finds standalone posts addressed to the bank.
-    addressed = f"@{handle}" if no_replies else f"to:{handle}"
+    form = "@{}" if no_replies else "to:{}"
+    addressed = " OR ".join(form.format(h) for h in handles)
+    if len(handles) > 1:
+        addressed = f"({addressed})"
 
     if X_STRATEGY == "care_handle":
-        if not handle:
+        if not handles:
             raise RuntimeError(
-                f"strategy 'care_handle' needs an x_handle for {entity['name']}")
+                f"strategy 'care_handle' needs an X handle for {entity['name']}")
         core = addressed
-    elif X_STRATEGY == "both" and handle:
+    elif X_STRATEGY == "both" and handles:
         core = f"({addressed} OR (({names}) ({complaints})))"
     else:
         core = f"(({names}) ({complaints}))"
@@ -613,13 +627,16 @@ def fetch_x_scrape(registry: Registry, entity, days: int | None = None) -> list[
     """
     if not x_scrape.ENABLED:
         return []
-    handle = (entity["x_handle"] or "").strip().lstrip("@")
-    if not handle:
+    handles = entity_handles(entity)
+    if not handles:
         log.info("No X handle for %s -- skipping the browser collector", entity["name"])
         return []
+    addressed = " OR ".join(f"to:{h}" for h in handles)
+    if len(handles) > 1:
+        addressed = f"({addressed})"
     # -filter:replies would drop the complaints themselves; retweets are the
     # only thing worth excluding at the query.
-    return x_scrape.scrape_query(f"to:{handle} -filter:retweets", x_scrape.MAX_POSTS)
+    return x_scrape.scrape_query(f"{addressed} -filter:retweets", x_scrape.MAX_POSTS)
 
 
 def yt_grievance_query(registry: Registry, entity) -> str:
@@ -930,7 +947,7 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         if not (X_ENABLED and X_BEARER):
             notes.append("X is switched off: set SUCHAK_X_BEARER and "
                          "SUCHAK_X_ENABLED=1 on this computer")
-        elif not (entity["x_handle"] or "").strip():
+        elif not entity_handles(entity):
             notes.append("no X handle set for this entity — searching its "
                          "name and complaint words instead")
 

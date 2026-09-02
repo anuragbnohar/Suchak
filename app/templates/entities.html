@@ -50,7 +50,7 @@
         <td><strong>{{ r.entity.name }}</strong></td>
         <td class="meta-dim">{{ r.entity.kind }}</td>
         <td class="meta-dim">{{ r.languages | join(', ') }}</td>
-        <td class="meta-dim">{{ ('@' ~ r.entity.x_handle) if r.entity.x_handle else '—' }}</td>
+        <td class="meta-dim">{% if r.entity.x_handle %}{% for h in r.entity.x_handle.split(',') %}@{{ h.strip() }}{{ ' ' if not loop.last }}{% endfor %}{% else %}—{% endif %}</td>
         <td class="num">{{ r.n_items }}</td>
         <td class="meta-dim small">
           {% if r.last_fetch %}
@@ -124,9 +124,11 @@
                            placeholder="en, mr"
                            title="Google News edition codes: en, mr, hi ...">
                   </label>
-                  <label>X grievance handle
+                  <label>X handles (comma-separated)
                     <input name="x_handle" value="{{ r.entity.x_handle or '' }}"
-                           class="handle-input" placeholder="care handle, without @">
+                           class="handle-input"
+                           placeholder="HDFCBank_Cares, HDFC_Bank"
+                           title="Every handle complaints are sent to — the care handle and the bank's main handle. All are searched.">
                   </label>
                   <label>RBI office (headquarters region)
                     <input name="rbi_office" value="{{ r.entity.rbi_office or '' }}"

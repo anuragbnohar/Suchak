@@ -58,21 +58,28 @@ class Registry:
             except (KeyError, IndexError, TypeError, ValueError):
                 excludes = []
             try:
-                handle = row["x_handle"] or ""
+                raw_handles = row["x_handle"] or ""
             except (KeyError, IndexError):
-                handle = ""
+                raw_handles = ""
+            # An entity may be reachable at several handles: complaints go
+            # to the care handle AND the main one, and only searching both
+            # sees them all.
+            handles = [h.strip().lstrip("@") for h in raw_handles.split(",")
+                       if h.strip().lstrip("@")]
+            handle = handles[0] if handles else ""
             # An X handle is a name for the entity, so it counts when
             # deciding what a post is about -- "@HDFCBank_Cares my card is
             # blocked" never spells out "HDFC Bank". It is deliberately kept
             # out of `aliases`, which builds news search queries.
             match_names = list(aliases)
-            if handle:
-                match_names += [f"@{handle}", handle]
+            for h in handles:
+                match_names += [f"@{h}", h]
             self.entities[row["id"]] = {
                 "id": row["id"],
                 "name": row["name"],
                 "aliases": aliases,
                 "handle": handle,
+                "handles": handles,
                 "excludes": excludes,
                 "patterns": [(a, p) for a in match_names for p in alias_patterns(a)],
                 "exclude_patterns": [p for e in excludes for p in alias_patterns(e)],

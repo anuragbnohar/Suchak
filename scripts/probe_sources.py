@@ -579,8 +579,9 @@ def main() -> int:
             ingest.TUNING = tuning.load(db)
             knobs = ingest.TUNING
             print(f"    key set    : {'yes' if ingest.X_BEARER else 'NO -- set SUCHAK_X_BEARER'}")
-            print(f"    handle     : @{ent['x_handle']}" if ent["x_handle"]
-                  else "    handle     : none set (name + complaint words search)")
+            hs = ingest.entity_handles(ent)
+            print(f"    handles    : {', '.join('@' + h for h in hs)}" if hs
+                  else "    handles    : none set (name + complaint words search)")
             print(f"    filters    : complaint words "
                   f"{'ON' if knobs['x_only_complaints'] else 'off'} | "
                   f"replies {'excluded' if knobs['x_exclude_replies'] else 'included'} | "
