@@ -80,10 +80,13 @@ LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "7"))
 # entity that goes quiet for weeks, where the standing 7 days says nothing.
 LOOKBACK_CHOICES = (7, 30, 90, 365)
 
-# How many near-miss rejects per entity per fetch may be settled by
-# reading the article itself. The headline says "Jalna Co-op Bank"; the
-# body says the full registered name; only the body knows.
-BODY_CHECKS = max(0, min(int(os.environ.get("SUCHAK_BODY_CHECKS", "3")), 10))
+# How many rejects per entity per fetch may be settled by reading the
+# article itself. The headline says "Jalna Co-op Bank" -- or nothing
+# recognisable at all -- and the body spells out the registered name;
+# only the body knows. Every news reject is eligible (a headline that
+# looks unrelated is exactly the case the Arvind Sahakari fetch proved),
+# so the budget is the only limit, and the note says when it ran out.
+BODY_CHECKS = max(0, min(int(os.environ.get("SUCHAK_BODY_CHECKS", "8")), 20))
 
 # A reject is held for human appeal only when it resembles the entity's
 # name at all. The floor once discarded far-off rejects ("No Vehicle Day
@@ -862,7 +865,8 @@ def ingest_entity(db, entity, registry: Registry | None = None,
     "news", "social", or "all"."""
     registry = registry or load_registry(db)
     result = {"found": 0, "added": 0, "merged": 0, "rejected": 0,
-              "billed": 0, "body_confirmed": 0, "note": None}
+              "billed": 0, "body_confirmed": 0, "body_skipped": 0,
+              "note": None}
     notes = []
     body_checks = 0
 
@@ -949,20 +953,21 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 not registry.mentions(entity["id"], f"{title} {cand['snippet']}"):
             near = near_miss(title, cand["snippet"] or "",
                              registry.entities[entity["id"]]["aliases"])
-            # A headline lexically this close deserves one more look before
-            # rejection: the press shortens names in headlines and spells
-            # them out in the text, so the article body -- not the feed's
-            # snippet -- is what settles "Jalna Co-op Bank". Budgeted, news
+            # One more look before rejection: the press shortens names in
+            # headlines -- or leads with the story, not the institution --
+            # and spells the name out in the text, so the article body,
+            # not the feed's snippet, is what settles it. Budgeted, news
             # only, and an unreachable page rejects as before: reading the
             # body can rescue an item, never admit one on an error.
-            if (near and near[0] >= 0.6 and cand["source_type"] == "news"
-                    and body_checks < BODY_CHECKS):
+            if cand["source_type"] == "news" and body_checks < BODY_CHECKS:
                 body_checks += 1
                 if _article_names_entity(registry, entity["id"], link):
                     result["body_confirmed"] += 1
                     log.info("Kept for %s after reading the body: %r",
                              entity["name"], title[:120])
                     near = None
+            elif cand["source_type"] == "news":
+                result["body_skipped"] += 1
             if near is not None:
                 result["rejected"] += 1
                 # The count alone cannot be acted on. Naming the headline
@@ -1068,6 +1073,11 @@ def _log_fetch(db, entity_id: int, result: dict,
         kept = (f"{result['body_confirmed']} kept by reading the article "
                 "body (name absent from the headline)")
         note = f"{note}; {kept}" if note else kept
+    if result.get("body_skipped"):
+        missed = (f"{result['body_skipped']} reject(s) not body-checked -- "
+                  f"the budget of {BODY_CHECKS} article reads was spent; "
+                  "they wait on the Rejected tab")
+        note = f"{note}; {missed}" if note else missed
     if result.get("rejected"):
         rejected = f"{result['rejected']} rejected as another entity's news"
         near = result.get("near_miss")
@@ -1084,6 +1094,7 @@ def _log_fetch(db, entity_id: int, result: dict,
         rejected += (" They are held on the queue's Rejected tab, "
                      "where a human can overrule.")
         note = f"{note}; {rejected}" if note else rejected
+    result["note"] = note   # the caller's note matches the logged one
     x(db, "INSERT INTO fetch_log (entity_id, source, found, added, merged, note)"
           " VALUES (?,?,?,?,?,?)",
       (entity_id, f"fetch:{channel}", result["found"], result["added"],
