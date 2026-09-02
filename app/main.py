@@ -128,7 +128,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-03.8"
+APP_BUILD = "2026-09-03.9"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1006,8 +1006,19 @@ def social_page(request: Request):
         # them as "no complaint found" would misstate a fetch in progress.
         pending = sum(1 for r in rows if r["status"] == "new")
         grievances = [r for r in rows if r["complaint_topics"]]
-        by_topic = Counter(t for r in grievances for t in r["complaint_topics"])
-        shown = [r for r in grievances if not topic or topic in r["complaint_topics"]]
+        for r in grievances:
+            r["platform"] = taxonomy.social_platform(r["url"])
+        src = request.query_params.get("src", "")
+        if src not in taxonomy.SOCIAL_PLATFORMS and src != "Other":
+            src = ""
+        by_topic = Counter(t for r in grievances
+                           if not src or r["platform"] == src
+                           for t in r["complaint_topics"])
+        by_source = Counter(r["platform"] for r in grievances
+                            if not topic or topic in r["complaint_topics"])
+        shown = [r for r in grievances
+                 if (not topic or topic in r["complaint_topics"])
+                 and (not src or r["platform"] == src)]
         shown.sort(key=lambda r: (taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3),
                                   r["published_at"] or ""), reverse=False)
         shown.reverse()
@@ -1017,8 +1028,10 @@ def social_page(request: Request):
         return render(request, "social.html", user=user, entity=entity,
                       entity_qs="all" if entity is None else entity["id"],
                       office=request.query_params.get("office") or None,
-                      entities=entities, rows=shown, topic=topic,
+                      entities=entities, rows=shown, topic=topic, src=src,
                       by_topic=[(t, by_topic.get(t, 0)) for t in taxonomy.COMPLAINT_TOPICS],
+                      by_source=[(p, by_source.get(p, 0)) for p in
+                                 taxonomy.SOCIAL_PLATFORMS + ["Other"]],
                       total_grievances=len(grievances),
                       pending=pending,
                       not_grievances=len(rows) - len(grievances) - pending,

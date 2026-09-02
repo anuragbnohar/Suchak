@@ -69,3 +69,25 @@ SOURCE_TYPE_LABELS = {
 
 SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
 ACTIONABILITY_RANK = {"action_recommended": 0, "review_recommended": 1, "monitor": 2}
+
+
+# Which platform a social item came from, decided by its link rather than
+# its label: labels vary per post (@handle, r/india, a channel name) but
+# the host never does, and this reads correctly for items stored before
+# the filter existed.
+SOCIAL_PLATFORMS = ["X", "Reddit", "consumercomplaints.in", "YouTube"]
+_PLATFORM_HOSTS = [
+    (("x.com", "twitter.com"), "X"),
+    (("reddit.com",), "Reddit"),
+    (("consumercomplaints.in",), "consumercomplaints.in"),
+    (("youtube.com", "youtu.be"), "YouTube"),
+]
+
+
+def social_platform(url: str) -> str:
+    low = (url or "").lower()
+    for hosts, label in _PLATFORM_HOSTS:
+        if any(f"//{h}" in low or f".{h}" in low or f"//www.{h}" in low
+               for h in hosts):
+            return label
+    return "Other"

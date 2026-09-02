@@ -35,10 +35,21 @@
 <div class="toolbar">
   <nav class="tabs" aria-label="Complaint topic">
     <a class="tab {% if not topic %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}">All<span class="tab-count">{{ total_grievances }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}">All<span class="tab-count">{{ by_topic | sum(attribute=1) }}</span></a>
     {% for t, n in by_topic %}{% if n %}
     <a class="tab {% if topic == t %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;topic={{ t | urlencode }}">{{ t }}<span class="tab-count">{{ n }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;topic={{ t | urlencode }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}">{{ t }}<span class="tab-count">{{ n }}</span></a>
+    {% endif %}{% endfor %}
+  </nav>
+</div>
+
+<div class="toolbar">
+  <nav class="tabs" aria-label="Source">
+    <a class="tab {% if not src %}active{% endif %}"
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}">All sources<span class="tab-count">{{ by_source | sum(attribute=1) }}</span></a>
+    {% for p, n in by_source %}{% if n %}
+    <a class="tab {% if src == p %}active{% endif %}"
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}&amp;src={{ p | urlencode }}">{{ p }}<span class="tab-count">{{ n }}</span></a>
     {% endif %}{% endfor %}
   </nav>
 </div>
@@ -46,7 +57,7 @@
 {% if not rows %}
 <p class="empty">
   {% if collected %}{{ collected }} post{{ 's' if collected != 1 }} collected, none of them a
-  grievance{% if topic %} under this topic{% endif %}.
+  grievance{% if topic %} under this topic{% endif %}{% if src %} from {{ src }}{% endif %}.
   {% else %}No posts collected yet. Press Fetch on the <a href="/entities">Entities</a> page.{% endif %}
 </p>
 {% else %}
