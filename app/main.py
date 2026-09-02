@@ -128,7 +128,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-03.4"
+APP_BUILD = "2026-09-03.5"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1931,6 +1931,7 @@ def settings_page(request: Request):
         require_role(user, "superadmin")
         return templates.TemplateResponse(request, "settings.html", {
             "user": user, "spec": tuning.SPEC,
+            "toggles": tuning.TOGGLES, "effective": tuning.load(db),
             "overrides": tuning.overrides(db),
             "msg": request.query_params.get("msg"),
         })

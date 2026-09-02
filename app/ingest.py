@@ -380,18 +380,30 @@ def x_query(registry: Registry, entity) -> str:
     handle = ent.get("handle") or ""
     names = " OR ".join(f'"{a}"' for a in ent["aliases"][:2])
     complaints = " OR ".join(X_COMPLAINT_TERMS)
+    no_replies = bool(tun("x_exclude_replies", 1))
+    only_complaints = bool(tun("x_only_complaints", 1))
+
+    # X's to: operator matches ONLY replies to that handle, so asking for
+    # to:handle without replies would return nothing at all. @handle is
+    # the form that finds standalone posts addressed to the bank.
+    addressed = f"@{handle}" if no_replies else f"to:{handle}"
 
     if X_STRATEGY == "care_handle":
         if not handle:
             raise RuntimeError(
                 f"strategy 'care_handle' needs an x_handle for {entity['name']}")
-        core = f"to:{handle}"
+        core = addressed
     elif X_STRATEGY == "both" and handle:
-        core = f"(to:{handle} OR (({names}) ({complaints})))"
+        core = f"({addressed} OR (({names}) ({complaints})))"
     else:
         core = f"(({names}) ({complaints}))"
 
     query = f"{core} -is:retweet -is:nullcast"
+    if no_replies:
+        query += " -is:reply"
+    if only_complaints and X_STRATEGY in ("care_handle", "both"):
+        # the name-only strategy already carries these terms
+        query += f" ({complaints})"
     if X_LANGS:
         langs = " OR ".join(f"lang:{c}" for c in X_LANGS)
         query += f" ({langs})" if len(X_LANGS) > 1 else f" {langs}"

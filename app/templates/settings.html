@@ -10,6 +10,13 @@
 
 <section class="panel">
   <form method="post" action="/settings" class="stack-form">
+    <input type="hidden" name="toggles_present" value="1">
+    {% for key, label, help, default in toggles %}
+    <label class="small"><input type="checkbox" name="{{ key }}"
+      {% if effective[key] %}checked{% endif %}> {{ label }}</label>
+    <p class="meta-dim small">{{ help }}
+      Default: <strong>{{ 'on' if default else 'off' }}</strong>.</p>
+    {% endfor %}
     {% for key, label, help, bounds, default in spec %}
     <label>{{ label }}
       <input type="number" name="{{ key }}" min="{{ bounds[0] }}" max="{{ bounds[1] }}"

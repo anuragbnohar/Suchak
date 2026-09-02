@@ -52,8 +52,22 @@ SPEC = [
      (10, 200), int(os.environ.get("SUCHAK_YT_COMMENTS_MAX", "60"))),
 ]
 
+# On/off settings. key, label, help, default (1 = on)
+TOGGLES = [
+    ("x_only_complaints", "X: fetch only complaint-like posts",
+     "Adds the complaint vocabulary to the X search itself, so X returns "
+     "(and bills for) fewer posts. Off means every post addressed to the "
+     "bank is fetched and the classifier sorts them afterwards.", 1),
+    ("x_exclude_replies", "X: fetch posts only, not replies",
+     "Skips replies inside conversation threads. Because X's to: search "
+     "matches replies only, switching this on also changes that search to "
+     "@handle, which finds standalone posts addressed to the bank.", 1),
+]
+
 DEFAULTS = {key: default for key, _, _, _, default in SPEC}
+DEFAULTS.update({key: default for key, _, _, default in TOGGLES})
 BOUNDS = {key: bounds for key, _, _, bounds, _ in SPEC}
+TOGGLE_KEYS = {key for key, _, _, _ in TOGGLES}
 
 
 def _stored(db) -> dict:
@@ -88,6 +102,13 @@ def save(db, form: dict, user_id: int) -> None:
     """Store the overrides from the Settings form. A blank field means
     'use the default'; anything else must be a whole number in range."""
     stored = {}
+    if form.get("toggles_present"):
+        # An unticked checkbox sends nothing, so absence means "off" --
+        # but only when the form that posted actually carried them.
+        for key, _label, _help, default in TOGGLES:
+            value = 1 if form.get(key) else 0
+            if value != default:
+                stored[key] = value
     for key, label, _help, (lo, hi), default in SPEC:
         raw = (form.get(key) or "").strip()
         if not raw:
