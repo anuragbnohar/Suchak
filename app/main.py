@@ -127,7 +127,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-02.8"
+APP_BUILD = "2026-09-02.9"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -216,14 +216,23 @@ def visible_entities(db, user) -> list:
     return q(db, "SELECT * FROM entities WHERE id = ? ", (user["entity_id"],))
 
 
-def resolve_entity(db, user, requested: str | None):
+def resolve_entity(db, user, requested: str | None,
+                   office: str | None = None):
     """The entity a page is scoped to, or None for "every entity I can see".
 
     Only the super admin has a cross-entity scope, and it exists so the
     severity and risk views can hand a total somewhere to open: a count of
     high-severity items across the portfolio has no single entity behind it.
+    `office` narrows the visible set to one RBI office's entities -- the
+    RD View's Queue and Social media sub-pages.
     """
     entities = visible_entities(db, user)
+    if office:
+        if user["role"] != "superadmin" and (user["rbi_office"] or "") != office:
+            raise HTTPException(403, "That office is not visible to your role")
+        entities = [e for e in entities if office in entity_offices(e)]
+        if not entities:
+            raise HTTPException(404, f"No entities under the {office} office")
     if not entities:
         raise HTTPException(404, "No entities configured")
     if requested == "all":
@@ -285,7 +294,8 @@ def queue(request: Request):
     db = connect()
     try:
         user = require_login(db, request)
-        entity, entities = resolve_entity(db, user, request.query_params.get("entity"))
+        entity, entities = resolve_entity(db, user, request.query_params.get("entity"),
+                                          office=request.query_params.get("office") or None)
         status = request.query_params.get("status", "open")
         risk = request.query_params.get("risk", "")
         sev = request.query_params.get("sev", "")
@@ -972,7 +982,8 @@ def social_page(request: Request):
     db = connect()
     try:
         user = require_login(db, request)
-        entity, entities = resolve_entity(db, user, request.query_params.get("entity"))
+        entity, entities = resolve_entity(db, user, request.query_params.get("entity"),
+                                          office=request.query_params.get("office") or None)
         topic = request.query_params.get("topic", "")
         if topic not in taxonomy.COMPLAINT_TOPICS:
             topic = ""
