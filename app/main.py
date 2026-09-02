@@ -127,7 +127,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-02.7"
+APP_BUILD = "2026-09-02.8"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1708,6 +1708,10 @@ def rd_view(request: Request):
         tab = request.query_params.get("tab", "hq")
         if tab not in ("hq", "region") or (tab == "region" and not has_region_tab):
             tab = "hq"
+        sev = request.query_params.get("sev", "")
+        if sev not in ("high", "medium", "low"):
+            sev = ""
+        ent_filter = request.query_params.get("ent", "")
 
         if selected == UNASSIGNED:
             ents = [e for e in every if not entity_offices(e)]
@@ -1717,12 +1721,21 @@ def rd_view(request: Request):
             ents = []
 
         rows = []
+        sev_counts = Counter()
         for e in ents:
             items = [prep_item(r) for r in q(
                 db, "SELECT * FROM items WHERE entity_id=?"
                     " AND gated_out = 0 AND source_type != 'social'",
                 (e["id"],))]
+            # An entity with no news says nothing on an office's page --
+            # but the Unassigned bucket is a to-do list, not a news view,
+            # so it keeps everything that still needs an office.
+            if not items and selected != UNASSIGNED:
+                continue
+            sev_counts.update(it["severity_shown"] for it in items)
             by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
+            shown = items if not sev else [
+                it for it in items if it["severity_shown"] == sev]
             grievances = [g for g in (prep_item(r) for r in q(
                 db, "SELECT * FROM items WHERE entity_id=?"
                     " AND source_type = 'social' AND gated_out = 0",
@@ -1733,8 +1746,11 @@ def rd_view(request: Request):
                 "high": sum(1 for it in items if it["severity_shown"] == "high"),
                 "open": sum(1 for it in items if it["status"] in ("new", "classified")),
                 "top_risk": by_risk.most_common(1)[0][0] if by_risk else "\u2014",
-                "recent": sorted(items, key=lambda it: it["published_at"] or "",
-                                 reverse=True)[:5],
+                "matching": len(shown),
+                # unfiltered: the five latest; severity-filtered: everything
+                # that matches, because the filter IS the reading list
+                "recent": sorted(shown, key=lambda it: it["published_at"] or "",
+                                 reverse=True)[:50 if sev else 5],
                 "social_total": len(grievances),
                 "social_topics": [t for t, _ in Counter(
                     t for g in grievances for t in g["complaint_topics"]).most_common(3)],
@@ -1742,6 +1758,11 @@ def rd_view(request: Request):
                                         key=lambda g: g["published_at"] or "",
                                         reverse=True)[:3],
             })
+        entity_choices = [(r["entity"]["id"], r["entity"]["name"]) for r in rows]
+        if ent_filter:
+            rows = [r for r in rows if str(r["entity"]["id"]) == ent_filter]
+        if sev:
+            rows = [r for r in rows if r["matching"]]
         rows.sort(key=lambda r: (-r["high"], -r["total"]))
 
         # In-region news from entities headquartered under other offices.
@@ -1771,6 +1792,8 @@ def rd_view(request: Request):
                     if hit and any(place_mentions(text, t) for t in exclusions):
                         continue
                     if hit:
+                        if sev and it["severity_shown"] != sev:
+                            continue
                         it["region_term"] = hit
                         it["entity_name"] = e["name"]
                         region_rows.append(it)
@@ -1782,6 +1805,8 @@ def rd_view(request: Request):
             "tab": tab, "has_region_tab": has_region_tab,
             "region_desc": geography.describe(selected) if has_region_tab else "",
             "region_rows": region_rows,
+            "sev": sev, "ent_filter": ent_filter,
+            "sev_counts": sev_counts, "entity_choices": entity_choices,
             "msg": request.query_params.get("msg"),
         })
     finally:

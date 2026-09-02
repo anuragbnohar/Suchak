@@ -31,6 +31,45 @@
 </div>
 {% endif %}
 
+{% if selected and selected != unassigned_label %}
+<div class="toolbar">
+  <form method="get" action="/rd" class="fetch-form" id="rd-filters">
+    <input type="hidden" name="office" value="{{ selected }}">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% if tab == 'hq' %}
+    <label class="small">Entity
+      <select name="ent" onchange="this.form.submit()">
+        <option value="">All entities</option>
+        {% for eid, ename in entity_choices %}
+        <option value="{{ eid }}" {% if ent_filter == eid|string %}selected{% endif %}>{{ ename }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="small">Severity
+      <select name="sev" onchange="this.form.submit()">
+        <option value="">All severities</option>
+        {% for v in ['high','medium','low'] %}
+        <option value="{{ v }}" {% if sev == v %}selected{% endif %}>{{ v | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button type="submit" class="btn">Apply</button></noscript>
+    {% if sev or ent_filter %}
+    <a class="small" href="/rd?office={{ selected | urlencode }}&tab={{ tab }}">clear filters</a>
+    {% endif %}
+  </form>
+  {% if tab == 'hq' %}
+  <p class="small meta-dim">
+    {% for v in ['high','medium','low'] %}
+    <a href="/rd?office={{ selected | urlencode }}&tab=hq&sev={{ v }}{% if ent_filter %}&ent={{ ent_filter }}{% endif %}"
+       class="{% if sev == v %}sev sev-{{ v }}{% endif %}">{{ v | capitalize }}: {{ sev_counts.get(v, 0) }}</a>{{ ' · ' if not loop.last }}
+    {% endfor %}
+  </p>
+  {% endif %}
+</div>
+
+{% endif %}
 {% if selected == unassigned_label %}
 <p class="meta-dim small">These entities have no RBI office set yet — assign one via
   <a href="/entities">Entities</a> → Edit and they move to their region.</p>
@@ -47,6 +86,9 @@
     {{ r.open }} awaiting review ·
     top risk area: {{ r.top_risk }}
   </p>
+  {% if sev %}
+  <p class="small">{{ r.matching }} {{ sev }}-severity item{{ '' if r.matching == 1 else 's' }}:</p>
+  {% endif %}
   {% if r.recent %}
   <table class="data-table">
     <tr><th scope="col">Severity</th><th scope="col">Item</th>
@@ -81,7 +123,12 @@
 </section>
 {% endfor %}
 {% if selected and not rows %}
-<p class="meta-dim">No entities are mapped to {{ selected }} yet.</p>
+<p class="meta-dim">
+  {% if sev or ent_filter %}Nothing matches these filters —
+  <a href="/rd?office={{ selected | urlencode }}">clear them</a>.
+  {% else %}No entity of {{ selected }} has news items yet — entities with
+  nothing fetched are not listed. Fetch news from the
+  <a href="/entities">Entities</a> page.{% endif %}</p>
 {% endif %}
 
 {% else %}{# region tab #}
