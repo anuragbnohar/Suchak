@@ -128,7 +128,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.1"
+APP_BUILD = "2026-09-04.2"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1035,6 +1035,17 @@ def social_page(request: Request):
                 " JOIN entities e ON e.id = i.entity_id"
                 f" WHERE i.source_type = 'social' AND i.gated_out = 0 AND i.{scope}",
             tuple(args))]
+        # Posts the classifier dropped by what reviewers taught it. Shown
+        # on their own tab: a learned gate that no one can inspect is a
+        # silent loss, which is the one thing this pipeline never allows.
+        learned = [prep_item(r) for r in q(
+            db, "SELECT i.*, e.name AS entity_name FROM items i"
+                " JOIN entities e ON e.id = i.entity_id"
+                " WHERE i.source_type = 'social' AND i.gated_out = 1"
+                " AND i.gate_reason LIKE 'matches posts this team set aside%'"
+                f" AND i.{scope}", tuple(args))]
+        for r in learned:
+            r["platform"] = taxonomy.social_platform(r["url"])
 
         # Posts still awaiting classification carry no verdict yet; counting
         # them as "no complaint found" would misstate a fetch in progress.
@@ -1045,7 +1056,9 @@ def social_page(request: Request):
         src = request.query_params.get("src", "")
         if src not in taxonomy.SOCIAL_PLATFORMS and src != "Other":
             src = ""
-        view_aside = request.query_params.get("view") == "aside"
+        view = request.query_params.get("view", "")
+        view_aside = view == "aside"
+        view_learned = view == "learned"
         set_aside_rows = [r for r in grievances if r["set_aside"]]
         grievances = [r for r in grievances if not r["set_aside"]]
         by_topic = Counter(t for r in grievances
@@ -1053,7 +1066,8 @@ def social_page(request: Request):
                            for t in r["complaint_topics"])
         by_source = Counter(r["platform"] for r in grievances
                             if not topic or topic in r["complaint_topics"])
-        pool = set_aside_rows if view_aside else grievances
+        pool = (learned if view_learned else
+                set_aside_rows if view_aside else grievances)
         shown = [r for r in pool
                  if (not topic or topic in r["complaint_topics"])
                  and (not src or r["platform"] == src)]
@@ -1067,7 +1081,9 @@ def social_page(request: Request):
                       entity_qs="all" if entity is None else entity["id"],
                       office=request.query_params.get("office") or None,
                       entities=entities, rows=shown, topic=topic, src=src,
-                      view_aside=view_aside, set_aside_count=len(set_aside_rows),
+                      view_aside=view_aside, view_learned=view_learned,
+                      learned_count=len(learned),
+                      set_aside_count=len(set_aside_rows),
                       set_aside_reasons=taxonomy.SOCIAL_SET_ASIDE,
                       by_topic=[(t, by_topic.get(t, 0)) for t in taxonomy.COMPLAINT_TOPICS],
                       by_source=[(p, by_source.get(p, 0)) for p in

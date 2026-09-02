@@ -34,6 +34,10 @@ MODEL = os.environ.get("SUCHAK_MODEL", "claude-sonnet-5")
 # super admin in the UI; matching items are parked under "Filtered out"
 # with the reason recorded, never classified or queued.
 EXCLUSION_RULES_KEY = "exclusion_rules"
+# How many of the reviewer's own set-aside rulings are shown to the
+# classifier as examples of what this team does not want to see again.
+SET_ASIDE_EXAMPLES = max(0, min(
+    int(os.environ.get("SUCHAK_SET_ASIDE_EXAMPLES", "12")), 40))
 DEFAULT_EXCLUSION_RULES = (
     "Stock recommendations and share-price commentary: buy/sell/hold calls, "
     "brokerage target prices, 'stocks to pick' listicles, technical-analysis "
@@ -137,6 +141,7 @@ VERDICT_SCHEMA = {
         },
         "excluded": {"type": "boolean"},
         "exclusion_reason": {"type": ["string", "null"]},
+        "like_set_aside": {"type": ["boolean", "null"]},
         "relationships": {
             "type": "array",
             "items": {
@@ -258,7 +263,8 @@ def suggest_action(similar: list) -> str | None:
 def _build_system(entity, factors, examples,
                   severity_defs: str = DEFAULT_SEVERITY_DEFS,
                   exclusion_rules: str = DEFAULT_EXCLUSION_RULES,
-                  risk_defs: str = DEFAULT_RISK_DEFS) -> str:
+                  risk_defs: str = DEFAULT_RISK_DEFS,
+                  set_aside: str = "") -> str:
     lines = [
         "You are a supervisory triage assistant for the Banking Supervisor of India.",
         "You classify public news items about a regulated entity so a small "
@@ -294,6 +300,7 @@ def _build_system(entity, factors, examples,
         "media -- list every matching topic from: "
         + "; ".join(taxonomy.COMPLAINT_TOPICS) + ". "
         "Leave the list empty when the item is not about customer grievances.",
+        (set_aside + "\n" if set_aside else "") +
         "Negative list -- item types the team does NOT analyse: "
         + exclusion_rules + " "
         "Set excluded=true with a short exclusion_reason when the item is of "
@@ -324,10 +331,46 @@ def _build_system(entity, factors, examples,
     return "\n".join(lines)
 
 
+def set_aside_examples(db, entity_id: int) -> list[dict]:
+    """What this team has ruled useless for pattern-finding, newest first.
+
+    The team's own rulings, not a global list: one supervisor's "generic"
+    is another's signal, and the examples are only ever shown to the
+    entity they were made on."""
+    rows = q(db,
+             "SELECT title, snippet, set_aside FROM items"
+             " WHERE entity_id = ? AND source_type = 'social'"
+             " AND set_aside IS NOT NULL"
+             " ORDER BY id DESC LIMIT ?",
+             (entity_id, SET_ASIDE_EXAMPLES))
+    return [dict(r) for r in rows]
+
+
+def _render_set_aside(rows: list[dict]) -> str:
+    if not rows:
+        return ""
+    lines = ["", "This team has set these social posts aside as no use for "
+             "spotting supervisory patterns. Judge whether the item you are "
+             "given is of the same character:"]
+    for r in rows:
+        text = " ".join(((r.get("snippet") or r.get("title") or "").split()))[:180]
+        lines.append(f'- [{r.get("set_aside")}] "{text}"')
+    lines.append(
+        "Set like_set_aside=true ONLY when the item is plainly the same kind "
+        "of thing: a generic gripe naming no product or process, pure "
+        "venting, or a post that is not about the bank's service. A post "
+        "that names a specific product, transaction, charge, branch or "
+        "process failure is NOT set-aside material, however angrily it is "
+        "written. When in doubt, set false -- a missed complaint costs the "
+        "team far more than one extra post to read.")
+    return "\n".join(lines)
+
+
 def _llm_classify(entity, factors, examples, title, snippet, source, published,
                   severity_defs: str = DEFAULT_SEVERITY_DEFS,
                   exclusion_rules: str = DEFAULT_EXCLUSION_RULES,
-                  risk_defs: str = DEFAULT_RISK_DEFS):
+                  risk_defs: str = DEFAULT_RISK_DEFS,
+                  set_aside: str = ""):
     client = _get_client()
     user_msg = (
         f"Classify this item.\n"
@@ -340,7 +383,7 @@ def _llm_classify(entity, factors, examples, title, snippet, source, published,
         model=MODEL,
         max_tokens=2048,
         system=_build_system(entity, factors, examples, severity_defs,
-                             exclusion_rules, risk_defs),
+                             exclusion_rules, risk_defs, set_aside),
         messages=[{"role": "user", "content": user_msg}],
         output_config={"format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
     )
@@ -526,6 +569,11 @@ def classify_item(db, item) -> None:
             entity, factors, examples,
             item["title"], item["snippet"], item["source_name"], item["published_at"],
             severity_defs, exclusion_rules, risk_defs,
+            # The team's own set-aside rulings, so the classifier stops
+            # showing them the same kind of post twice. Social only: the
+            # rulings are about social noise.
+            _render_set_aside(set_aside_examples(db, item["entity_id"]))
+            if item["source_type"] == "social" else "",
         )
     except Exception as exc:  # missing key, network, rate limit, refusal, bad JSON
         log.warning("LLM classification failed (%s: %s); using heuristic", type(exc).__name__, exc)
@@ -539,6 +587,21 @@ def classify_item(db, item) -> None:
         log.info("Negative-list exclusion %r for %s: %s",
                  item["title"][:60], entity["name"], reason)
         _record_gated_out(db, item, f"negative list: {reason}",
+                          classifier=classifier, model=model)
+        return
+
+    # What the reviewers taught it: a post of the same character as ones
+    # they set aside is dropped before it reaches the tab. Auditable on
+    # purpose -- the reason names the learning, the item is stored, and
+    # the Social media tab counts these separately so a mis-learned gate
+    # is visible rather than silent.
+    if (item["source_type"] == "social" and classifier == "llm"
+            and verdict.get("like_set_aside")):
+        log.info("Set-aside pattern matched for %s: %r",
+                 entity["name"], item["title"][:60])
+        _record_gated_out(db, item,
+                          "matches posts this team set aside as no use for "
+                          "pattern-finding",
                           classifier=classifier, model=model)
         return
 

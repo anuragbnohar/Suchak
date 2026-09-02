@@ -52,17 +52,26 @@
        href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}&amp;src={{ p | urlencode }}">{{ p }}<span class="tab-count">{{ n }}</span></a>
     {% endif %}{% endfor %}
   </nav>
-  {% if set_aside_count or view_aside %}
+  {% if set_aside_count or view_aside or learned_count or view_learned %}
   <nav class="tabs" aria-label="Set aside">
-    <a class="tab {% if not view_aside %}active{% endif %}"
+    <a class="tab {% if not view_aside and not view_learned %}active{% endif %}"
        href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}">Counted in Insights</a>
     <a class="tab {% if view_aside %}active{% endif %}"
        href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;view=aside">Set aside<span class="tab-count">{{ set_aside_count }}</span></a>
+    {% if learned_count or view_learned %}
+    <a class="tab {% if view_learned %}active{% endif %}"
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;view=learned">Auto-excluded<span class="tab-count">{{ learned_count }}</span></a>
+    {% endif %}
   </nav>
   {% endif %}
 </div>
 
-{% if view_aside %}
+{% if view_learned %}
+<p class="meta-dim small">The classifier dropped these on its own, judging them
+  the same kind of post your team has set aside before. Check them now and then:
+  if a real grievance is here, it means the learning has gone too far — tell the
+  team, and restore the set-aside rulings that taught it wrongly.</p>
+{% elif view_aside %}
 <p class="meta-dim small">These posts are excluded from Insights — a reviewer
   judged them generic, venting, duplicate or not about the bank's service.
   Restore any of them and Insights counts it again.</p>
