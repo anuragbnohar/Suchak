@@ -98,13 +98,16 @@ Rules:
 
 def grievances_for(db, entity_id: int) -> list[dict]:
     """The complaints a generation run reads: classified social items with
-    a grievance in them, newest first, capped."""
+    a grievance in them, newest first, capped. Posts a reviewer set aside
+    (generic, venting, duplicate...) are excluded -- a pattern built on
+    noise is worse than no pattern."""
     rows = q(db,
              "SELECT id, title, snippet, published_at, complaint_topics,"
              " COALESCE(review_severity, severity) AS sev"
              " FROM items WHERE entity_id = ? AND source_type = 'social'"
              " AND gated_out = 0 AND status != 'new'"
              " AND complaint_topics IS NOT NULL AND complaint_topics != '[]'"
+             " AND set_aside IS NULL"
              " ORDER BY COALESCE(published_at, '') DESC LIMIT ?",
              (entity_id, MAX_GRIEVANCES))
     return [dict(r) for r in rows]

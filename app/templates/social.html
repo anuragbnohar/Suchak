@@ -52,7 +52,21 @@
        href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}&amp;src={{ p | urlencode }}">{{ p }}<span class="tab-count">{{ n }}</span></a>
     {% endif %}{% endfor %}
   </nav>
+  {% if set_aside_count or view_aside %}
+  <nav class="tabs" aria-label="Set aside">
+    <a class="tab {% if not view_aside %}active{% endif %}"
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}">Counted in Insights</a>
+    <a class="tab {% if view_aside %}active{% endif %}"
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;view=aside">Set aside<span class="tab-count">{{ set_aside_count }}</span></a>
+  </nav>
+  {% endif %}
 </div>
+
+{% if view_aside %}
+<p class="meta-dim small">These posts are excluded from Insights — a reviewer
+  judged them generic, venting, duplicate or not about the bank's service.
+  Restore any of them and Insights counts it again.</p>
+{% endif %}
 
 {% if not rows %}
 <p class="empty">
@@ -75,6 +89,25 @@
       {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
       {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
       <a href="/item/{{ it.id }}">Review this post</a>
+      {% set back = '/social?' ~ (('office=' ~ (office | urlencode) ~ '&') if office else '') ~ 'entity=' ~ entity_qs ~ ('&view=aside' if view_aside else '') %}
+      {% if it.set_aside %}
+      <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form">
+        <input type="hidden" name="back" value="{{ back }}">
+        <span class="mini-chip">set aside: {{ it.set_aside }}</span>
+        <button type="submit" class="btn btn-small btn-quiet">Restore</button>
+      </form>
+      {% else %}
+      <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form">
+        <input type="hidden" name="back" value="{{ back }}">
+        <select name="reason" aria-label="Set aside reason">
+          <option value="">Set aside as…</option>
+          {% for code, label in set_aside_reasons %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-small btn-quiet">Apply</button>
+      </form>
+      {% endif %}
       {% if it.status == 'reviewed' %}<span class="ok-chip">✓ reviewed</span>{% endif %}
     </p>
   </li>

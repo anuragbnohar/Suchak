@@ -91,3 +91,17 @@ def social_platform(url: str) -> str:
                for h in hosts):
             return label
     return "Other"
+
+
+# Why a reviewer set a social post aside. A post can be a real grievance
+# and still be useless for pattern-finding -- pure venting names no
+# product, a generic gripe names no process -- so Insights must not count
+# it. The judgement is the reviewer's, never the classifier's.
+SOCIAL_SET_ASIDE = [
+    ("generic", "Generic — no specific product or process named"),
+    ("venting", "Customer venting — anger without a complaint to act on"),
+    ("not_service", "Not about the bank's service"),
+    ("duplicate", "Duplicate of another post"),
+    ("resolved", "Already resolved or informational"),
+]
+SET_ASIDE_LABELS = dict(SOCIAL_SET_ASIDE)

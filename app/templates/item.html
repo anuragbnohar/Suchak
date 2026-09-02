@@ -43,6 +43,32 @@
       {% for f in item.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
     </div>
 
+    {% if item.source_type == 'social' %}
+    <section class="detail-block">
+      <h2>Use in Insights</h2>
+      {% if item.set_aside %}
+      <p class="small">Set aside as <strong>{{ set_aside_labels.get(item.set_aside, item.set_aside) }}</strong>
+        {% if item.set_aside_by %}by {{ item.set_aside_by }}{% endif %} —
+        Insights does not count this post.</p>
+      <form method="post" action="/item/{{ item.id }}/set-aside">
+        <button type="submit" class="btn btn-small">Restore to Insights</button>
+      </form>
+      {% else %}
+      <p class="small meta-dim">A post can be a real grievance and still be no
+        use for spotting patterns. Set it aside and Insights stops counting it;
+        it stays here, with its severity and topics intact.</p>
+      <form method="post" action="/item/{{ item.id }}/set-aside" class="inline-form">
+        <select name="reason" aria-label="Set aside reason">
+          {% for code, label in set_aside_reasons %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-small">Set aside</button>
+      </form>
+      {% endif %}
+    </section>
+    {% endif %}
+
     <section class="detail-block">
       <h2>Sources</h2>
       <ul class="source-list">

@@ -128,7 +128,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-03.9"
+APP_BUILD = "2026-09-04.1"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -502,7 +502,9 @@ def item_detail(request: Request, item_id: int):
                       item=prep_action(row, _today()), sources=sources,
                       owners=_assignable_users(db, user, row["entity_id"]),
                       history=_review_history(db, item_id),
-                      similar=similar_prepped, suggestion=suggestion)
+                      similar=similar_prepped, suggestion=suggestion,
+                      set_aside_reasons=taxonomy.SOCIAL_SET_ASIDE,
+                      set_aside_labels=taxonomy.SET_ASIDE_LABELS)
     finally:
         db.close()
 
@@ -543,6 +545,38 @@ async def item_attribute(request: Request, item_id: int):
             "Attributed to the entity — classification is running; "
             "refresh in a few seconds."),
         status_code=303)
+
+
+@app.post("/item/{item_id}/set-aside")
+async def item_set_aside(request: Request, item_id: int):
+    """A reviewer rules that this social post is no use for
+    pattern-finding: generic, venting, a duplicate. It stays on the
+    Social media tab under its own tab, keeps its severity and topics,
+    and Insights stops counting it. An empty reason undoes the ruling."""
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        row = one(db, "SELECT * FROM items WHERE id = ?", (item_id,))
+        if not row:
+            raise HTTPException(404, "Item not found")
+        if user["role"] != "superadmin" and row["entity_id"] != user["entity_id"]:
+            raise HTTPException(403, "Item belongs to another entity's team")
+        if row["source_type"] != "social":
+            raise HTTPException(400, "Only social posts can be set aside")
+        reason = (form.get("reason") or "").strip()
+        if reason and reason not in taxonomy.SET_ASIDE_LABELS:
+            raise HTTPException(400, "Unknown reason")
+        x(db, "UPDATE items SET set_aside = ?, set_aside_by = ? WHERE id = ?",
+          (reason or None, user["username"] if reason else None, item_id))
+        msg = (f"Set aside as {taxonomy.SET_ASIDE_LABELS[reason].split(' — ')[0].lower()}"
+               " — Insights will not count it." if reason
+               else "Restored — Insights counts this post again.")
+    finally:
+        db.close()
+    back = form.get("back") or f"/item/{item_id}"
+    join = "&" if "?" in back else "?"
+    return RedirectResponse(f"{back}{join}msg={quote(msg)}", status_code=303)
 
 
 @app.post("/item/{item_id}/review")
@@ -1011,12 +1045,16 @@ def social_page(request: Request):
         src = request.query_params.get("src", "")
         if src not in taxonomy.SOCIAL_PLATFORMS and src != "Other":
             src = ""
+        view_aside = request.query_params.get("view") == "aside"
+        set_aside_rows = [r for r in grievances if r["set_aside"]]
+        grievances = [r for r in grievances if not r["set_aside"]]
         by_topic = Counter(t for r in grievances
                            if not src or r["platform"] == src
                            for t in r["complaint_topics"])
         by_source = Counter(r["platform"] for r in grievances
                             if not topic or topic in r["complaint_topics"])
-        shown = [r for r in grievances
+        pool = set_aside_rows if view_aside else grievances
+        shown = [r for r in pool
                  if (not topic or topic in r["complaint_topics"])
                  and (not src or r["platform"] == src)]
         shown.sort(key=lambda r: (taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3),
@@ -1029,6 +1067,8 @@ def social_page(request: Request):
                       entity_qs="all" if entity is None else entity["id"],
                       office=request.query_params.get("office") or None,
                       entities=entities, rows=shown, topic=topic, src=src,
+                      view_aside=view_aside, set_aside_count=len(set_aside_rows),
+                      set_aside_reasons=taxonomy.SOCIAL_SET_ASIDE,
                       by_topic=[(t, by_topic.get(t, 0)) for t in taxonomy.COMPLAINT_TOPICS],
                       by_source=[(p, by_source.get(p, 0)) for p in
                                  taxonomy.SOCIAL_PLATFORMS + ["Other"]],

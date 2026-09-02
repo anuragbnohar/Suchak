@@ -192,6 +192,10 @@ MIGRATIONS = [
     ("entities", "rbi_office", "TEXT"),
     # Headquarters, as typed on the add-entity screen. The district is
     # what resolves the RBI office; the location is context for readers.
+    # A reviewer's ruling that a social post, grievance or not, is no use
+    # for pattern-finding. NULL = counts; a reason code = set aside.
+    ("items", "set_aside", "TEXT"),
+    ("items", "set_aside_by", "TEXT"),
     ("entities", "hq_location", "TEXT"),
     ("entities", "hq_district", "TEXT"),
     # A Regional Director's beat. Set on a user instead of entity_id, it
