@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Add entity · Suchak{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Add an entity</h1>
+    <p class="page-sub">Name and headquarters — the RBI office fills itself from the district</p>
+  </div>
+</div>
+
+<section class="panel">
+  <form method="post" action="/entities/new" class="stack-form">
+    <label>Name
+      <input name="name" required placeholder="e.g. State Bank of India"
+             value="{{ form.name or '' }}">
+    </label>
+    <label>Kind
+      <select name="kind">
+        {% for k in kinds %}
+        <option value="{{ k }}" {% if form.kind == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="edit-pair">
+      <label>Headquarters — location (city/town)
+        <input name="location" placeholder="e.g. Ambad" value="{{ form.location or '' }}">
+      </label>
+      <label>Headquarters — district
+        <input name="district" id="district" required placeholder="e.g. Jalna"
+               value="{{ form.district or '' }}" autocomplete="off">
+      </label>
+    </div>
+
+    <div id="office-box">
+      {% if need_choice %}
+      <p class="small"><strong>
+        {% if candidates | length > 1 %}
+        “{{ form.district }}” exists in more than one state — pick the right office:
+        {% else %}
+        {{ candidates[0][0] }} is served by more than one RBI office — tick one or both:
+        {% endif %}</strong></p>
+      {% for state, offs in candidates %}
+        {% for o in offs %}
+        <label class="small"><input type="checkbox" name="offices" value="{{ o }}">
+          {{ o }} <span class="meta-dim">({{ state }})</span></label><br>
+        {% endfor %}
+      {% endfor %}
+      {% elif unknown_district %}
+      <p class="small"><strong>“{{ form.district }}” is not a district this app knows.</strong>
+        Check the spelling, or choose the office yourself:</p>
+      <label class="small">RBI office
+        <input name="office_manual" list="rbi-offices" placeholder="e.g. Mumbai">
+      </label>
+      {% else %}
+      <p class="small meta-dim" id="office-hint">Type the district and the office appears here.</p>
+      {% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-primary">Add entity</button>
+    <p class="meta-dim small">Spelling variants of the name are added automatically.
+      Aliases, news languages and the X handle can be refined afterwards via
+      <a href="/entities">Entities</a> → Edit.</p>
+  </form>
+</section>
+
+<datalist id="rbi-offices">
+  {% for o in rbi_offices %}<option value="{{ o }}">{% endfor %}
+</datalist>
+
+<script>
+const PLACES = {{ place_index | safe }};
+const box = document.getElementById("office-box");
+const district = document.getElementById("district");
+function refresh() {
+  const key = district.value.trim().replace(/\s+/g, " ").toLowerCase();
+  if (!key) return;
+  const hit = PLACES[key];
+  if (!hit) {
+    box.innerHTML = '<p class="small"><strong>Not a district this app knows.</strong> ' +
+      'Check the spelling, or choose the office yourself:</p>' +
+      '<label class="small">RBI office <input name="office_manual" list="rbi-offices"></label>';
+    return;
+  }
+  const states = Object.keys(hit);
+  let html = "";
+  const total = states.reduce((n, st) => n + hit[st].length, 0);
+  if (total === 1) {
+    const st = states[0], o = hit[st][0];
+    html = '<p class="small">RBI office: <strong>' + o + '</strong> (' + st + ')' +
+      '<input type="hidden" name="offices" value="' + o + '"></p>';
+  } else {
+    html = '<p class="small"><strong>' +
+      (states.length > 1 ? 'This district name exists in more than one state — pick the right office:'
+                         : states[0] + ' is served by more than one RBI office — tick one or both:') +
+      '</strong></p>';
+    for (const st of states) {
+      for (const o of hit[st]) {
+        html += '<label class="small"><input type="checkbox" name="offices" value="' + o + '"> ' +
+          o + ' <span class="meta-dim">(' + st + ')</span></label><br>';
+      }
+    }
+  }
+  box.innerHTML = html;
+}
+district.addEventListener("input", refresh);
+if (district.value) refresh();
+</script>
+{% endblock %}

@@ -34,6 +34,7 @@ OFFICE_STATES = {
     "Jaipur": ["Rajasthan"],
     "Jammu": ["Jammu and Kashmir", "Ladakh"],
     "Kanpur": ["Uttar Pradesh"],
+    "Kochi": ["Kerala"],
     "Kohima": ["Nagaland"],
     "Kolkata": ["West Bengal", "Andaman and Nicobar"],
     "Lucknow": ["Uttar Pradesh"],
@@ -48,6 +49,7 @@ OFFICE_STATES = {
     "Shimla": ["Himachal Pradesh"],
     "Srinagar": ["Jammu and Kashmir", "Ladakh"],
     "Thiruvananthapuram": ["Kerala", "Lakshadweep"],
+    "Vijayawada": ["Andhra Pradesh"],
 }
 
 # Alternate spellings a paper might use for the state itself.
@@ -422,6 +424,48 @@ DEVANAGARI = {
     "Poonch": ["पुंछ"], "Doda": ["डोडा"], "Ladakh": ["लद्दाख"],
     "Leh": ["लेह"], "Kargil": ["करगिल", "कारगिल"],
 }
+
+
+def _state_label(state: str) -> str:
+    """The plain state name behind a carved entry: both Maharashtra
+    entries are still Maharashtra to a reader."""
+    return state.split(" (")[0]
+
+
+# place (lowercased, English or Devanagari) -> {state label: set of offices}.
+# Built once from the tables above, so adding an office or district in one
+# place updates the lookup too.
+_PLACE_INDEX: dict = {}
+for _office, _states in OFFICE_STATES.items():
+    for _st in _states:
+        _label = _state_label(_st)
+        _terms = STATE_NAMES.get(_st, [_label]) + STATE_DISTRICTS.get(_st, [])
+        for _t in _terms:
+            for _form in [_t] + DEVANAGARI.get(_t, []):
+                _PLACE_INDEX.setdefault(_form.lower(), {})                     .setdefault(_label, set()).add(_office)
+
+
+def offices_for_district(place: str) -> list[tuple[str, list[str]]]:
+    """Which office(s) serve this district or city: [(state, [offices])].
+
+    Usually one state with one office. Two offices in one state means the
+    state genuinely has two (Kerala: Thiruvananthapuram and Kochi; Andhra
+    Pradesh: Hyderabad and Vijayawada; Uttar Pradesh: Kanpur and Lucknow;
+    non-Vidarbha Maharashtra: Mumbai and Belapur; J&K: Jammu and
+    Srinagar) -- the entity may map to either or both. Two STATES means
+    the name itself is ambiguous (Aurangabad exists in Maharashtra and
+    Bihar) and a human must pick. Unknown places return []."""
+    hit = _PLACE_INDEX.get(" ".join((place or "").split()).lower())
+    if not hit:
+        return []
+    return [(st, sorted(offs)) for st, offs in sorted(hit.items())]
+
+
+def place_index() -> dict:
+    """The whole lookup as plain lists, for the add-entity screen's
+    live auto-fill: {place: {state: [offices]}}."""
+    return {place: {st: sorted(offs) for st, offs in states.items()}
+            for place, states in _PLACE_INDEX.items()}
 
 
 def office_places(office: str) -> list[str]:

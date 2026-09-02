@@ -152,26 +152,8 @@
   </section>
 
   {% if user.role == 'superadmin' %}
-  <section class="panel">
-    <h2>Add an entity</h2>
-    <form method="post" action="/entities" class="stack-form">
-      <label>Name
-        <input name="name" placeholder="e.g. State Bank of India" required>
-      </label>
-      <label>Kind
-        <select name="kind">
-          {% for k in taxonomy.ENTITY_KINDS %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
-        </select>
-      </label>
-      <label>Aliases (comma-separated)
-        <input name="aliases" placeholder="State Bank of India, SBI">
-      </label>
-      <label>News languages (comma-separated codes)
-        <input name="languages" placeholder="en" value="en">
-      </label>
-      <button type="submit" class="btn btn-primary">Add entity</button>
-    </form>
-  </section>
+  <p><a class="btn btn-primary" href="/entities/new">Add an entity</a>
+    <span class="meta-dim small">— name and headquarters; the RBI office fills itself.</span></p>
   {% endif %}
 </div>
 <datalist id="rbi-offices">

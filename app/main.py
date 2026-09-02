@@ -96,7 +96,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-01.9"
+APP_BUILD = "2026-09-02.1"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -165,15 +165,23 @@ def prep_item(row) -> dict:
     return d
 
 
+def entity_offices(e) -> list[str]:
+    """An entity's RBI office(s). Stored comma-separated because a bank
+    in a two-office state (Kerala, Andhra Pradesh, UP...) may be mapped
+    to both."""
+    return [o.strip() for o in (e["rbi_office"] or "").split(",") if o.strip()]
+
+
 def visible_entities(db, user) -> list:
     if user["role"] == "superadmin":
         return q(db, "SELECT * FROM entities ORDER BY name")
     if user["rbi_office"]:
         # A Regional Director's beat is an office, not one entity: every
         # entity headquartered in that region is theirs to monitor, across
-        # SSM teams. This one branch scopes every page for them.
-        return q(db, "SELECT * FROM entities WHERE rbi_office = ? ORDER BY name",
-                 (user["rbi_office"],))
+        # SSM teams. This one branch scopes every page for them. Membership
+        # is checked in Python because an entity may carry two offices.
+        return [e for e in q(db, "SELECT * FROM entities ORDER BY name")
+                if user["rbi_office"] in entity_offices(e)]
     return q(db, "SELECT * FROM entities WHERE id = ? ", (user["entity_id"],))
 
 
@@ -1392,6 +1400,79 @@ def _parse_aliases(raw: str | None) -> list[str]:
     return out
 
 
+@app.get("/entities/new")
+def entities_new(request: Request):
+    """The add-entity screen: name plus headquarters, and the RBI office
+    resolves itself from the district. A two-office state offers both."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        return templates.TemplateResponse(request, "new_entity.html", {
+            "user": user, "kinds": taxonomy.ENTITY_KINDS,
+            "place_index": json.dumps(geography.place_index(),
+                                      ensure_ascii=False),
+            "form": {}, "candidates": [], "need_choice": False,
+            "unknown_district": False,
+        })
+    finally:
+        db.close()
+
+
+@app.post("/entities/new")
+async def entities_new_post(request: Request):
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        name = (form.get("name") or "").strip()
+        kind = form.get("kind") or taxonomy.ENTITY_KINDS[0]
+        location = (form.get("location") or "").strip()
+        district = (form.get("district") or "").strip()
+        manual = (form.get("office_manual") or "").strip()
+        if not name:
+            raise HTTPException(400, "Entity name is required")
+        if kind not in taxonomy.ENTITY_KINDS:
+            raise HTTPException(400, "Unknown entity kind")
+        if one(db, "SELECT 1 x FROM entities WHERE lower(name) = ?", (name.lower(),)):
+            raise HTTPException(400, "An entity with this name already exists")
+
+        candidates = geography.offices_for_district(district) if district else []
+        allowed = {o for _, offs in candidates for o in offs}
+        chosen = [o for o in form.getlist("offices") if o in allowed]
+        if not chosen:
+            if manual:
+                chosen = [manual[:40]]
+            elif len(allowed) == 1:
+                chosen = list(allowed)
+            else:
+                # more than one office (or none we know) -- the person
+                # decides, on the same screen with everything they typed.
+                return templates.TemplateResponse(request, "new_entity.html", {
+                    "user": user, "kinds": taxonomy.ENTITY_KINDS,
+                    "place_index": json.dumps(geography.place_index(),
+                                              ensure_ascii=False),
+                    "form": {"name": name, "kind": kind,
+                             "location": location, "district": district},
+                    "candidates": candidates,
+                    "need_choice": bool(candidates),
+                    "unknown_district": bool(district) and not candidates,
+                })
+
+        aliases = [name] + derive_aliases([name])
+        x(db, "INSERT INTO entities (name, kind, aliases, languages,"
+              " rbi_office, hq_location, hq_district)"
+              " VALUES (?,?,?,?,?,?,?)",
+          (name, kind, json.dumps(aliases), json.dumps(["en"]),
+           ", ".join(chosen) or None, location or None, district or None))
+    finally:
+        db.close()
+    return RedirectResponse(
+        f"/entities?msg={quote(name + ' added under ' + (', '.join(chosen) or 'no office'))}",
+        status_code=303)
+
+
 @app.post("/entities")
 async def entities_add(request: Request):
     form = await request.form()
@@ -1533,11 +1614,10 @@ def rd_view(request: Request):
             raise HTTPException(
                 403, "The RD View is for Regional Directors and the super admin")
 
+        every = q(db, "SELECT * FROM entities ORDER BY name")
         if user["role"] == "superadmin":
-            offices = sorted({r["rbi_office"] for r in q(
-                db, "SELECT DISTINCT rbi_office FROM entities"
-                    " WHERE rbi_office IS NOT NULL")})
-            if one(db, "SELECT COUNT(*) n FROM entities WHERE rbi_office IS NULL")["n"]:
+            offices = sorted({o for e in every for o in entity_offices(e)})
+            if any(not entity_offices(e) for e in every):
                 offices.append(UNASSIGNED)
         else:
             offices = [user["rbi_office"]]
@@ -1551,10 +1631,9 @@ def rd_view(request: Request):
             tab = "hq"
 
         if selected == UNASSIGNED:
-            ents = q(db, "SELECT * FROM entities WHERE rbi_office IS NULL ORDER BY name")
+            ents = [e for e in every if not entity_offices(e)]
         elif selected:
-            ents = q(db, "SELECT * FROM entities WHERE rbi_office = ? ORDER BY name",
-                     (selected,))
+            ents = [e for e in every if selected in entity_offices(e)]
         else:
             ents = []
 
@@ -1590,9 +1669,7 @@ def rd_view(request: Request):
         region_rows = []
         place_terms = geography.office_places(selected) if has_region_tab else []
         if tab == "region" and place_terms:
-            others = q(db, "SELECT * FROM entities"
-                           " WHERE COALESCE(rbi_office,'') != ? ORDER BY name",
-                       (selected,))
+            others = [e for e in every if selected not in entity_offices(e)]
             for e in others:
                 # A place that is part of the bank's own name proves
                 # nothing about where a story happened: every Bank of

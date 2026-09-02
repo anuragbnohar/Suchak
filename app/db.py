@@ -190,6 +190,10 @@ MIGRATIONS = [
     # The RBI regional office whose region holds the entity's headquarters.
     # Free text on purpose: office names are a roster, not a constraint.
     ("entities", "rbi_office", "TEXT"),
+    # Headquarters, as typed on the add-entity screen. The district is
+    # what resolves the RBI office; the location is context for readers.
+    ("entities", "hq_location", "TEXT"),
+    ("entities", "hq_district", "TEXT"),
     # A Regional Director's beat. Set on a user instead of entity_id, it
     # scopes them to every entity of that office. A separate column rather
     # than a new role value because SQLite cannot widen the role CHECK on
