@@ -515,6 +515,41 @@ def office_places(office: str) -> list[str]:
     return places
 
 
+def office_exclusions(office: str) -> list[str]:
+    """Places that VETO an in-region match for this office.
+
+    Only the catch-all side of a split state needs this: Mumbai and
+    Belapur match on the bare word "Maharashtra", so a Jalna story that
+    says "in Maharashtra's Jalna district" would ride in on the state
+    name even though Jalna is Nagpur's. The sister carve's districts and
+    region names (Vidarbha, Marathwada) therefore veto -- the specific
+    place beats the generic state word. The specific side (Nagpur) gets
+    no exclusions: it never matches on the bare state name, and vetoing
+    on "Mumbai" would drop every story with an incidental Mumbai
+    mention."""
+    excl: list[str] = []
+    seen: set[str] = set()
+    for st in OFFICE_STATES.get(office, []):
+        base = _state_label(st)
+        # catch-all carve = its match terms include the bare state name
+        if base not in STATE_NAMES.get(st, [base]):
+            continue
+        for other, other_states in OFFICE_STATES.items():
+            if other == office:
+                continue
+            for ost in other_states:
+                if ost == st or _state_label(ost) != base:
+                    continue
+                terms = [t for t in STATE_NAMES.get(ost, [])
+                         if t != base] + STATE_DISTRICTS.get(ost, [])
+                for t in terms:
+                    for form in [t] + DEVANAGARI.get(t, []):
+                        if form.lower() not in seen:
+                            seen.add(form.lower())
+                            excl.append(form)
+    return excl
+
+
 def describe(office: str) -> str:
     """One line saying what region an office covers, for the RD View."""
     states = OFFICE_STATES.get(office)

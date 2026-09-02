@@ -96,7 +96,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-02.3"
+APP_BUILD = "2026-09-02.4"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1716,6 +1716,7 @@ def rd_view(request: Request):
         # In-region news from entities headquartered under other offices.
         region_rows = []
         place_terms = geography.office_places(selected) if has_region_tab else []
+        exclusions = geography.office_exclusions(selected) if has_region_tab else []
         if tab == "region" and place_terms:
             others = [e for e in every if selected not in entity_offices(e)]
             for e in others:
@@ -1734,6 +1735,10 @@ def rd_view(request: Request):
                                                   it.get("snippet"),
                                                   it.get("summary"))))
                     hit = next((t for t in terms if place_mentions(text, t)), None)
+                    # A story that names a sister office's district belongs
+                    # there, however loudly it also says the state's name.
+                    if hit and any(place_mentions(text, t) for t in exclusions):
+                        continue
                     if hit:
                         it["region_term"] = hit
                         it["entity_name"] = e["name"]
