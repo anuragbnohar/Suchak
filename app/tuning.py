@@ -58,6 +58,12 @@ TOGGLES = [
      "Adds the complaint vocabulary to the X search itself, so X returns "
      "(and bills for) fewer posts. Off means every post addressed to the "
      "bank is fetched and the classifier sorts them afterwards.", 1),
+    ("x_author_handles", "X: also fetch the author's handle (costs extra)",
+     "Off, a post is stored as \"X post\" and its link uses the "
+     "id-only form, which opens the same tweet. On, X is also asked for "
+     "each author's user record so the card can show @who complained -- "
+     "X's price list bills user records separately, at twice the price "
+     "of a post, so check the console's Usage page before leaving this on.", 0),
     ("x_exclude_replies", "X: fetch posts only, not replies",
      "Skips replies inside conversation threads. Because X's to: search "
      "matches replies only, switching this on also changes that search to "

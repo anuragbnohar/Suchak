@@ -422,14 +422,19 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
 
     since = datetime.now(timezone.utc) - timedelta(
         days=min(effective_days(days) or X_RECENT_SEARCH_DAYS, X_RECENT_SEARCH_DAYS))
+    # The author's handle is a separate purchase: X prices user records
+    # above posts, and a tweet's link needs only its id. Off by default;
+    # the Settings page turns it on for whoever wants @who on the card.
+    want_authors = bool(tun("x_author_handles", 0))
     params = {
         "query": x_query(registry, entity),
         "max_results": min(X_MAX_POSTS, 100),   # API ceiling per request
         "start_time": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "tweet.fields": "created_at,lang,author_id",
-        "expansions": "author_id",
-        "user.fields": "username,name",
     }
+    if want_authors:
+        params["expansions"] = "author_id"
+        params["user.fields"] = "username,name"
     resp = httpx.get(X_SEARCH, params=params, timeout=20,
                      headers={"Authorization": f"Bearer {X_BEARER}"})
     if resp.status_code in (401, 403):
@@ -446,7 +451,10 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
 
     payload = resp.json()
     posts = payload.get("data") or []
-    users = {u["id"]: u for u in (payload.get("includes", {}).get("users") or [])}
+    # Only when we asked (and paid) for them: ignoring stray includes
+    # keeps the stored label honest about what the fetch bought.
+    users = ({u["id"]: u for u in (payload.get("includes", {}).get("users") or [])}
+             if want_authors else {})
 
     items = []
     for post in posts[:X_MAX_POSTS]:
@@ -454,14 +462,16 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
         if not text:
             continue
         author = users.get(post.get("author_id"), {})
-        username = author.get("username") or "i"
+        username = author.get("username") or ""
         # A post has no headline, so the first line stands in as the title
         # and the full text becomes the snippet the classifier reads.
         title = text if len(text) <= 120 else text[:117].rstrip() + "..."
         items.append({
             "title": title,
-            "url": f"https://x.com/{username}/status/{post['id']}",
-            "source_name": f"@{username}",
+            # Without a handle, the id-only form opens the same tweet.
+            "url": (f"https://x.com/{username}/status/{post['id']}" if username
+                    else f"https://x.com/i/web/status/{post['id']}"),
+            "source_name": f"@{username}" if username else "X post",
             "snippet": text,
             "published_at": post.get("created_at"),
             "source_type": "social",
