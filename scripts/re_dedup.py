@@ -42,9 +42,31 @@ from app.ingest import DUP_MIN_SHARED, DUP_MIN_STRONG, DUP_THRESHOLD
 from app.similarity import (alias_tokens, distinctive_overlap,
                             event_similarity, strip_publisher, strong_shared)
 
+# Printed first, so a PowerShell paste shows which copy of the script ran.
+BUILD = "2026-09-04.5"
+
 # Items per model call in the smart pass. Read in date order, so the items
 # of one week land in the same call and can be grouped together.
 SMART_BATCH = 100
+
+
+def _drain_pending_input() -> None:
+    """Discard keys pressed before the question below was shown. The smart
+    pass thinks for a while, and an Enter pressed during that wait would
+    otherwise answer "Apply?" -- as No -- the instant it appears."""
+    try:
+        import msvcrt
+        while msvcrt.kbhit():
+            msvcrt.getwch()
+        return
+    except ImportError:
+        pass
+    try:
+        import termios
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except Exception:
+        pass
 
 
 def merge_into(db, primary: dict, victim: dict) -> None:
@@ -170,6 +192,8 @@ def smart_groups(db, entity, days: int) -> tuple[list[dict], int]:
         if len(batch) < 2:
             continue
         by_id = {r["id"]: r for r in batch}
+        print(f"  {entity['name']}: asking about {len(batch)} item(s) ...",
+              flush=True)
         for g in classify.group_same_events(entity, batch):
             members = sorted((by_id[i] for i in g["item_ids"]),
                              key=lambda r: (r["published_at"] or "", r["id"]))
@@ -199,6 +223,7 @@ def apply_smart(db, groups: list[dict], apply: bool) -> dict:
 def _confirm(yes: bool) -> bool:
     if yes:
         return True
+    _drain_pending_input()
     try:
         answer = input("\nApply? [y/N] ")
     except EOFError:
@@ -220,6 +245,7 @@ def main() -> int:
                     help="how far back --smart looks (default 90)")
     args = ap.parse_args()
     init_db()
+    print(f"re_dedup build {BUILD}")
 
     plan = run(apply=False)
     print("Plan (word-overlap rules):")
