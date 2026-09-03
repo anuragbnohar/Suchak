@@ -37,6 +37,9 @@ ACTIONS = [
 
 ENTITY_KINDS = [
     "Scheduled Commercial Bank",
+    "Foreign Bank",
+    "Small Finance Bank (SFB)",
+    "Regional Rural Bank (RRB)",
     "NBFC",
     "Urban Cooperative Bank",
     "Rural Cooperative Bank",
