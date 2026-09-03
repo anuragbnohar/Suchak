@@ -74,6 +74,9 @@ def _fetch_job(job_id: str, entity_id: int | None, days: int | None,
             bits.append(f"{result['rejected']} rejected (see the Rejected tab)")
         if result.get("classified"):
             bits.append(f"{result['classified']} classified")
+        if result.get("folded"):
+            bits.append(f"{result['folded']} folded into stories already "
+                        "on the queue")
         job.update(state="done", note=", ".join(bits))
     except Exception as exc:
         log.exception("Fetch job %s failed", job_id)
@@ -128,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.3"
+APP_BUILD = "2026-09-04.4"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD

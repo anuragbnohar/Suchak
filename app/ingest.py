@@ -38,7 +38,7 @@ from datetime import datetime, timedelta, timezone
 import feedparser
 import httpx
 
-from .classify import classify_new_items
+from .classify import classify_new_items, classify_pending  # noqa: F401
 from .db import connect, one, q, x
 from .matching import Registry, build_query, near_miss
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
@@ -1206,7 +1206,7 @@ def run_cycle(entity_id: int | None = None, days: int | None = None,
         return {"skipped": True, "reason": "a fetch cycle is already running"}
     started = time.monotonic()
     totals = {"entities": 0, "found": 0, "added": 0, "merged": 0,
-              "rejected": 0, "billed": 0, "classified": 0}
+              "rejected": 0, "billed": 0, "classified": 0, "folded": 0}
     try:
         db = connect()
         try:
@@ -1230,7 +1230,11 @@ def run_cycle(entity_id: int | None = None, days: int | None = None,
                 totals["entities"] += 1
                 for k in ("found", "added", "merged", "rejected", "billed"):
                     totals[k] += r[k]
-            totals["classified"] = classify_new_items(db)
+            # Oldest first, so a story's first report is on the queue
+            # before its later angles are read and fold into it.
+            done = classify_pending(db)
+            totals["classified"] = done["classified"]
+            totals["folded"] = done["folded"]
         finally:
             db.close()
     finally:

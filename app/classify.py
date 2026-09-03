@@ -12,7 +12,7 @@ records which classifier and model produced it, for auditability.
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import taxonomy
 from .db import get_setting, one, q, x
@@ -38,6 +38,21 @@ EXCLUSION_RULES_KEY = "exclusion_rules"
 # classifier as examples of what this team does not want to see again.
 SET_ASIDE_EXAMPLES = max(0, min(
     int(os.environ.get("SUCHAK_SET_ASIDE_EXAMPLES", "12")), 40))
+# Same-event clustering. Outlets share words while they report the fact
+# ("CEO resigns") and stop sharing them once they move to its angles
+# ("shares dip after top boss exit", "what the succession means"), so
+# word overlap -- the fetch-time rule -- cannot club a story's second
+# day. The classifier reads every item anyway, so it is shown the stories
+# already on the queue and asked which one, if any, this item continues.
+# How far back those stories are drawn from, and how many are shown.
+EVENT_WINDOW_DAYS = max(1, int(os.environ.get("SUCHAK_EVENT_WINDOW_DAYS", "14")))
+EVENT_CANDIDATES = max(0, min(
+    int(os.environ.get("SUCHAK_EVENT_CANDIDATES", "50")), 120))
+# Never folded into a story, and never offered as one: social posts (ten
+# complaints are ten data points) and exchange filings (formulaic titles).
+# The same pair as ingest.NO_MERGE_TYPES, kept here because ingest imports
+# this module.
+NO_FOLD_TYPES = {"social", "filing"}
 DEFAULT_EXCLUSION_RULES = (
     "Stock recommendations and share-price commentary: buy/sell/hold calls, "
     "brokerage target prices, 'stocks to pick' listicles, technical-analysis "
@@ -142,6 +157,7 @@ VERDICT_SCHEMA = {
         "excluded": {"type": "boolean"},
         "exclusion_reason": {"type": ["string", "null"]},
         "like_set_aside": {"type": ["boolean", "null"]},
+        "same_event_as": {"type": ["integer", "null"]},
         "relationships": {
             "type": "array",
             "items": {
@@ -159,9 +175,49 @@ VERDICT_SCHEMA = {
         "relevant", "relevance_score", "risk_areas", "severity",
         "actionability", "geography", "summary", "factor_matches",
         "complaint_topics", "relationships", "excluded", "exclusion_reason",
+        "like_set_aside", "same_event_as",
     ],
     "additionalProperties": False,
 }
+
+# One call per batch of stored items: which of them report one occurrence.
+# Used by scripts/re_dedup.py --smart to tidy items classified before the
+# classifier learned to fold stories as they arrive.
+GROUP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "groups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string"},
+                    "item_ids": {"type": "array", "items": {"type": "integer"}},
+                },
+                "required": ["label", "item_ids"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["groups"],
+    "additionalProperties": False,
+}
+
+# What "the same event" means, in one place, so the fold-as-you-classify
+# path and the batch re-cluster path cannot drift apart.
+SAME_EVENT_RULE = (
+    "The same occurrence means the same resignation, the same penalty, the "
+    "same outage, the same fraud case, the same results announcement. "
+    "Reaction pieces, share-price and market fallout, analysis, opinion, "
+    "explainers, statements and follow-up reporting on one occurrence all "
+    "belong to it, however different the angle or the wording, and whatever "
+    "language they are written in. A different occurrence of the same kind "
+    "is NOT the same event: another penalty, a later quarter's results, a "
+    "different person leaving, a separate outage on another day. A new "
+    "development that would stand as its own headline -- a successor "
+    "appointed, a case filed over the fraud, the regulator's order after the "
+    "incident -- is also its own event."
+)
 
 _client = None
 
@@ -264,7 +320,7 @@ def _build_system(entity, factors, examples,
                   severity_defs: str = DEFAULT_SEVERITY_DEFS,
                   exclusion_rules: str = DEFAULT_EXCLUSION_RULES,
                   risk_defs: str = DEFAULT_RISK_DEFS,
-                  set_aside: str = "") -> str:
+                  set_aside: str = "", events: str = "") -> str:
     lines = [
         "You are a supervisory triage assistant for the Banking Supervisor of India.",
         "You classify public news items about a regulated entity so a small "
@@ -307,6 +363,8 @@ def _build_system(entity, factors, examples,
         "such a type; otherwise excluded=false and exclusion_reason=null. "
         "Genuine company events are never excluded merely because the share "
         "price is also mentioned.",
+        "like_set_aside and same_event_as: null unless an instruction below "
+        "asks you to set them.",
     ]
     if factors:
         lines += ["", "User-defined Factors — list each factor whose conditions the item meets "
@@ -328,6 +386,8 @@ def _build_system(entity, factors, examples,
             except (KeyError, IndexError):
                 pass
             lines.append(f'- "{r["title"]}" -> {label}; risk areas: {areas}; {act}{sev}{action}')
+    if events:
+        lines.append(events)
     return "\n".join(lines)
 
 
@@ -366,11 +426,115 @@ def _render_set_aside(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def recent_events(db, entity_id: int, exclude_id: int | None = None,
+                  near: str | None = None) -> list[dict]:
+    """Stories already on the queue that a new item might continue: this
+    entity's own items fetched in the last EVENT_WINDOW_DAYS -- primaries
+    only (classified, not screened out, not social or filings), returned
+    newest first.
+
+    When there are more than EVENT_CANDIDATES, the ones published closest
+    to `near` (the item's own date) are kept: coverage of one occurrence
+    clusters in time, so a 90-day backfill of a hundred items still shows
+    each item the stories of its own week rather than the last fifty
+    stored."""
+    if not EVENT_CANDIDATES:
+        return []
+    # created_at is SQLite's datetime('now') text, so compare in that shape
+    since = (datetime.now(timezone.utc)
+             - timedelta(days=EVENT_WINDOW_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    near = near or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    rows = q(db,
+             "SELECT id, title, summary, published_at FROM items"
+             " WHERE entity_id = ? AND gated_out = 0 AND status != 'new'"
+             "   AND source_type NOT IN ('social','filing')"
+             "   AND created_at >= ? AND id != ?"
+             " ORDER BY COALESCE(ABS(julianday(COALESCE(published_at, created_at))"
+             "                       - julianday(?)), 1e9), id DESC"
+             " LIMIT ?",
+             (entity_id, since, exclude_id or 0, near, EVENT_CANDIDATES))
+    out = [dict(r) for r in rows]
+    out.sort(key=lambda r: (r.get("published_at") or "", r["id"]), reverse=True)
+    return out
+
+
+def _event_line(r: dict) -> str:
+    title = " ".join((r.get("title") or "").split())
+    summary = " ".join((r.get("summary") or "").split())[:160]
+    date = (r.get("published_at") or "")[:10]
+    line = f'- [{r["id"]}]' + (f" {date}" if date else "") + f' "{title}"'
+    if summary and summary.lower() != title.lower():
+        line += f" -- {summary}"
+    return line
+
+
+def _render_events(rows: list[dict]) -> str:
+    if not rows:
+        return ""
+    lines = ["", "Stories already on this team's queue for this entity, "
+             "newest first, each with its number:"]
+    lines += [_event_line(r) for r in rows]
+    lines.append(
+        "If the item you are given reports the SAME occurrence as one of "
+        "these stories, set same_event_as to that story's number. "
+        + SAME_EVENT_RULE +
+        " When the item continues none of them, or you are unsure, set "
+        "same_event_as to null.")
+    return "\n".join(lines)
+
+
+def group_same_events(entity, rows: list[dict]) -> list[dict]:
+    """Which of these stored items report one occurrence? One model call
+    per batch. Returns [{"label", "item_ids"}] holding only groups of two
+    or more, ids limited to those offered, each id in one group at most.
+    Raises when the model cannot be reached -- the caller says so, rather
+    than reporting a quiet 'nothing to merge'."""
+    if len(rows) < 2:
+        return []
+    client = _get_client()
+    listing = "\n".join(_event_line(r) for r in rows)
+    resp = client.messages.create(
+        model=MODEL,
+        max_tokens=4096,
+        system=(
+            "You help a banking supervision team tidy its review queue. You "
+            "are given stored news items about one regulated entity -- "
+            f"{entity['name']} ({entity['kind']}) -- each with its number, "
+            "date, headline and one-line summary. Items may be in English or "
+            "an Indian language; judge them the same way. Group the items "
+            "that report the SAME occurrence. " + SAME_EVENT_RULE + " "
+            "Return only groups of two or more items and leave out items "
+            "that stand alone. Give each group a short label naming the "
+            "occurrence. When unsure whether two items are the same "
+            "occurrence, keep them apart."
+        ),
+        messages=[{"role": "user", "content": f"Items:\n{listing}"}],
+        output_config={"format": {"type": "json_schema", "schema": GROUP_SCHEMA}},
+    )
+    if resp.stop_reason == "refusal":
+        raise RuntimeError("model refused to group the items")
+    data = json.loads(next(b.text for b in resp.content if b.type == "text"))
+    offered = {r["id"] for r in rows}
+    seen: set[int] = set()
+    groups = []
+    for g in data.get("groups") or []:
+        ids = []
+        for i in g.get("item_ids") or []:
+            if isinstance(i, bool) or not isinstance(i, int):
+                continue
+            if i in offered and i not in seen:
+                ids.append(i)
+                seen.add(i)
+        if len(ids) >= 2:
+            groups.append({"label": (g.get("label") or "")[:120], "item_ids": ids})
+    return groups
+
+
 def _llm_classify(entity, factors, examples, title, snippet, source, published,
                   severity_defs: str = DEFAULT_SEVERITY_DEFS,
                   exclusion_rules: str = DEFAULT_EXCLUSION_RULES,
                   risk_defs: str = DEFAULT_RISK_DEFS,
-                  set_aside: str = ""):
+                  set_aside: str = "", events: str = ""):
     client = _get_client()
     user_msg = (
         f"Classify this item.\n"
@@ -383,7 +547,7 @@ def _llm_classify(entity, factors, examples, title, snippet, source, published,
         model=MODEL,
         max_tokens=2048,
         system=_build_system(entity, factors, examples, severity_defs,
-                             exclusion_rules, risk_defs, set_aside),
+                             exclusion_rules, risk_defs, set_aside, events),
         messages=[{"role": "user", "content": user_msg}],
         output_config={"format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
     )
@@ -511,14 +675,44 @@ def _record_gated_out(db, item, reason: str, classifier: str = "gate",
     )
 
 
-def classify_item(db, item) -> None:
-    """Classify one item row and persist the verdict."""
+def _fold_into(db, item, primary_id: int) -> bool:
+    """This item is another outlet's take on a story already on the queue:
+    it becomes a source on that story and its own row goes. Only ever
+    called for a row being classified for the first time, so no review,
+    ruling or to-do is lost; sources the fetch already attached to it
+    move across with it."""
+    primary = one(db, "SELECT id, entity_id, title FROM items WHERE id = ?",
+                  (primary_id,))
+    if not primary or primary["entity_id"] != item["entity_id"]:
+        return False
+    log.info("Folded %r into story #%s %r", item["title"][:60],
+             primary_id, primary["title"][:60])
+    with db:
+        db.execute(
+            "INSERT INTO item_sources (item_id, url, source_name, title,"
+            " published_at) VALUES (?,?,?,?,?)",
+            (primary_id, item["url"], item["source_name"], item["title"],
+             item["published_at"]))
+        db.execute("UPDATE item_sources SET item_id = ? WHERE item_id = ?",
+                   (primary_id, item["id"]))
+        db.execute("DELETE FROM items WHERE id = ?", (item["id"],))
+    return True
+
+
+def classify_item(db, item) -> str:
+    """Classify one item row and persist the verdict. Returns what became
+    of the item: 'classified', 'gated' (screened out, kept for audit) or
+    'folded' (merged as a source into a story already on the queue)."""
     entity = one(db, "SELECT * FROM entities WHERE id = ?", (item["entity_id"],))
 
     try:
         source_type = item["source_type"] or "news"
     except (KeyError, IndexError):
         source_type = "news"
+    try:
+        human_ruled = item["attribution"] == "human"
+    except (KeyError, IndexError):
+        human_ruled = False
     # Sources whose attribution comes from the request rather than from the
     # text skip the screen. RBI releases and exchange filings are routed to
     # an entity deterministically by the registry. Social posts are collected
@@ -532,10 +726,6 @@ def classify_item(db, item) -> None:
         try:
             keep, excluded, reason = _gate(entity, item["title"],
                                            item["source_name"], exclusion_rules)
-            try:
-                human_ruled = item["attribution"] == "human"
-            except (KeyError, IndexError):
-                human_ruled = False
             if not keep and human_ruled:
                 # A team member has ruled this item IS the entity's -- the
                 # cheap screen does not get to overrule that. The negative
@@ -548,12 +738,12 @@ def classify_item(db, item) -> None:
                 log.info("Gated out %r for %s: %s",
                          item["title"][:60], entity["name"], reason)
                 _record_gated_out(db, item, reason)
-                return
+                return "gated"
             if excluded:
                 log.info("Negative-list exclusion %r for %s: %s",
                          item["title"][:60], entity["name"], reason)
                 _record_gated_out(db, item, f"negative list: {reason}")
-                return
+                return "gated"
         except Exception as exc:
             # never let the screen block the pipeline; fall through to
             # full classification, which makes its own relevance judgment
@@ -564,6 +754,14 @@ def classify_item(db, item) -> None:
     examples = similar_reviewed(db, item["entity_id"], f"{item['title']} {item['snippet'] or ''}")
     severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
     risk_defs = get_setting(db, RISK_DEFS_KEY, DEFAULT_RISK_DEFS)
+    # The stories this item might continue. None for social posts and
+    # filings (see NO_FOLD_TYPES), and none for an item a team member has
+    # just attributed by hand: they are looking at that very row, and it
+    # must not vanish under another story's sources while they watch.
+    events = ([] if (source_type in NO_FOLD_TYPES or human_ruled)
+              else recent_events(db, item["entity_id"], item["id"],
+                                 item["published_at"]))
+    offered = {r["id"] for r in events}
     try:
         verdict, classifier, model = _llm_classify(
             entity, factors, examples,
@@ -574,6 +772,7 @@ def classify_item(db, item) -> None:
             # rulings are about social noise.
             _render_set_aside(set_aside_examples(db, item["entity_id"]))
             if item["source_type"] == "social" else "",
+            events=_render_events(events),
         )
     except Exception as exc:  # missing key, network, rate limit, refusal, bad JSON
         log.warning("LLM classification failed (%s: %s); using heuristic", type(exc).__name__, exc)
@@ -588,7 +787,25 @@ def classify_item(db, item) -> None:
                  item["title"][:60], entity["name"], reason)
         _record_gated_out(db, item, f"negative list: {reason}",
                           classifier=classifier, model=model)
-        return
+        return "gated"
+
+    # Same story, another outlet or another angle: fold it into the story
+    # already on the queue. Only a number the model was actually offered
+    # counts -- an invented one is ignored, and the item stands alone.
+    target = verdict.get("same_event_as") if classifier == "llm" else None
+    if isinstance(target, bool):
+        target = None
+    if target is not None:
+        try:
+            target = int(target)
+        except (TypeError, ValueError):
+            target = None
+    if target is not None and target in offered:
+        if _fold_into(db, item, target):
+            return "folded"
+    elif target is not None:
+        log.info("Ignored same_event_as=%r for %r: not a story that was offered",
+                 target, item["title"][:60])
 
     # What the reviewers taught it: a post of the same character as ones
     # they set aside is dropped before it reaches the tab. Auditable on
@@ -603,7 +820,7 @@ def classify_item(db, item) -> None:
                           "matches posts this team set aside as no use for "
                           "pattern-finding",
                           classifier=classifier, model=model)
-        return
+        return "gated"
 
     # A social post with no grievance in it is the social equivalent of an
     # irrelevant headline: a protein-deal thread that mentions the bank's
@@ -618,7 +835,7 @@ def classify_item(db, item) -> None:
                  item["title"][:60], entity["name"])
         _record_gated_out(db, item, "social post with no grievance in it",
                           classifier=classifier, model=model)
-        return
+        return "gated"
 
     x(
         db,
@@ -641,10 +858,24 @@ def classify_item(db, item) -> None:
             item["id"],
         ),
     )
+    return "classified"
+
+
+def classify_pending(db, limit: int = 100) -> dict:
+    """Classify everything still 'new', oldest first, so a story's first
+    report is on the queue by the time its later angles are read and can
+    fold into it. Returns how many were classified (or screened out) and
+    how many folded into an existing story."""
+    rows = q(db, "SELECT * FROM items WHERE status = 'new' ORDER BY id LIMIT ?", (limit,))
+    out = {"classified": 0, "folded": 0}
+    for row in rows:
+        if classify_item(db, row) == "folded":
+            out["folded"] += 1
+        else:
+            out["classified"] += 1
+    return out
 
 
 def classify_new_items(db, limit: int = 100) -> int:
-    rows = q(db, "SELECT * FROM items WHERE status = 'new' ORDER BY id LIMIT ?", (limit,))
-    for row in rows:
-        classify_item(db, row)
-    return len(rows)
+    done = classify_pending(db, limit)
+    return done["classified"] + done["folded"]

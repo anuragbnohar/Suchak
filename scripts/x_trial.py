@@ -85,7 +85,10 @@ def main() -> int:
                 print("Cancelled. Nothing fetched, nothing billed.")
                 return 0
 
-        result = ingest.ingest_entity(db, entity, registry, channel="social")
+        # X is its own channel now (paid, never part of a social sweep);
+        # asking for "social" here would skip the one source this trial
+        # exists to run and report "Fetched 0" as if X were quiet.
+        result = ingest.ingest_entity(db, entity, registry, channel="x")
         billed = result.get("billed", 0)
         print(f"\nFetched {billed} post(s) -> actual cost about "
               f"${billed * ingest.X_PRICE_PER_POST:.2f}")

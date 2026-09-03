@@ -130,6 +130,17 @@ X recent search is capped at 7 days by its API regardless.
   merge needs at least three shared distinctive words. To re-cluster items
   ingested before these rules: `python -m scripts.re_dedup` (reviewed items
   always survive as the primary).
+  Word overlap only clubs the first day's headlines ("CEO resigns" in six
+  outlets), not the story's later angles ("shares dip after top boss exit",
+  "what the succession means"). So the classifier clubs too: as each news
+  item is classified it is shown the stories already on the queue for that
+  entity (last 14 days) and, when the item continues one of them — a
+  reaction, an explainer, a follow-up — it is folded in as another source
+  instead of becoming a fresh item. Only a story the classifier was
+  actually shown can be chosen. To club items stored before this:
+  `python -m scripts.re_dedup --smart` (asks the model about the last 90
+  days, prints every proposed group, and asks before changing anything;
+  reviewed items always survive).
   De-duplication spans source types, so a video and an article about the same
   event become one item. Social posts are excluded from this: ten customers
   complaining about blocked cards is ten data points, not one story told ten
