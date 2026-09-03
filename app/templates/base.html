@@ -13,15 +13,18 @@
   {% set path = request.url.path %}
   {% set office_q = request.query_params.get('office') %}
   {% set is_rd_user = user.rbi_office and user.role != 'superadmin' %}
-  {% set dos_paths = ['/dashboard', '/overview', '/queue', '/social', '/insights', '/todo'] %}
+  {% set dos_paths = ['/dashboard', '/queue', '/social', '/insights', '/todo'] %}
   {% set rd_ctx = path.startswith('/rd') or (office_q and path in ['/queue', '/social'])
                   or (is_rd_user and path in dos_paths) %}
-  {% set dos_ctx = (not rd_ctx) and (path == '/' or path in dos_paths
+  {% set ov_ctx = (not rd_ctx) and path == '/overview' %}
+  {% set dos_ctx = (not rd_ctx) and (not ov_ctx) and (path == '/' or path in dos_paths
                     or path.startswith('/item/') or path.startswith('/views')) %}
   <nav class="nav">
+    {% if user.role == 'superadmin' %}
+    <a class="{% if ov_ctx %}nav-active{% endif %}" href="/overview">Overview</a>
+    {% endif %}
     {% if not is_rd_user %}
-    <a class="{% if dos_ctx %}nav-active{% endif %}"
-       href="{{ '/overview' if user.role == 'superadmin' else '/dashboard' }}">DoS View</a>
+    <a class="{% if dos_ctx %}nav-active{% endif %}" href="/dashboard">DoS View</a>
     {% endif %}
     {% if user.role == 'superadmin' or user.rbi_office %}
     <a class="{% if rd_ctx %}nav-active{% endif %}" href="/rd">RD View</a>
@@ -42,7 +45,6 @@
   {% elif dos_ctx %}
   <nav class="nav subnav">
     <a href="/dashboard">Dashboard</a>
-    {% if user.role == 'superadmin' %}<a href="/overview">Overview</a>{% endif %}
     <a href="/queue">Queue</a>
     <a href="/social">Social media</a>
     <a href="/insights">Insights</a>
