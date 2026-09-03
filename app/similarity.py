@@ -180,12 +180,18 @@ def title_similarity(a: str, b: str) -> float:
 
 
 def rank_similar(query: str, candidates: list[tuple], top_k: int = 3,
-                 min_score: float = 0.12) -> list[tuple]:
+                 min_score: float = 0.12, exclude: set | None = None) -> list[tuple]:
     """Rank (key, text) candidates against a query with TF-IDF weighting
-    computed over the candidate set. Returns [(key, score)] best-first."""
+    computed over the candidate set. Returns [(key, score)] best-first.
+
+    `exclude` drops tokens before scoring — the entity's own name, which
+    appears in every headline about it and would otherwise make a branch
+    opening look "similar" to a penalty just because both name the bank."""
     if not candidates:
         return []
-    docs = {key: tokenize(text) for key, text in candidates}
+    drop = exclude or set()
+    docs = {key: [t for t in tokenize(text) if t not in drop]
+            for key, text in candidates}
     n_docs = len(docs) + 1
     df = Counter(term for toks in docs.values() for term in set(toks))
 
@@ -198,7 +204,7 @@ def rank_similar(query: str, candidates: list[tuple], top_k: int = 3,
             for t, c in tf.items()
         }
 
-    qv = Counter(vec(tokenize(query)))
+    qv = Counter(vec([t for t in tokenize(query) if t not in drop]))
     scored = [(key, _cosine(qv, Counter(vec(toks)))) for key, toks in docs.items()]
     scored = [(k, s) for k, s in scored if s >= min_score]
     scored.sort(key=lambda p: p[1], reverse=True)

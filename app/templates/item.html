@@ -145,9 +145,9 @@
     </section>
     {% endif %}
 
-    {% if similar %}
     <section class="panel">
       <h2>Similar reviewed items</h2>
+      {% if similar %}
       {% if suggestion %}
       <p class="suggestion">Suggested action: <strong>{{ suggestion }}</strong></p>
       <p class="meta-dim small">Based on how this team handled similar items.</p>
@@ -162,8 +162,13 @@
         </li>
         {% endfor %}
       </ul>
+      {% else %}
+      <p class="meta-dim small">No reviewed item resembles this one yet.
+        As your team records reviews, the closest past rulings appear here
+        with the action taken — and the classifier is shown the same rulings
+        as precedents when it judges new items.</p>
+      {% endif %}
     </section>
-    {% endif %}
 
     <section class="panel">
       <h2>{{ 'Update review' if item.status in ('reviewed','dismissed') else 'Record your review' }}</h2>

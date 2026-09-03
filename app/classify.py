@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from . import taxonomy
 from .db import get_setting, one, q, x
 from .matching import Registry
-from .similarity import rank_similar
+from .similarity import alias_tokens, rank_similar
 
 log = logging.getLogger("suchak.classify")
 
@@ -299,9 +299,13 @@ def similar_reviewed(db, entity_id: int, text: str, top_k: int = 3) -> list:
     )
     if not rows:
         return []
+    # The entity's own name is in every headline about it, so it says
+    # nothing about whether two stories are alike; score on the rest.
+    ent = one(db, "SELECT aliases FROM entities WHERE id = ?", (entity_id,))
+    stop = alias_tokens(json.loads(ent["aliases"])) if ent else set()
     by_id = {r["id"]: r for r in rows}
     candidates = [(r["id"], f"{r['title']} {r['summary'] or ''}") for r in rows]
-    ranked = rank_similar(text, candidates, top_k=top_k)
+    ranked = rank_similar(text, candidates, top_k=top_k, exclude=stop)
     return [(by_id[key], score) for key, score in ranked]
 
 
