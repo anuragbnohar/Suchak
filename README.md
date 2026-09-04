@@ -45,7 +45,13 @@ own Fetch button, and nothing is collected until you press one. Set
 remember it fetches *every* loaded entity and bills for it unattended.
 
 Each Fetch button has a **lookback picker** (7 / 30 / 90 / 365 days) applying
-to that fetch alone — nothing standing changes and no restart is needed. Use
+to that fetch alone — nothing standing changes and no restart is needed. The
+news picker defaults to 7 days and the social picker to the standing social
+window (365 days), because complaint patterns build over months; the
+completion pop-up states the window that actually ran. The all-entities
+sweep's picker sets the news window only — social keeps its full window
+there, so a routine sweep never silently discards a year of complaint
+history. Use
 it when an entity comes back empty: a small cooperative bank can go months
 without press coverage, and a standing 7-day window cannot tell you that.
 Re-fetching is incremental, so a wider window only classifies — and only

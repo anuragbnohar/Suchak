@@ -131,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.7"
+APP_BUILD = "2026-09-04.8"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1480,9 +1480,13 @@ def entities_page(request: Request):
             if r["source"] not in seen:
                 seen.add(r["source"])
                 broadcast.append(r)
+        social_default = tuning.load(db)["social_lookback_days"]
+        social_choices = (LOOKBACK_CHOICES if social_default in LOOKBACK_CHOICES
+                          else tuple(sorted(set(LOOKBACK_CHOICES) | {social_default})))
         return render(request, "entities.html", user=user, rows=rows,
                       broadcast=broadcast, fetch_minutes=FETCH_MINUTES,
-                      lookback_choices=LOOKBACK_CHOICES, lookback_default=LOOKBACK_DAYS)
+                      lookback_choices=LOOKBACK_CHOICES, lookback_default=LOOKBACK_DAYS,
+                      social_choices=social_choices, social_default=social_default)
     finally:
         db.close()
 

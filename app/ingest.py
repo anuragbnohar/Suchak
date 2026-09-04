@@ -100,7 +100,8 @@ REJECT_STORE_MIN = float(os.environ.get("SUCHAK_REJECT_STORE_MIN", "0"))
 # Social complaints age differently from news: a complaint forum's value is
 # the pattern across months, and a bank the size of these gets few posts a
 # week, so the news window (7 days by default) would return almost nothing.
-# One year, always -- the lookback picker widens news, not this.
+# One year by default. The picker beside the Fetch social button narrows or
+# confirms this for that fetch; an all-channel sweep always keeps it.
 SOCIAL_LOOKBACK_DAYS = int(os.environ.get("SUCHAK_SOCIAL_LOOKBACK_DAYS", "365"))
 
 
@@ -792,8 +793,8 @@ def fetch_youtube_comments(registry: Registry, entity, days: int | None = None) 
 
 def fetch_reddit(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """Posts naming the entity on Reddit, site-wide and in the Indian
-    finance subreddits. Always the last SOCIAL_LOOKBACK_DAYS, whatever
-    the news lookback: `days` widens news feeds, not social ones.
+    finance subreddits. `days` is the window the user picked for this
+    social fetch; without one, the standing social window applies.
 
     Needs no key and no account, so unlike the X collector there is nothing
     here that can be restricted for looking automated. What it returns is
@@ -802,13 +803,15 @@ def fetch_reddit(registry: Registry, entity, days: int | None = None) -> list[di
     if not reddit_source.ENABLED:
         return []
     return reddit_source.search(registry, entity["id"],
-                                tun("social_lookback_days", SOCIAL_LOOKBACK_DAYS),
+                                days or tun("social_lookback_days",
+                                            SOCIAL_LOOKBACK_DAYS),
                                 tun("reddit_max", reddit_source.MAX_POSTS))
 
 
 def fetch_forums(registry: Registry, entity, days: int | None = None) -> list[dict]:
     """Complaints filed against the entity on consumercomplaints.in --
-    dated ones from the last SOCIAL_LOOKBACK_DAYS only. Undated entries
+    dated ones inside the window only (`days` if the user picked one for
+    this social fetch, else the standing social window). Undated entries
     are dropped there: the site dates recent complaints and leaves old
     ones blank, so undated cannot be shown to be recent.
 
@@ -819,15 +822,18 @@ def fetch_forums(registry: Registry, entity, days: int | None = None) -> list[di
     if not forums.ENABLED:
         return []
     return forums.search(registry, entity["id"],
-                         tun("social_lookback_days", SOCIAL_LOOKBACK_DAYS),
+                         days or tun("social_lookback_days",
+                                     SOCIAL_LOOKBACK_DAYS),
                          tun("forums_max", forums.MAX_ITEMS))
 
 
 def fetch_yt_comments_social(registry: Registry, entity, days: int | None = None) -> list[dict]:
-    """Social-channel wrapper: comments always cover the social window,
-    like the other complaint sources, whatever the news lookback."""
+    """Social-channel wrapper: comments cover the window the user picked
+    for this social fetch, else the standing social window -- the same
+    rule as the other complaint sources."""
     return fetch_youtube_comments(
-        registry, entity, tun("social_lookback_days", SOCIAL_LOOKBACK_DAYS))
+        registry, entity,
+        days or tun("social_lookback_days", SOCIAL_LOOKBACK_DAYS))
 
 
 SOURCES = {
@@ -945,10 +951,12 @@ def ingest_entity(db, entity, registry: Registry | None = None,
     if channel == "news":
         notes.append("news sources only")
     elif channel == "social":
-        # The lookback picker widens news; social always covers its own
-        # fixed year, so a days note here would describe the wrong window.
+        # The window this social fetch really uses: the picker beside the
+        # Fetch social button when one was chosen, else the standing
+        # social window. The pop-up must state the one that ran.
         notes.append(f"social sources only (last "
-                     f"{tun('social_lookback_days', SOCIAL_LOOKBACK_DAYS)} days)")
+                     f"{days or tun('social_lookback_days', SOCIAL_LOOKBACK_DAYS)}"
+                     " days)")
     elif channel == "x":
         notes.append(f"X only (last {X_RECENT_SEARCH_DAYS} days — X recent "
                      "search covers no more)")
@@ -973,8 +981,16 @@ def ingest_entity(db, entity, registry: Registry | None = None,
             continue
         if channel == "all" and SOURCE_CHANNELS[name] == "x":
             continue        # paid: an explicit X fetch only, never a sweep
+        # The picker governs the fetch it sits beside: news feeds always,
+        # social feeds only on an explicit social fetch. In an all-channel
+        # sweep the social sources keep their standing window -- the top
+        # picker there describes the news search, and narrowing a year of
+        # complaint history to its 7-day default would silently discard
+        # the very pattern the social window exists to keep.
+        src_days = (days if (SOURCE_CHANNELS[name] == "news"
+                             or channel == SOURCE_CHANNELS[name]) else None)
         try:
-            got = fetch(registry, entity, days)
+            got = fetch(registry, entity, src_days)
             candidates.extend(got)
             billed = sum(1 for c in got if c.get("billed"))
             if billed:
