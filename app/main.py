@@ -131,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.12"
+APP_BUILD = "2026-09-04.13"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1873,10 +1873,15 @@ def rd_view(request: Request):
                 "open": sum(1 for it in items if it["status"] in ("new", "classified")),
                 "top_risk": by_risk.most_common(1)[0][0] if by_risk else "\u2014",
                 "matching": len(shown),
-                # unfiltered: the five latest; severity-filtered: everything
-                # that matches, because the filter IS the reading list
-                "recent": sorted(shown, key=lambda it: it["published_at"] or "",
-                                 reverse=True)[:50 if sev else 5],
+                # Every item, every severity -- high first, newest within
+                # each band. The RD reads the office's full picture here,
+                # not a teaser; the severity and entity filters above are
+                # how it narrows.
+                "recent": sorted(
+                    sorted(shown, key=lambda it: it["published_at"] or "",
+                           reverse=True),
+                    key=lambda it: {"high": 0, "medium": 1}.get(
+                        it["severity_shown"], 2)),
                 "social_total": len(grievances),
                 "social_topics": [t for t, _ in Counter(
                     t for g in grievances for t in g["complaint_topics"]).most_common(3)],
