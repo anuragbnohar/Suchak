@@ -71,16 +71,42 @@ def _drain_pending_input() -> None:
 
 def merge_into(db, primary: dict, victim: dict) -> None:
     """The victim becomes one more source on the primary, sources already
-    attached to the victim move across, and the victim's own row goes."""
+    attached to the victim move across, and the victim's own row goes.
+    When the victim is from a trusted outlet and the primary's face is
+    not (and no person has reviewed the primary), the trusted article
+    becomes the story's face and the old face stays as a source link."""
+    promote = (victim.get("source_tier") in ("trusted", "official")
+               and primary.get("source_tier") not in ("trusted", "official")
+               and not primary.get("reviewed_at"))
     with db:
-        db.execute(
-            "INSERT INTO item_sources (item_id, url, source_name, title,"
-            " published_at) VALUES (?,?,?,?,?)",
-            (primary["id"], victim["url"], victim["source_name"],
-             victim["title"], victim["published_at"]))
+        # Order matters: the victim row must be gone before the primary
+        # may take over its URL -- items are unique per (entity, url).
         db.execute("UPDATE item_sources SET item_id = ? WHERE item_id = ?",
                    (primary["id"], victim["id"]))
         db.execute("DELETE FROM items WHERE id = ?", (victim["id"],))
+        if promote:
+            db.execute(
+                "INSERT INTO item_sources (item_id, url, source_name, title,"
+                " published_at, source_tier) VALUES (?,?,?,?,?,?)",
+                (primary["id"], primary["url"], primary["source_name"],
+                 primary["title"], primary["published_at"],
+                 primary.get("source_tier") or ""))
+            db.execute(
+                "UPDATE items SET title=?, url=?, source_name=?,"
+                " source_tier=?, snippet=?, published_at=? WHERE id=?",
+                (victim["title"], victim["url"], victim["source_name"],
+                 victim["source_tier"], victim.get("snippet"),
+                 victim["published_at"], primary["id"]))
+            for k in ("title", "url", "source_name", "source_tier",
+                      "snippet", "published_at"):
+                primary[k] = victim.get(k)
+        else:
+            db.execute(
+                "INSERT INTO item_sources (item_id, url, source_name, title,"
+                " published_at, source_tier) VALUES (?,?,?,?,?,?)",
+                (primary["id"], victim["url"], victim["source_name"],
+                 victim["title"], victim["published_at"],
+                 victim.get("source_tier") or ""))
 
 
 def merge_cluster(db, members: list[dict], apply: bool) -> tuple[int, bool]:
@@ -105,7 +131,8 @@ def cluster_entity(db, entity, apply: bool) -> dict:
     stop = alias_tokens(json.loads(entity["aliases"]))
     rows = [dict(r) for r in q(
         db,
-        "SELECT id, title, url, source_name, published_at, reviewed_at"
+        "SELECT id, title, url, source_name, source_tier, snippet,"
+        "       published_at, reviewed_at"
         " FROM items WHERE entity_id = ? AND gated_out = 0"
         "   AND source_type NOT IN ('social','filing')"
         " ORDER BY published_at, id",
@@ -173,7 +200,8 @@ def smart_rows(db, entity, days: int) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     return [dict(r) for r in q(
         db,
-        "SELECT id, title, summary, url, source_name, published_at, reviewed_at"
+        "SELECT id, title, summary, url, source_name, source_tier, snippet,"
+        "       published_at, reviewed_at"
         " FROM items WHERE entity_id = ? AND gated_out = 0"
         "   AND source_type NOT IN ('social','filing')"
         "   AND substr(COALESCE(published_at, created_at), 1, 10) >= ?"

@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS item_sources (
     url          TEXT NOT NULL,
     source_name  TEXT,
     title        TEXT,
-    published_at TEXT
+    published_at TEXT,
+    source_tier  TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_item_sources_item ON item_sources(item_id);
 
@@ -216,6 +217,9 @@ MIGRATIONS = [
     ("items", "action_closed_by", "INTEGER REFERENCES users(id)"),
     ("items", "action_close_note", "TEXT"),
     ("entities", "languages", "TEXT NOT NULL DEFAULT '[\"en\"]'"),
+    # Attached sources carry their own trust tier, so the queue's trusted
+    # filter can find a story whose trusted report arrived second.
+    ("item_sources", "source_tier", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

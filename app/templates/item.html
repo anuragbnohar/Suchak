@@ -75,7 +75,7 @@
         <li><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.source_name or 'Source' }}</a>
             <span class="meta-dim">{{ item.published_at | timeago }}</span></li>
         {% for s in sources %}
-        <li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.source_name or 'Source' }}</a>
+        <li>{% if s.source_tier in ('official','trusted') %}<span class="ok-chip" title="trusted source">✓</span> {% endif %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.source_name or 'Source' }}</a>
             <span class="meta-dim">{{ s.published_at | timeago }}</span></li>
         {% endfor %}
       </ul>

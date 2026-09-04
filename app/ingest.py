@@ -167,6 +167,10 @@ YT_LAST: dict = {}
 # query is written to be narrow and the result count is capped hard. Recent
 # search only covers the last 7 days regardless of SUCHAK_LOOKBACK_DAYS.
 X_SEARCH = "https://api.x.com/2/tweets/search/recent"
+# The windows the X picker offers. X recent search reaches back 7 days at
+# most, so unlike news this picker can only narrow -- useful because X
+# bills per post read, and a 1-day check costs a fraction of a week.
+X_LOOKBACK_CHOICES = (1, 3, 7)
 # X is OFF unless explicitly switched on -- a bearer token alone is not
 # enough, so a token left in the environment can never start spending by
 # accident. Set SUCHAK_X_ENABLED=1 (and a token) to turn it back on.
@@ -444,7 +448,7 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
         return []
 
     since = datetime.now(timezone.utc) - timedelta(
-        days=min(effective_days(days) or X_RECENT_SEARCH_DAYS, X_RECENT_SEARCH_DAYS))
+        days=max(1, min(days or X_RECENT_SEARCH_DAYS, X_RECENT_SEARCH_DAYS)))
     # The author's handle is a separate purchase: X prices user records
     # above posts, and a tweet's link needs only its id. Off by default;
     # the Settings page turns it on for whoever wants @who on the card.
@@ -958,8 +962,12 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                      f"{days or tun('social_lookback_days', SOCIAL_LOOKBACK_DAYS)}"
                      " days)")
     elif channel == "x":
-        notes.append(f"X only (last {X_RECENT_SEARCH_DAYS} days — X recent "
-                     "search covers no more)")
+        xwin = max(1, min(days or X_RECENT_SEARCH_DAYS, X_RECENT_SEARCH_DAYS))
+        if xwin < X_RECENT_SEARCH_DAYS:
+            notes.append(f"X only (last {xwin} day{'s' if xwin != 1 else ''})")
+        else:
+            notes.append(f"X only (last {X_RECENT_SEARCH_DAYS} days — X recent "
+                         "search covers no more)")
         if not (X_ENABLED and X_BEARER):
             notes.append("X is switched off: set SUCHAK_X_BEARER and "
                          "SUCHAK_X_ENABLED=1 on this computer")
@@ -1119,6 +1127,12 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         if not published and cand["source_type"] != "social":
             published = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+        # Where this outlet stands on the team's trusted list -- used for
+        # the new row, for the attached-source record on a merge, and to
+        # decide whether this article should become the story's face.
+        tier = tier_for(cand["source_type"], cand["source_name"], link,
+                        trusted_norms)
+
         # A video and an article about the same event are the same event, so
         # duplicate detection deliberately spans source types -- an RBI
         # penalty release merges with the news coverage of that penalty.
@@ -1142,9 +1156,31 @@ def ingest_entity(db, entity, registry: Registry | None = None,
         if dup_id and best >= DUP_THRESHOLD and (
                 shared >= DUP_MIN_SHARED
                 or (shared >= 2 and strong >= DUP_MIN_STRONG)):
-            x(db, "INSERT INTO item_sources (item_id, url, source_name, title, published_at)"
-                  " VALUES (?,?,?,?,?)",
-              (dup_id, link, cand["source_name"], title, published))
+            # A trusted outlet's report of the story becomes its face on
+            # the queue, with the earlier face kept as one more source
+            # link -- unless a person has already reviewed the item, in
+            # which case what they read must not change under them.
+            primary = one(db, "SELECT title, url, source_name, source_tier,"
+                              " published_at, reviewed_at, status"
+                              " FROM items WHERE id = ?", (dup_id,))
+            promote = (tier in ("trusted", "official")
+                       and primary["source_tier"] not in ("trusted", "official")
+                       and not primary["reviewed_at"]
+                       and primary["status"] in ("new", "classified"))
+            if promote:
+                x(db, "INSERT INTO item_sources (item_id, url, source_name,"
+                      " title, published_at, source_tier) VALUES (?,?,?,?,?,?)",
+                  (dup_id, primary["url"], primary["source_name"],
+                   primary["title"], primary["published_at"],
+                   primary["source_tier"]))
+                x(db, "UPDATE items SET title=?, url=?, source_name=?,"
+                      " source_tier=?, snippet=?, published_at=? WHERE id=?",
+                  (title, link, cand["source_name"], tier,
+                   cand["snippet"][:500], published, dup_id))
+            else:
+                x(db, "INSERT INTO item_sources (item_id, url, source_name,"
+                      " title, published_at, source_tier) VALUES (?,?,?,?,?,?)",
+                  (dup_id, link, cand["source_name"], title, published, tier))
             # keep this variant's wording in the pool, mapped to the same
             # primary: a third outlet's angle may resemble it more than the
             # primary's headline (transitive clustering)
@@ -1157,9 +1193,7 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 "INSERT INTO items (entity_id, title, url, source_name, snippet,"
                 " published_at, source_type, source_tier) VALUES (?,?,?,?,?,?,?,?)",
                 (entity["id"], title, link, cand["source_name"],
-                 cand["snippet"][:500], published, cand["source_type"],
-                 tier_for(cand["source_type"], cand["source_name"], link,
-                          trusted_norms)),
+                 cand["snippet"][:500], published, cand["source_type"], tier),
             )
             recent.append({"id": new_id, "title": title,
                            "source_type": cand["source_type"]})

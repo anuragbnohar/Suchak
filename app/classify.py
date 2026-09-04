@@ -684,22 +684,49 @@ def _fold_into(db, item, primary_id: int) -> bool:
     it becomes a source on that story and its own row goes. Only ever
     called for a row being classified for the first time, so no review,
     ruling or to-do is lost; sources the fetch already attached to it
-    move across with it."""
-    primary = one(db, "SELECT id, entity_id, title FROM items WHERE id = ?",
-                  (primary_id,))
+    move across with it. A trusted outlet's article becomes the story's
+    face -- unless a person has already reviewed the story, whose face
+    must not change under them."""
+    primary = one(db, "SELECT id, entity_id, title, url, source_name,"
+                      " source_tier, published_at, reviewed_at, status"
+                      " FROM items WHERE id = ?", (primary_id,))
     if not primary or primary["entity_id"] != item["entity_id"]:
         return False
-    log.info("Folded %r into story #%s %r", item["title"][:60],
-             primary_id, primary["title"][:60])
+    try:
+        item_tier = item["source_tier"] or ""
+    except (KeyError, IndexError):
+        item_tier = ""
+    promote = (item_tier in ("trusted", "official")
+               and primary["source_tier"] not in ("trusted", "official")
+               and not primary["reviewed_at"]
+               and primary["status"] in ("new", "classified"))
+    log.info("Folded %r into story #%s %r%s", item["title"][:60],
+             primary_id, primary["title"][:60],
+             " (trusted source becomes the face)" if promote else "")
     with db:
-        db.execute(
-            "INSERT INTO item_sources (item_id, url, source_name, title,"
-            " published_at) VALUES (?,?,?,?,?)",
-            (primary_id, item["url"], item["source_name"], item["title"],
-             item["published_at"]))
+        # Order matters: the folded row must be gone before the primary
+        # may take over its URL -- items are unique per (entity, url).
         db.execute("UPDATE item_sources SET item_id = ? WHERE item_id = ?",
                    (primary_id, item["id"]))
         db.execute("DELETE FROM items WHERE id = ?", (item["id"],))
+        if promote:
+            db.execute(
+                "INSERT INTO item_sources (item_id, url, source_name, title,"
+                " published_at, source_tier) VALUES (?,?,?,?,?,?)",
+                (primary_id, primary["url"], primary["source_name"],
+                 primary["title"], primary["published_at"],
+                 primary["source_tier"]))
+            db.execute(
+                "UPDATE items SET title=?, url=?, source_name=?,"
+                " source_tier=?, snippet=?, published_at=? WHERE id=?",
+                (item["title"], item["url"], item["source_name"], item_tier,
+                 item["snippet"], item["published_at"], primary_id))
+        else:
+            db.execute(
+                "INSERT INTO item_sources (item_id, url, source_name, title,"
+                " published_at, source_tier) VALUES (?,?,?,?,?,?)",
+                (primary_id, item["url"], item["source_name"], item["title"],
+                 item["published_at"], item_tier))
     return True
 
 

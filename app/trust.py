@@ -97,7 +97,20 @@ def recompute_source_tiers(db) -> int:
         tier = tier_for(r["source_type"], r["source_name"], r["url"], trusted)
         if tier != (r["source_tier"] or ""):
             changes.append((tier, r["id"]))
-    if changes:
+    # Attached sources too, so the trusted filter can find a story whose
+    # trusted report is one of the links rather than the face. The tier is
+    # judged with the primary item's source_type -- the attached row does
+    # not record its own.
+    srows = q(db, "SELECT s.id, s.source_name, s.url, s.source_tier,"
+                  " i.source_type FROM item_sources s JOIN items i ON i.id = s.item_id")
+    schanges = []
+    for r in srows:
+        tier = tier_for(r["source_type"], r["source_name"], r["url"], trusted)
+        if tier != (r["source_tier"] or ""):
+            schanges.append((tier, r["id"]))
+    if changes or schanges:
         with db:
             db.executemany("UPDATE items SET source_tier = ? WHERE id = ?", changes)
-    return len(changes)
+            db.executemany("UPDATE item_sources SET source_tier = ? WHERE id = ?",
+                           schanges)
+    return len(changes) + len(schanges)

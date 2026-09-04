@@ -29,7 +29,7 @@ from .classify import (classify_item,
                        similar_reviewed, suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
-from .ingest import (CHANNELS, LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, SOCIAL_LOOKBACK_DAYS,
+from .ingest import (CHANNELS, LOOKBACK_CHOICES, X_LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, SOCIAL_LOOKBACK_DAYS,
                      X_BEARER, X_ENABLED, X_MAX_POSTS, X_PRICE_PER_POST,
                      run_cycle)
 from .seed import seed_if_empty
@@ -131,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.8"
+APP_BUILD = "2026-09-04.9"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -367,7 +367,13 @@ def queue(request: Request):
             where.append("i.relationships LIKE ?")
             params.append(f'%"name": "{org}"%')
         if src == "trusted":
-            where.append("i.source_tier IN ('official','trusted')")
+            # A story counts as trusted when its face is -- or when a
+            # trusted outlet's report is among its attached sources: the
+            # trusted article may simply have arrived second.
+            where.append("(i.source_tier IN ('official','trusted')"
+                         " OR EXISTS (SELECT 1 FROM item_sources ts"
+                         "    WHERE ts.item_id = i.id"
+                         "      AND ts.source_tier IN ('official','trusted')))")
         if complaints or topic:
             where.append("i.complaint_topics != '[]'")
         if topic:
@@ -1486,7 +1492,8 @@ def entities_page(request: Request):
         return render(request, "entities.html", user=user, rows=rows,
                       broadcast=broadcast, fetch_minutes=FETCH_MINUTES,
                       lookback_choices=LOOKBACK_CHOICES, lookback_default=LOOKBACK_DAYS,
-                      social_choices=social_choices, social_default=social_default)
+                      social_choices=social_choices, social_default=social_default,
+                      x_choices=X_LOOKBACK_CHOICES)
     finally:
         db.close()
 
@@ -1958,7 +1965,8 @@ async def fetch_now(request: Request):
     # the standing default rather than erroring: a bad value must not be able
     # to turn one Fetch press into a year-wide scan.
     raw_days = (form.get("days") or "").strip()
-    days = int(raw_days) if raw_days.isdigit() and int(raw_days) in LOOKBACK_CHOICES else None
+    allowed = set(LOOKBACK_CHOICES) | set(X_LOOKBACK_CHOICES)
+    days = int(raw_days) if raw_days.isdigit() and int(raw_days) in allowed else None
     # News and social are separate buttons; anything unrecognised runs the
     # full fetch, same as before the split.
     channel = form.get("channel") or "all"
