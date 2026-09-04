@@ -515,6 +515,28 @@ def office_places(office: str) -> list[str]:
     return places
 
 
+def office_state_labels(office: str) -> set:
+    """The base state name(s) this office's region belongs to, carve
+    labels folded: "Maharashtra (Vidarbha and Marathwada)" counts as
+    "Maharashtra"."""
+    return {_state_label(st) for st in OFFICE_STATES.get(office, [])}
+
+
+def state_label_terms(office: str, labels) -> set:
+    """Lowercased forms of this office's bare state names (with their
+    Devanagari spellings) whose base label is in `labels`. These are the
+    generic words -- "Maharashtra", "\u0909\u0924\u094d\u0924\u0930 \u092a\u094d\u0930\u0926\u0947\u0936" -- that say which
+    state a story is in but nothing about which office's region."""
+    out: set = set()
+    for st in OFFICE_STATES.get(office, []):
+        base = _state_label(st)
+        if base in labels:
+            out.add(base.lower())
+            for d in DEVANAGARI.get(base, []):
+                out.add(d.lower())
+    return out
+
+
 def office_exclusions(office: str) -> list[str]:
     """Places that VETO an in-region match for this office.
 

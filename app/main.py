@@ -131,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.10"
+APP_BUILD = "2026-09-04.11"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1892,6 +1892,7 @@ def rd_view(request: Request):
         place_terms = geography.office_places(selected) if has_region_tab else []
         exclusions = geography.office_exclusions(selected) if has_region_tab else []
         if tab == "region" and place_terms:
+            sel_labels = geography.office_state_labels(selected)
             others = [e for e in every if selected not in entity_offices(e)]
             for e in others:
                 # A place that is part of the bank's own name proves
@@ -1899,6 +1900,18 @@ def rd_view(request: Request):
                 # Maharashtra headline mentions Maharashtra.
                 terms = [t for t in place_terms
                          if not place_mentions(e["name"], t)]
+                # A sister office's entity -- same state, other office --
+                # must not ride in on the bare state name either: every
+                # story about a Jalna bank can say "Maharashtra", and one
+                # that names no specific in-region place belongs to its
+                # own office's desk, not to Mumbai's.
+                e_labels = set()
+                for o in entity_offices(e):
+                    e_labels |= geography.office_state_labels(o)
+                shared = sel_labels & e_labels
+                if shared:
+                    drop = geography.state_label_terms(selected, shared)
+                    terms = [t for t in terms if t.lower() not in drop]
                 if not terms:
                     continue
                 # Merged stories may carry the place only in an attached
