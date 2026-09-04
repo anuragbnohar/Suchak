@@ -131,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.9"
+APP_BUILD = "2026-09-04.10"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1805,13 +1805,25 @@ def rd_view(request: Request):
 
         every = q(db, "SELECT * FROM entities ORDER BY name")
         if user["role"] == "superadmin":
-            offices = sorted({o for e in every for o in entity_offices(e)})
+            # Every office in the roster, not only those where an entity
+            # is headquartered: the in-region tab exists precisely for
+            # regions where the entities are NOT headquartered -- a PNB
+            # branch fraud in Saharanpur belongs on the Kanpur desk even
+            # when nothing is headquartered under Kanpur. Custom office
+            # names typed on entities stay listed too.
+            offices = sorted(set(RBI_OFFICES)
+                             | {o for e in every for o in entity_offices(e)})
             if any(not entity_offices(e) for e in every):
                 offices.append(UNASSIGNED)
         else:
             offices = [user["rbi_office"]]
 
-        selected = request.query_params.get("office") or (offices[0] if offices else "")
+        # Land on an office that has something to show: the first with an
+        # entity headquartered there. The full roster stays one click away.
+        hq_offices = {o for e in every for o in entity_offices(e)}
+        default_office = next((o for o in offices if o in hq_offices),
+                              offices[0] if offices else "")
+        selected = request.query_params.get("office") or default_office
         if selected and selected not in offices:
             raise HTTPException(403, "That office is not visible to you")
         has_region_tab = bool(selected) and selected != UNASSIGNED
@@ -1889,13 +1901,25 @@ def rd_view(request: Request):
                          if not place_mentions(e["name"], t)]
                 if not terms:
                     continue
+                # Merged stories may carry the place only in an attached
+                # outlet's headline -- the face that survived clustering
+                # need not be the one that named the district -- so the
+                # scan reads those headlines too, and the classifier's
+                # own geography verdict alongside.
+                extra = {r["item_id"]: r["t"] for r in q(
+                    db, "SELECT s.item_id, group_concat(COALESCE(s.title,''), ' ') AS t"
+                        " FROM item_sources s JOIN items i ON i.id = s.item_id"
+                        " WHERE i.entity_id = ? GROUP BY s.item_id",
+                    (e["id"],))}
                 for r in q(db, "SELECT * FROM items WHERE entity_id=?"
                                " AND gated_out = 0 AND source_type != 'social'",
                            (e["id"],)):
                     it = prep_item(r)
                     text = " ".join(filter(None, (it.get("title"),
                                                   it.get("snippet"),
-                                                  it.get("summary"))))
+                                                  it.get("summary"),
+                                                  it.get("geography"),
+                                                  extra.get(it["id"]))))
                     hit = next((t for t in terms if place_mentions(text, t)), None)
                     # A story that names a sister office's district belongs
                     # there, however loudly it also says the state's name.
