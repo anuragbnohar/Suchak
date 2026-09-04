@@ -131,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.11"
+APP_BUILD = "2026-09-04.12"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1826,7 +1826,11 @@ def rd_view(request: Request):
         selected = request.query_params.get("office") or default_office
         if selected and selected not in offices:
             raise HTTPException(403, "That office is not visible to you")
-        has_region_tab = bool(selected) and selected != UNASSIGNED
+        # An office explicitly mapped to no states (the Central Office)
+        # has no region to scan; a custom office name typed on an entity
+        # keeps the narrow name-match behaviour it always had.
+        has_region_tab = (bool(selected) and selected != UNASSIGNED
+                          and geography.OFFICE_STATES.get(selected) != [])
         tab = request.query_params.get("tab", "hq")
         if tab not in ("hq", "region") or (tab == "region" and not has_region_tab):
             tab = "hq"

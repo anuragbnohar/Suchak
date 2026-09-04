@@ -39,6 +39,10 @@ OFFICE_STATES = {
     "Kolkata": ["West Bengal", "Andaman and Nicobar"],
     "Lucknow": ["Uttar Pradesh"],
     "Mumbai": ["Maharashtra (excluding Vidarbha and Marathwada)"],
+    # A supervisory home, not a geography: the large institutions the
+    # Central Office supervises sit in Mumbai, but no state or district
+    # is "its region", so it carries no place list and no region tab.
+    "Central Office": [],
     "Nagpur": ["Maharashtra (Vidarbha and Marathwada)"],
     "New Delhi": ["Delhi", "Haryana"],
     "Panaji": ["Goa"],
@@ -469,7 +473,13 @@ def offices_for_district(place: str) -> list[tuple[str, list[str]]]:
     hit = _PLACE_INDEX.get(" ".join((place or "").split()).lower())
     if not hit:
         return []
-    return [(st, sorted(offs)) for st, offs in sorted(hit.items())]
+    out = [(st, sorted(offs)) for st, offs in sorted(hit.items())]
+    # A Mumbai headquarters may belong to the Central Office instead of
+    # (or besides) the Mumbai and Belapur offices -- the admin decides.
+    if canonical_district(place) == "Mumbai":
+        out = [(st, sorted(set(offs) | {"Central Office"}))
+               for st, offs in out]
+    return out
 
 
 def place_index() -> dict:
@@ -518,7 +528,12 @@ def office_places(office: str) -> list[str]:
 def office_state_labels(office: str) -> set:
     """The base state name(s) this office's region belongs to, carve
     labels folded: "Maharashtra (Vidarbha and Marathwada)" counts as
-    "Maharashtra"."""
+    "Maharashtra". The Central Office has no region, but its entities
+    sit in Mumbai, so for the sister-office rule it counts as
+    Maharashtra: their statewide coverage must not ride onto the Mumbai
+    or Belapur desks on the bare state name."""
+    if office == "Central Office":
+        return {"Maharashtra"}
     return {_state_label(st) for st in OFFICE_STATES.get(office, [])}
 
 
@@ -575,6 +590,9 @@ def office_exclusions(office: str) -> list[str]:
 def describe(office: str) -> str:
     """One line saying what region an office covers, for the RD View."""
     states = OFFICE_STATES.get(office)
+    if office in OFFICE_STATES and not states:
+        return ("centrally supervised entities — seated in Mumbai, "
+                "with no geographic region of its own")
     if not states:
         return office
     pretty = [s.replace(" (excluding Vidarbha and Marathwada)",

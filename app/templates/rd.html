@@ -25,8 +25,10 @@
   <nav class="tabs" aria-label="View">
     <a class="tab {% if tab == 'hq' %}active{% endif %}"
        href="/rd?office={{ selected | urlencode }}&tab=hq">Headquartered here</a>
+    {% if has_region_tab %}
     <a class="tab {% if tab == 'region' %}active{% endif %}"
        href="/rd?office={{ selected | urlencode }}&tab=region">In-region news · other entities</a>
+    {% endif %}
   </nav>
 </div>
 {% endif %}
