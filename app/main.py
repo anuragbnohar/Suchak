@@ -131,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.14"
+APP_BUILD = "2026-09-04.15"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -176,6 +176,14 @@ def render(request: Request, name: str, **ctx):
     if ctx.get("user") is not None and "todo_count" not in ctx:
         ctx["todo_count"] = _open_action_count(ctx["user"])
     return templates.TemplateResponse(request, name, ctx)
+
+
+def _present_kinds(entities) -> list[str]:
+    """Distinct entity types actually stored, in the roster's order, with
+    any legacy values after, alphabetically."""
+    order = {k: i for i, k in enumerate(taxonomy.ENTITY_KINDS)}
+    return sorted({e["kind"] for e in entities if e["kind"]},
+                  key=lambda k: (order.get(k, len(order)), k))
 
 
 def prep_item(row) -> dict:
@@ -1266,6 +1274,12 @@ def overview(request: Request):
         user = require_login(db, request)
         require_role(user, "superadmin")
         entities = q(db, "SELECT * FROM entities ORDER BY name")
+        kinds = _present_kinds(entities)
+        kind = request.query_params.get("kind", "")
+        if kind and kind not in kinds:
+            kind = ""
+        if kind:
+            entities = [e for e in entities if e["kind"] == kind]
         rows = []
         for e in entities:
             items = [prep_item(r) for r in q(
@@ -1307,12 +1321,19 @@ def overview(request: Request):
                 db, entities,
                 lambda it: it["risk_areas_shown"], taxonomy.RISK_AREAS)]
             risk_rows.sort(key=lambda r: (-r["high"], -r["total"], r["category"]))
-        unclassified = one(db, "SELECT COUNT(*) n FROM items"
-                               " WHERE status = 'new' AND gated_out = 0"
-                               " AND source_type != 'social'")["n"]
+        if kind:
+            unclassified = one(db, "SELECT COUNT(*) n FROM items i"
+                                   " JOIN entities e ON e.id = i.entity_id"
+                                   " WHERE i.status = 'new' AND i.gated_out = 0"
+                                   " AND i.source_type != 'social'"
+                                   " AND e.kind = ?", (kind,))["n"]
+        else:
+            unclassified = one(db, "SELECT COUNT(*) n FROM items"
+                                   " WHERE status = 'new' AND gated_out = 0"
+                                   " AND source_type != 'social'")["n"]
         return render(request, "overview.html", user=user, rows=rows, view=view,
                       sev_rows=sev_rows, risk_rows=risk_rows,
-                      unclassified=unclassified)
+                      unclassified=unclassified, kinds=kinds, kind=kind)
     finally:
         db.close()
 
@@ -1846,6 +1867,10 @@ def rd_view(request: Request):
         sort = request.query_params.get("sort", "sev")
         if sort not in ("sev", "date"):
             sort = "sev"
+        kinds = _present_kinds(every)
+        kind_f = request.query_params.get("kind", "")
+        if kind_f and kind_f not in kinds:
+            kind_f = ""
 
         if selected == UNASSIGNED:
             ents = [e for e in every if not entity_offices(e)]
@@ -1853,6 +1878,8 @@ def rd_view(request: Request):
             ents = [e for e in every if selected in entity_offices(e)]
         else:
             ents = []
+        if kind_f:
+            ents = [e for e in ents if e["kind"] == kind_f]
 
         rows = []
         sev_counts = Counter()
@@ -1910,7 +1937,8 @@ def rd_view(request: Request):
         exclusions = geography.office_exclusions(selected) if has_region_tab else []
         if tab == "region" and place_terms:
             sel_labels = geography.office_state_labels(selected)
-            others = [e for e in every if selected not in entity_offices(e)]
+            others = [e for e in every if selected not in entity_offices(e)
+                      and (not kind_f or e["kind"] == kind_f)]
             for e in others:
                 # A place that is part of the bank's own name proves
                 # nothing about where a story happened: every Bank of
@@ -1973,6 +2001,7 @@ def rd_view(request: Request):
             "region_desc": geography.describe(selected) if has_region_tab else "",
             "region_rows": region_rows,
             "sev": sev, "ent_filter": ent_filter, "sort": sort,
+            "kinds": kinds, "kind": kind_f,
             "sev_counts": sev_counts, "entity_choices": entity_choices,
             "msg": request.query_params.get("msg"),
         })

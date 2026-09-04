@@ -17,9 +17,21 @@
 <div class="toolbar">
   <nav class="tabs" aria-label="Group by">
     {% for v, label in [('entity','Entity'), ('severity','Severity'), ('risk','Risk area')] %}
-    <a class="tab {% if view == v %}active{% endif %}" href="/overview?view={{ v }}">{{ label }}</a>
+    <a class="tab {% if view == v %}active{% endif %}" href="/overview?view={{ v }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}">{{ label }}</a>
     {% endfor %}
   </nav>
+  <form method="get" action="/overview" class="fetch-form">
+    <input type="hidden" name="view" value="{{ view }}">
+    <label class="small">Entity type
+      <select name="kind" onchange="this.form.submit()">
+        <option value="">All types</option>
+        {% for k in kinds %}
+        <option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button type="submit" class="btn">Apply</button></noscript>
+  </form>
 </div>
 
 {% if view == 'entity' %}

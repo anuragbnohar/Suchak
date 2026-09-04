@@ -29,10 +29,10 @@
 <div class="toolbar">
   <nav class="tabs" aria-label="View">
     <a class="tab {% if tab == 'hq' %}active{% endif %}"
-       href="/rd?office={{ selected | urlencode }}&tab=hq&sort={{ sort }}">Headquartered here</a>
+       href="/rd?office={{ selected | urlencode }}&tab=hq&sort={{ sort }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}">Headquartered here</a>
     {% if has_region_tab %}
     <a class="tab {% if tab == 'region' %}active{% endif %}"
-       href="/rd?office={{ selected | urlencode }}&tab=region&sort={{ sort }}">In-region news · other entities</a>
+       href="/rd?office={{ selected | urlencode }}&tab=region&sort={{ sort }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}">In-region news · other entities</a>
     {% endif %}
   </nav>
 </div>
@@ -53,6 +53,14 @@
       </select>
     </label>
     {% endif %}
+    <label class="small">Entity type
+      <select name="kind" onchange="this.form.submit()">
+        <option value="">All types</option>
+        {% for k in kinds %}
+        <option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label class="small">Severity
       <select name="sev" onchange="this.form.submit()">
         <option value="">All severities</option>
@@ -68,7 +76,7 @@
       </select>
     </label>
     <noscript><button type="submit" class="btn">Apply</button></noscript>
-    {% if sev or ent_filter %}
+    {% if sev or ent_filter or kind %}
     <a class="small" href="/rd?office={{ selected | urlencode }}&tab={{ tab }}&sort={{ sort }}">clear filters</a>
     {% endif %}
   </form>
