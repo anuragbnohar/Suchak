@@ -13,21 +13,26 @@
   <a href="/entities">Entities</a> → Edit, and this view will group them by region.</p>
 {% else %}
 <div class="toolbar">
-  <nav class="tabs" aria-label="RBI office">
-    {% for o in offices %}
-    <a class="tab {% if selected == o %}active{% endif %}" href="/rd?office={{ o | urlencode }}">{{ o }}</a>
-    {% endfor %}
-  </nav>
+  <form method="get" action="/rd" class="fetch-form">
+    <label class="small">RBI office
+      <select name="office" onchange="this.form.submit()">
+        {% for o in offices %}
+        <option value="{{ o }}" {% if selected == o %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button type="submit" class="btn">Open</button></noscript>
+  </form>
 </div>
 
 {% if has_region_tab %}
 <div class="toolbar">
   <nav class="tabs" aria-label="View">
     <a class="tab {% if tab == 'hq' %}active{% endif %}"
-       href="/rd?office={{ selected | urlencode }}&tab=hq">Headquartered here</a>
+       href="/rd?office={{ selected | urlencode }}&tab=hq&sort={{ sort }}">Headquartered here</a>
     {% if has_region_tab %}
     <a class="tab {% if tab == 'region' %}active{% endif %}"
-       href="/rd?office={{ selected | urlencode }}&tab=region">In-region news · other entities</a>
+       href="/rd?office={{ selected | urlencode }}&tab=region&sort={{ sort }}">In-region news · other entities</a>
     {% endif %}
   </nav>
 </div>
@@ -56,9 +61,15 @@
         {% endfor %}
       </select>
     </label>
+    <label class="small">Sort by
+      <select name="sort" onchange="this.form.submit()">
+        <option value="sev" {% if sort == 'sev' %}selected{% endif %}>Severity, then date</option>
+        <option value="date" {% if sort == 'date' %}selected{% endif %}>Published date</option>
+      </select>
+    </label>
     <noscript><button type="submit" class="btn">Apply</button></noscript>
     {% if sev or ent_filter %}
-    <a class="small" href="/rd?office={{ selected | urlencode }}&tab={{ tab }}">clear filters</a>
+    <a class="small" href="/rd?office={{ selected | urlencode }}&tab={{ tab }}&sort={{ sort }}">clear filters</a>
     {% endif %}
   </form>
   {% if tab == 'hq' %}

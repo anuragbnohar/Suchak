@@ -131,7 +131,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.13"
+APP_BUILD = "2026-09-04.14"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1813,6 +1813,11 @@ def rd_view(request: Request):
             # names typed on entities stay listed too.
             offices = sorted(set(RBI_OFFICES)
                              | {o for e in every for o in entity_offices(e)})
+            # The dropdown lists offices alphabetically with the Central
+            # Office pinned on top -- it supervises the largest entities.
+            if "Central Office" in offices:
+                offices.remove("Central Office")
+                offices.insert(0, "Central Office")
             if any(not entity_offices(e) for e in every):
                 offices.append(UNASSIGNED)
         else:
@@ -1838,6 +1843,9 @@ def rd_view(request: Request):
         if sev not in ("high", "medium", "low"):
             sev = ""
         ent_filter = request.query_params.get("ent", "")
+        sort = request.query_params.get("sort", "sev")
+        if sort not in ("sev", "date"):
+            sort = "sev"
 
         if selected == UNASSIGNED:
             ents = [e for e in every if not entity_offices(e)]
@@ -1873,15 +1881,15 @@ def rd_view(request: Request):
                 "open": sum(1 for it in items if it["status"] in ("new", "classified")),
                 "top_risk": by_risk.most_common(1)[0][0] if by_risk else "\u2014",
                 "matching": len(shown),
-                # Every item, every severity -- high first, newest within
-                # each band. The RD reads the office's full picture here,
-                # not a teaser; the severity and entity filters above are
-                # how it narrows.
-                "recent": sorted(
+                # Every item, every severity. The default reads high
+                # first, newest within each band; "Published date" reads
+                # strictly newest-first across severities.
+                "recent": (lambda by_date: by_date if sort == "date" else
+                           sorted(by_date,
+                                  key=lambda it: {"high": 0, "medium": 1}.get(
+                                      it["severity_shown"], 2)))(
                     sorted(shown, key=lambda it: it["published_at"] or "",
-                           reverse=True),
-                    key=lambda it: {"high": 0, "medium": 1}.get(
-                        it["severity_shown"], 2)),
+                           reverse=True)),
                 "social_total": len(grievances),
                 "social_topics": [t for t, _ in Counter(
                     t for g in grievances for t in g["complaint_topics"]).most_common(3)],
@@ -1954,6 +1962,9 @@ def rd_view(request: Request):
                         it["entity_name"] = e["name"]
                         region_rows.append(it)
             region_rows.sort(key=lambda it: it["published_at"] or "", reverse=True)
+            if sort == "sev":
+                region_rows.sort(key=lambda it: {"high": 0, "medium": 1}.get(
+                    it["severity_shown"], 2))
 
         return templates.TemplateResponse(request, "rd.html", {
             "user": user, "offices": offices, "selected": selected,
@@ -1961,7 +1972,7 @@ def rd_view(request: Request):
             "tab": tab, "has_region_tab": has_region_tab,
             "region_desc": geography.describe(selected) if has_region_tab else "",
             "region_rows": region_rows,
-            "sev": sev, "ent_filter": ent_filter,
+            "sev": sev, "ent_filter": ent_filter, "sort": sort,
             "sev_counts": sev_counts, "entity_choices": entity_choices,
             "msg": request.query_params.get("msg"),
         })
