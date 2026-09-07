@@ -83,6 +83,7 @@ def merge_into(db, primary: dict, victim: dict) -> None:
         # may take over its URL -- items are unique per (entity, url).
         db.execute("UPDATE item_sources SET item_id = ? WHERE item_id = ?",
                    (primary["id"], victim["id"]))
+        db.execute("DELETE FROM item_reads WHERE item_id = ?", (victim["id"],))
         db.execute("DELETE FROM items WHERE id = ?", (victim["id"],))
         if promote:
             db.execute(

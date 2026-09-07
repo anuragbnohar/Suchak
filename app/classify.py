@@ -708,6 +708,9 @@ def _fold_into(db, item, primary_id: int) -> bool:
         # may take over its URL -- items are unique per (entity, url).
         db.execute("UPDATE item_sources SET item_id = ? WHERE item_id = ?",
                    (primary_id, item["id"]))
+        # a reading mark belongs to the row it was made on, and row ids
+        # are reused, so it goes when the row does
+        db.execute("DELETE FROM item_reads WHERE item_id = ?", (item["id"],))
         db.execute("DELETE FROM items WHERE id = ?", (item["id"],))
         if promote:
             db.execute(

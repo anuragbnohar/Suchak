@@ -158,6 +158,17 @@ CREATE TABLE IF NOT EXISTS insights (
     item_ids      TEXT NOT NULL DEFAULT '[]'
 );
 
+/* Which items a reader has ticked off on the RD View. Per user, not per
+   item: one Regional Director having read a story says nothing about
+   whether another has, and the supervisory record itself is untouched --
+   this is a reading mark, not a verdict. */
+CREATE TABLE IF NOT EXISTS item_reads (
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    read_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (item_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS fetch_log (
     id        INTEGER PRIMARY KEY,
     ran_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -333,6 +344,8 @@ def remove_entity(db: sqlite3.Connection, entity_id: int) -> None:
         db.execute("DELETE FROM reviews WHERE item_id IN"
                    " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
         db.execute("DELETE FROM item_sources WHERE item_id IN"
+                   " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
+        db.execute("DELETE FROM item_reads WHERE item_id IN"
                    " (SELECT id FROM items WHERE entity_id = ?)", (entity_id,))
         db.execute("DELETE FROM items WHERE entity_id = ?", (entity_id,))
         db.execute("DELETE FROM factors WHERE entity_id = ?", (entity_id,))

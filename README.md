@@ -538,6 +538,28 @@ app/
   static/        Stylesheet
 ```
 
+## Reading marks on the RD View
+
+A Regional Director works down a long list, and the second visit should
+start where the first left off. Each story on the RD View carries a tick
+box: ticking it greys the row, and the **Show** filter narrows the page to
+what is not yet ticked.
+
+Three properties are deliberate:
+
+- **Per reader.** The mark lives in `item_reads (item_id, user_id)`. One
+  office having read a story says nothing about whether another has, and
+  the superadmin's reading never greys the page for an RD.
+- **Not a verdict.** It records that someone has seen the item and changes
+  nothing else — not its severity, not its review state, not what the
+  classifier learns. The supervisory record is untouched.
+- **Reversible.** It is a checkbox, not a radio: a radio cannot be
+  un-clicked, and a reader who ticks the wrong line must be able to take it
+  back.
+
+A marked story is greyed rather than hidden, because a reading mark is not
+a deletion — the second pass must still be able to find it.
+
 ## Design system
 
 The stylesheet, `app/static/style.css`, is a small design system rather than

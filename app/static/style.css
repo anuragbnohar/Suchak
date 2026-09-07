@@ -1088,16 +1088,28 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2)
    the comparison the screen exists to make. */
 
 .rd-entity .data-table { margin-top: 0.15rem; }
-.rd-entity .data-table th:nth-child(1),
-.rd-entity .data-table td:nth-child(1) { width: 7.5rem; }
-.rd-entity .data-table th:nth-child(3),
-.rd-entity .data-table td:nth-child(3) { width: 11rem; }
-.rd-entity .data-table th:nth-child(4),
-.rd-entity .data-table td:nth-child(4) { width: 7rem; white-space: nowrap; }
+/* Read · Severity · Item · Source · Published */
+.rd-hq-table th:nth-child(2), .rd-hq-table td:nth-child(2) { width: 7.5rem; }
+.rd-hq-table th:nth-child(4), .rd-hq-table td:nth-child(4) { width: 11rem; }
+.rd-hq-table th:nth-child(5), .rd-hq-table td:nth-child(5) { width: 7rem; white-space: nowrap; }
 .rd-region { padding-top: 0.35rem; }
 .rd-region-note { margin-bottom: 0.7rem; }
-.rd-region-table th:nth-child(1), .rd-region-table td:nth-child(1) { width: 7.5rem; }
-.rd-region-table th:nth-child(3), .rd-region-table td:nth-child(3) { width: 12rem; }
-.rd-region-table th:nth-child(4), .rd-region-table td:nth-child(4) { width: 9rem; }
-.rd-region-table th:nth-child(5), .rd-region-table td:nth-child(5) { width: 7rem; white-space: nowrap; }
+/* Read · Severity · Item · Entity · Mentions · Published */
+.rd-region-table th:nth-child(2), .rd-region-table td:nth-child(2) { width: 7.5rem; }
+.rd-region-table th:nth-child(4), .rd-region-table td:nth-child(4) { width: 12rem; }
+.rd-region-table th:nth-child(5), .rd-region-table td:nth-child(5) { width: 9rem; }
+.rd-region-table th:nth-child(6), .rd-region-table td:nth-child(6) { width: 7rem; white-space: nowrap; }
 .rd-entity .chip-row-social { margin-bottom: 0; }
+
+/* ══ Read marks ════════════════════════════════════════════════════════
+   A reader ticks off what they have been through. It is a reading mark,
+   not a verdict and not a deletion: the story stays on the page and
+   recedes, so a second pass can still find it. */
+
+.read-col { width: 3.5rem; text-align: center; }
+.read-form { display: flex; justify-content: center; align-items: center; margin: 0; }
+tr.is-read td { color: var(--muted); }
+tr.is-read td a { color: var(--muted); }
+tr.is-read td a:hover { color: var(--accent); }
+tr.is-read .sev { color: var(--muted); }
+tr.is-read .sev::before { opacity: 0.45; }

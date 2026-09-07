@@ -104,6 +104,7 @@ def main() -> int:
                 if args.include_reviewed:
                     db.execute(f"DELETE FROM reviews WHERE item_id IN ({marks})", ids)
                 db.execute(f"DELETE FROM item_sources WHERE item_id IN ({marks})", ids)
+                db.execute(f"DELETE FROM item_reads WHERE item_id IN ({marks})", ids)
                 db.execute(f"DELETE FROM items WHERE id IN ({marks})", ids)
             print(f"  {ent['name']}: {len(ids)} deleted")
 

@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 {% import "_filters.html" as filters %}
 {% block title %}RD View · Drishti{% endblock %}
+{# One tick per story, posted the moment it is clicked. A checkbox
+   rather than a radio: a radio cannot be un-clicked, and a reader who
+   ticks the wrong line must be able to take it back. #}
+{% macro read_tick(it, back) %}
+<form method="post" action="/rd/read" class="read-form">
+  <input type="hidden" name="item_id" value="{{ it.id }}">
+  <input type="hidden" name="back" value="{{ back }}">
+  {% if it.is_read %}<input type="hidden" name="read" value="">{% endif %}
+  <input type="checkbox" name="read" value="1" onchange="this.form.submit()"
+         {% if it.is_read %}checked{% endif %}
+         aria-label="Mark as read"
+         title="{% if it.is_read %}Marked read — click to undo{% else %}Mark as read{% endif %}">
+  <noscript><button type="submit" class="btn btn-small">Save</button></noscript>
+</form>
+{% endmacro %}
+
 {% block content %}
 <div class="page-head">
   <div>
@@ -45,7 +61,9 @@
 {% set qbase = "/rd?office=" ~ (selected | urlencode) ~ "&tab=" ~ tab ~ "&sort=" ~ sort
              ~ (("&kind=" ~ (kind | urlencode)) if kind else "")
              ~ (("&ent=" ~ ent_filter) if ent_filter else "")
+             ~ (("&read=" ~ read_f) if read_f else "")
              ~ since_qs %}
+{% set back = qbase ~ (("&sev=" ~ sev) if sev else "") %}
 <div class="tile-row">
   <a class="tile {% if not sev %}tile-current{% endif %}" href="{{ qbase }}">
     <p class="tile-label">Items</p>
@@ -104,8 +122,15 @@
         <option value="date" {% if sort == 'date' %}selected{% endif %}>Published date</option>
       </select>
     </label>
+    <label class="small">Show
+      <select name="read" onchange="this.form.submit()">
+        <option value="">All items</option>
+        <option value="unread" {% if read_f == 'unread' %}selected{% endif %}>Not marked read</option>
+        <option value="read" {% if read_f == 'read' %}selected{% endif %}>Marked read only</option>
+      </select>
+    </label>
     <noscript><button type="submit" class="btn">Apply</button></noscript>
-    {% if sev or ent_filter or kind %}
+    {% if sev or ent_filter or kind or read_f %}
     <a class="small" href="/rd?office={{ selected | urlencode }}&tab={{ tab }}&sort={{ sort }}{{ since_qs }}">clear filters</a>
     {% endif %}
   </form>
@@ -125,17 +150,20 @@
   <p class="meta-dim small">
     {{ r.total }} item{{ '' if r.total == 1 else 's' }} {{ win.label | lower if win.key else 'all time' }} ·
     {{ r.high }} high · {{ r.open }} awaiting review ·
+    {{ r.unread }} not marked read ·
     top risk area: <strong>{{ r.top_risk }}</strong>
   </p>
   {% if sev %}
   <p class="small">{{ r.matching }} {{ sev }}-severity item{{ '' if r.matching == 1 else 's' }}:</p>
   {% endif %}
   {% if r.recent %}
-  <table class="data-table">
-    <tr><th scope="col">Severity</th><th scope="col">Item</th>
+  <table class="data-table rd-hq-table">
+    <tr><th scope="col" class="read-col" title="Mark as read">Read</th>
+        <th scope="col">Severity</th><th scope="col">Item</th>
         <th scope="col">Source</th><th scope="col">Published</th></tr>
     {% for it in r.recent %}
-    <tr>
+    <tr class="{% if it.is_read %}is-read{% endif %}">
+      <td class="read-col">{{ read_tick(it, back) }}</td>
       <td><span class="sev sev-{{ it.severity_shown }}">{{ it.severity_shown }}</span></td>
       <td><a href="/item/{{ it.id }}">{{ it.title }}</a></td>
       <td class="meta-dim">{{ it.source_name }}</td>
@@ -182,11 +210,13 @@
 {% if region_rows %}
 <div class="panel rd-region">
 <table class="data-table rd-region-table">
-  <tr><th scope="col">Severity</th><th scope="col">Item</th>
+  <tr><th scope="col" class="read-col" title="Mark as read">Read</th>
+      <th scope="col">Severity</th><th scope="col">Item</th>
       <th scope="col">Entity</th><th scope="col">Mentions</th>
       <th scope="col">Published</th></tr>
   {% for it in region_rows %}
-  <tr>
+  <tr class="{% if it.is_read %}is-read{% endif %}">
+    <td class="read-col">{{ read_tick(it, back) }}</td>
     <td><span class="sev sev-{{ it.severity_shown }}">{{ it.severity_shown }}</span></td>
     <td><a href="/item/{{ it.id }}">{{ it.title }}</a></td>
     <td class="meta-dim">{{ it.entity_name }}</td>

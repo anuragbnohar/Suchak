@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.31"
+APP_BUILD = "2026-09-04.32"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -2050,6 +2050,24 @@ def rd_view(request: Request):
         win = date_window(request)
         win_sql, win_args = date_sql(win)
         win_and = f" AND {win_sql}" if win_sql else ""
+        # Which stories this reader has already ticked off. Per user: one
+        # Regional Director's reading says nothing about another's.
+        read_ids = {r["item_id"] for r in q(
+            db, "SELECT item_id FROM item_reads WHERE user_id = ?", (user["id"],))}
+        read_f = request.query_params.get("read", "")
+        if read_f not in ("unread", "read"):
+            read_f = ""
+
+        def _mark(it):
+            it["is_read"] = it["id"] in read_ids
+            return it
+
+        def _by_read(rows):
+            if read_f == "unread":
+                return [it for it in rows if not it["is_read"]]
+            if read_f == "read":
+                return [it for it in rows if it["is_read"]]
+            return rows
 
         if selected == UNASSIGNED:
             ents = [e for e in every if not entity_offices(e)]
@@ -2074,8 +2092,12 @@ def rd_view(request: Request):
                 continue
             sev_counts.update(it["severity_shown"] for it in items)
             by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
+            for it in items:
+                _mark(it)
             shown = items if not sev else [
                 it for it in items if it["severity_shown"] == sev]
+            unread_here = sum(1 for it in items if not it["is_read"])
+            shown = _by_read(shown)
             grievances = [g for g in (prep_item(r) for r in q(
                 db, "SELECT * FROM items WHERE entity_id=?"
                     f" AND source_type = 'social' AND gated_out = 0{win_and}",
@@ -2087,6 +2109,7 @@ def rd_view(request: Request):
                 "open": sum(1 for it in items if it["status"] in ("new", "classified")),
                 "top_risk": by_risk.most_common(1)[0][0] if by_risk else "\u2014",
                 "matching": len(shown),
+                "unread": unread_here,
                 # Every item, every severity. The default reads high
                 # first, newest within each band; "Published date" reads
                 # strictly newest-first across severities.
@@ -2105,7 +2128,7 @@ def rd_view(request: Request):
         entity_choices = [(r["entity"]["id"], r["entity"]["name"]) for r in rows]
         if ent_filter:
             rows = [r for r in rows if str(r["entity"]["id"]) == ent_filter]
-        if sev:
+        if sev or read_f:
             rows = [r for r in rows if r["matching"]]
         rows.sort(key=lambda r: (-r["high"], -r["total"]))
 
@@ -2173,6 +2196,9 @@ def rd_view(request: Request):
                             continue
                         if ent_filter and str(e["id"]) != ent_filter:
                             continue
+                        _mark(it)
+                        if read_f and not _by_read([it]):
+                            continue
                         it["region_term"] = hit
                         it["entity_name"] = e["name"]
                         region_rows.append(it)
@@ -2191,12 +2217,48 @@ def rd_view(request: Request):
             tab=tab, has_region_tab=has_region_tab,
             region_desc=geography.describe(selected) if has_region_tab else "",
             region_rows=region_rows,
-            sev=sev, ent_filter=ent_filter, sort=sort, win=win,
+            sev=sev, ent_filter=ent_filter, sort=sort, win=win, read_f=read_f,
             kinds=kinds, kind=kind_f,
             sev_counts=sev_counts, region_sev=region_sev,
             entity_choices=entity_choices)
     finally:
         db.close()
+
+
+@app.post("/rd/read")
+async def rd_mark_read(request: Request):
+    """Tick a story off, or un-tick it, on the RD View.
+
+    A reading mark, not a verdict: it records that this reader has seen
+    the item and changes nothing about the item itself. It is stored per
+    user, so one office's reading never greys a story out for another.
+    """
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        if user["role"] != "superadmin" and not user["rbi_office"]:
+            raise HTTPException(
+                403, "The RD View is for Regional Directors and the super admin")
+        try:
+            item_id = int(form.get("item_id") or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "An item id is required")
+        if not one(db, "SELECT id FROM items WHERE id = ?", (item_id,)):
+            raise HTTPException(404, "Item not found")
+        if form.get("read"):
+            x(db, "INSERT OR IGNORE INTO item_reads (item_id, user_id)"
+                  " VALUES (?,?)", (item_id, user["id"]))
+        else:
+            x(db, "DELETE FROM item_reads WHERE item_id = ? AND user_id = ?",
+              (item_id, user["id"]))
+    finally:
+        db.close()
+    # back to the exact screen the tick was made on, filters and all
+    back = form.get("back") or "/rd"
+    if not back.startswith("/rd"):
+        back = "/rd"
+    return RedirectResponse(back, status_code=303)
 
 
 @app.post("/rd/users")
