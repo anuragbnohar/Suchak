@@ -1,4 +1,4 @@
-# Suchak — Supervisory Intelligence Platform: Solution Proposal
+# Drishti (formerly Suchak) — Supervisory Intelligence Platform: Solution Proposal
 
 *Proposal for a technical solution to the SSM team supervision problem described in SUCHAK.docx.*
 

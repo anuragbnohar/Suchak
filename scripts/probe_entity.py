@@ -46,7 +46,7 @@ def _fetch_feed(url: str) -> list[dict]:
     """One feed, minimally parsed. Raises on transport errors so the caller
     can print the failure instead of mistaking it for an empty result."""
     resp = httpx.get(url, timeout=20, follow_redirects=True,
-                     headers={"User-Agent": "Suchak/0.1 (supervisory prototype)"})
+                     headers={"User-Agent": "Drishti/0.1 (supervisory prototype)"})
     resp.raise_for_status()
     out = []
     for entry in feedparser.parse(resp.text).entries:

@@ -311,7 +311,7 @@ def fetch_google_news(registry: Registry, entity, days: int | None = None) -> li
         url = google_news_url(registry, entity["id"], lang, days)
         try:
             resp = httpx.get(url, timeout=20, follow_redirects=True,
-                             headers={"User-Agent": "Suchak/0.1 (supervisory prototype)"})
+                             headers={"User-Agent": "Drishti/0.1 (supervisory prototype)"})
             resp.raise_for_status()
         except Exception as exc:
             log.warning("Google News (%s) failed for %s: %s: %s",

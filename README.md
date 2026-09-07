@@ -1,4 +1,9 @@
-# Suchak (सूचक)
+# Drishti (दृष्टि)
+
+> Formerly named **Suchak**. The database file (`suchak.db`) and the
+> `SUCHAK_*` environment variables keep their old names on purpose, so an
+> existing installation keeps its data and API keys across the rename —
+> nothing on your computer needs to be re-set.
 
 A one-week prototype of a supervisory intelligence platform for SSM teams at
 the Banking Supervisor of India. It collects public news about regulated

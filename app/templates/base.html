@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Suchak{% endblock %}</title>
+<title>{% block title %}Drishti{% endblock %}</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/">Suchak <span class="devanagari">सूचक</span></a>
+  <a class="brand" href="/">Drishti <span class="devanagari">दृष्टि</span></a>
   {% if user %}
   {% set path = request.url.path %}
   {% set office_q = request.query_params.get('office') %}
@@ -63,7 +63,7 @@
   {% block content %}{% endblock %}
 </main>
 <footer class="app-footer">
-  <span class="meta-dim small">Suchak build {{ app_build }}</span>
+  <span class="meta-dim small">Drishti build {{ app_build }}</span>
 </footer>
 {% if user %}
 <div id="toasts"></div>

@@ -1,4 +1,8 @@
-"""Suchak — supervisory intelligence prototype. FastAPI app and routes."""
+"""Drishti (formerly Suchak) — supervisory intelligence prototype.
+
+FastAPI app and routes. The SUCHAK_* environment variables and the
+suchak.db database file keep their historical names on purpose, so an
+existing installation keeps its data and keys across the rename."""
 import asyncio
 import json
 import logging
@@ -119,7 +123,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Suchak", lifespan=lifespan)
+app = FastAPI(title="Drishti", lifespan=lifespan)
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.environ.get("SUCHAK_SECRET", secrets.token_hex(32)),
@@ -131,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.15"
+APP_BUILD = "2026-09-04.16"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
