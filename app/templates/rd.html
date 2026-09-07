@@ -144,20 +144,23 @@
   <p class="meta-dim small">No news items collected yet — fetch news for this entity
     from the Entities page.</p>
   {% endif %}
-  <p class="small">
+  <p class="small" style="margin-bottom:0.2rem">
     <strong>Social media:</strong>
     {% if r.social_total %}
       {{ r.social_total }} grievance{{ '' if r.social_total == 1 else 's' }}
-      {% if r.social_topics %}· mostly {{ r.social_topics | join(', ') }}{% endif %}
       · <a href="/social?entity={{ r.entity.id }}">open the Social media tab</a>
     {% else %}
       <span class="meta-dim">no grievances collected yet</span>
     {% endif %}
   </p>
-  {% for g in r.social_recent %}
-  <p class="small meta-dim">— <a href="/item/{{ g.id }}">{{ g.title }}</a>
-    {{ (g.published_at or '')[:10] }}</p>
-  {% endfor %}
+  {% if r.social_topics %}
+  <p class="chip-row-social">
+    {% for topic, n in r.social_topics %}
+    <a class="mini-tile" href="/social?entity={{ r.entity.id }}&topic={{ topic | urlencode }}"
+       title="Open these grievances on the Social media tab"><b>{{ n }}</b>{{ topic }}</a>
+    {% endfor %}
+  </p>
+  {% endif %}
 </section>
 {% endfor %}
 {% if selected and not rows %}

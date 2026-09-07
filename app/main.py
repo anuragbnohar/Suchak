@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.17"
+APP_BUILD = "2026-09-04.18"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1922,11 +1922,10 @@ def rd_view(request: Request):
                     sorted(shown, key=lambda it: it["published_at"] or "",
                            reverse=True)),
                 "social_total": len(grievances),
-                "social_topics": [t for t, _ in Counter(
-                    t for g in grievances for t in g["complaint_topics"]).most_common(3)],
-                "social_recent": sorted(grievances,
-                                        key=lambda g: g["published_at"] or "",
-                                        reverse=True)[:3],
+                # every topic with its count, busiest first -- the card
+                # shows them as small tiles, not prose
+                "social_topics": Counter(
+                    t for g in grievances for t in g["complaint_topics"]).most_common(),
             })
         entity_choices = [(r["entity"]["id"], r["entity"]["name"]) for r in rows]
         if ent_filter:
