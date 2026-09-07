@@ -1017,6 +1017,23 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2)
    dropdown on every one of fourteen cards was the loudest thing on the
    page and doubled every card's height. It waits behind a disclosure. */
 
+/* A disclosure that is an action reads as one. "Set aside" and "Note,
+   owner & due date" as bare text did not look like something to press,
+   so the summary is drawn as a button -- keeping its +/- marker, which
+   is what says it opens rather than navigates. */
+.todo-more > summary.summary-btn {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  min-height: 1.75rem; padding: 0.15rem 0.65rem;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--ink);
+  font-size: 0.8rem; font-weight: 600;
+}
+.todo-more > summary.summary-btn:hover {
+  border-color: var(--accent); color: var(--accent); background: var(--surface-2);
+}
+/* the actions sit at the end of the card's chip row, together */
+.item-review-btn { margin-left: auto; }
+
 .disclose { display: inline-block; grid-column: auto; }
 .disclose > summary { font-size: 0.8rem; }
 .disclose-body { margin-top: 0.45rem; }

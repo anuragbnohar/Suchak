@@ -112,7 +112,7 @@
 
     {% if it.action_status == 'open' and (it.can_close or it.can_assign) %}
     <details class="todo-more">
-      <summary>{% if it.can_assign %}Note, owner &amp; due date{% else %}Close with a note{% endif %}</summary>
+      <summary class="summary-btn">{% if it.can_assign %}Note, owner &amp; due date{% else %}Close with a note{% endif %}</summary>
       <div class="todo-more-body">
         {% if it.can_close %}
         <form method="post" action="/todo/{{ it.id }}/done" class="inline-form">

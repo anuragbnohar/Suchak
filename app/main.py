@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.30"
+APP_BUILD = "2026-09-04.31"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -2112,6 +2112,9 @@ def rd_view(request: Request):
         # In-region news from entities headquartered under other offices.
         region_rows = []
         region_sev = Counter()
+        # the entities that actually turned up in this region, for the
+        # picker: the tab lists many banks, so it needs its own roster
+        region_entities: dict = {}
         place_terms = geography.office_places(selected) if has_region_tab else []
         exclusions = geography.office_exclusions(selected) if has_region_tab else []
         if tab == "region" and place_terms:
@@ -2165,7 +2168,10 @@ def rd_view(request: Request):
                         continue
                     if hit:
                         region_sev[it["severity_shown"]] += 1
+                        region_entities[e["id"]] = e["name"]
                         if sev and it["severity_shown"] != sev:
+                            continue
+                        if ent_filter and str(e["id"]) != ent_filter:
                             continue
                         it["region_term"] = hit
                         it["entity_name"] = e["name"]
@@ -2174,6 +2180,9 @@ def rd_view(request: Request):
             if sort == "sev":
                 region_rows.sort(key=lambda it: {"high": 0, "medium": 1}.get(
                     it["severity_shown"], 2))
+            # the region tab picks from the banks that appear in it, not
+            # from the ones headquartered here
+            entity_choices = sorted(region_entities.items(), key=lambda kv: kv[1])
 
         return render(
             request, "rd.html",

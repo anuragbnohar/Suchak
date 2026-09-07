@@ -109,7 +109,7 @@
     <div class="item-meta">
       {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
       {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
-      <a href="/item/{{ it.id }}">Review this post</a>
+      <a class="btn btn-small item-review-btn" href="/item/{{ it.id }}">Review post</a>
       {% set back = '/social?' ~ (('office=' ~ (office | urlencode) ~ '&') if office else '') ~ 'entity=' ~ entity_qs ~ ('&view=aside' if view_aside else '') ~ since_qs %}
       {% if it.set_aside %}
       <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form">
@@ -119,7 +119,7 @@
       </form>
       {% else %}
       <details class="todo-more disclose">
-        <summary>Set aside</summary>
+        <summary class="summary-btn">Set aside</summary>
         <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form disclose-body">
           <input type="hidden" name="back" value="{{ back }}">
           <select name="reason" aria-label="Set aside reason">

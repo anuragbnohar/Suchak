@@ -44,7 +44,7 @@
 {% set tc = region_sev if tab == 'region' else sev_counts %}
 {% set qbase = "/rd?office=" ~ (selected | urlencode) ~ "&tab=" ~ tab ~ "&sort=" ~ sort
              ~ (("&kind=" ~ (kind | urlencode)) if kind else "")
-             ~ (("&ent=" ~ ent_filter) if ent_filter and tab == 'hq' else "")
+             ~ (("&ent=" ~ ent_filter) if ent_filter else "")
              ~ since_qs %}
 <div class="tile-row">
   <a class="tile {% if not sev %}tile-current{% endif %}" href="{{ qbase }}">
@@ -72,7 +72,7 @@
     <input type="hidden" name="office" value="{{ selected }}">
     <input type="hidden" name="tab" value="{{ tab }}">
     {{ filters.date_hidden(win) }}
-    {% if tab == 'hq' %}
+    {% if entity_choices %}
     <label class="small">Entity
       <select name="ent" onchange="this.form.submit()">
         <option value="">All entities</option>
@@ -197,7 +197,10 @@
 </table>
 </div>
 {% else %}
-<p class="meta-dim">No news from other entities currently mentions this region.</p>
+<p class="meta-dim">{% if ent_filter or sev or kind %}Nothing from other entities
+  matches these filters —
+  <a href="/rd?office={{ selected | urlencode }}&tab=region{{ since_qs }}">clear them</a>.
+  {% else %}No news from other entities currently mentions this region.{% endif %}</p>
 {% endif %}
 {% endif %}
 {% endif %}
