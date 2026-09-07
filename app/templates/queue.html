@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_filters.html" as filters %}
 {% block title %}Queue · {{ entity.name if entity else "All entities" }} · Drishti{% endblock %}
 
 {% macro item_row(it) %}
@@ -30,11 +31,12 @@
 <div class="page-head">
   <div>
     <h1>Review queue</h1>
-    <p class="page-sub">{% if entity %}{{ entity.name }} · {{ entity.kind }}{% else %}Every entity you supervise{% endif %}</p>
+    <p class="page-sub">{% if entity %}{{ entity.name }} · {{ entity.kind }}{% else %}Every entity you supervise{% endif %}{% if win.key %} · {{ win.label }}{% endif %}</p>
   </div>
   {% if entities|length > 1 %}
   <form method="get" action="/queue" class="entity-picker">
     {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
+    {{ filters.date_hidden(win) }}
     <label>Entity
       <select name="entity" onchange="this.form.submit()">
         {% if user.role == 'superadmin' %}<option value="all" {% if not entity %}selected{% endif %}>All entities</option>{% endif %}
@@ -59,13 +61,14 @@
     {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
     <input type="hidden" name="entity" value="{{ entity_qs }}">
     <input type="hidden" name="status" value="{{ status }}">
-    {% for k, v in extras.items() if k not in ('risk', 'src') %}
+    {% for k, v in extras.items() if k not in ('risk', 'src', 'since') %}
     <input type="hidden" name="{{ k }}" value="{{ v }}">
     {% endfor %}
     <select name="src" onchange="this.form.submit()">
       <option value="">All sources</option>
       <option value="trusted" {% if extras.get('src') == 'trusted' %}selected{% endif %}>Trusted sources only</option>
     </select>
+    {{ filters.date_picker(win, bare=true) }}
     <select name="risk" onchange="this.form.submit()">
       <option value="">All risk areas</option>
       {% for area in taxonomy.RISK_AREAS %}
@@ -75,10 +78,10 @@
   </form>
 </div>
 
-{% if extras %}
+{% if chips %}
 <div class="filter-note">
   <span>Showing:</span>
-  {% for k, v in extras.items() %}
+  {% for k, v in chips.items() %}
   <span class="filter-chip">
     {%- if k == 'on' %}published {{ v }}
     {%- elif k == 'sev' %}severity {{ v }}
@@ -91,7 +94,7 @@
     {%- else %}{{ k }}: {{ v }}{% endif -%}
   </span>
   {% endfor %}
-  <a href="/queue?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;status={{ status }}">✕ clear filters</a>
+  <a href="/queue?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;status={{ status }}{{ since_qs }}">✕ clear filters</a>
 </div>
 {% endif %}
 {% if grouped %}

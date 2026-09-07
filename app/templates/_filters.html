@@ -1,0 +1,29 @@
+{# Filter controls shared by the screens that carry them, so a date filter
+   set on one screen looks and reads the same on the next. #}
+
+{# `bare` drops the visible caption, for a filter row whose other controls
+   are captioned by their own first option ("All sources", "All risk
+   areas") -- there, a stray "Date:" label reads as a misalignment. #}
+{% macro date_picker(win, bare=false) %}
+{% if bare %}
+  <select name="since" aria-label="Date" onchange="this.form.submit()">
+    {% for k, label in date_windows %}
+    <option value="{{ k }}" {% if win.key == k %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+{% else %}
+<label class="small">Date
+  <select name="since" onchange="this.form.submit()">
+    {% for k, label in date_windows %}
+    <option value="{{ k }}" {% if win.key == k %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+</label>
+{% endif %}
+{% endmacro %}
+
+{# The same choice as a hidden field, for a form that must preserve the
+   window without offering a second copy of the dropdown. #}
+{% macro date_hidden(win) %}
+{% if win.key %}<input type="hidden" name="since" value="{{ win.key }}">{% endif %}
+{% endmacro %}

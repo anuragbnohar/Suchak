@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.21"
+APP_BUILD = "2026-09-04.22"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -178,10 +178,80 @@ def _timeago(iso: str | None) -> str:
 templates.env.filters["timeago"] = _timeago
 
 
+# --- the date window shared by every screen ---------------------------------
+
+# Supervision reads the whole record by default -- a fraud case four months
+# old is exactly what belongs on screen -- but every screen can be narrowed
+# to a period. The wording is the calendar's, not the database's: an officer
+# asks for "yesterday", never for a timestamp range.
+DATE_WINDOWS = (
+    ("", "All dates"),
+    ("today", "Today"),
+    ("yesterday", "Yesterday"),
+    ("7", "Last 7 days"),
+    ("30", "Last 30 days"),
+    ("90", "Last 90 days"),
+    ("365", "Last 365 days"),
+)
+DATE_WINDOW_LABELS = dict(DATE_WINDOWS)
+templates.env.globals["date_windows"] = DATE_WINDOWS
+
+
+def date_window(request: Request) -> dict:
+    """The period chosen in a screen's date dropdown.
+
+    Returns the key (to re-select it in the dropdown and carry it on every
+    link out of the page) and the bounds as plain YYYY-MM-DD strings. Dates
+    are stored ISO-first -- '2026-09-07T09:15:00+00:00' from a feed,
+    '2026-09-07 09:15:00' from SQLite's own clock -- so a date string
+    compares correctly against either, character by character.
+
+    'Last 7 days' counts back seven days from today, the same reckoning the
+    fetch windows use, so a 7-day fetch and a 7-day filter agree.
+    """
+    key = request.query_params.get("since", "")
+    if key not in DATE_WINDOW_LABELS:
+        key = ""
+    today = datetime.now(timezone.utc).date()
+    start = end = None                     # end is exclusive
+    if key == "today":
+        start = today
+    elif key == "yesterday":
+        start, end = today - timedelta(days=1), today
+    elif key:
+        start = today - timedelta(days=int(key))
+    return {"key": key, "label": DATE_WINDOW_LABELS[key],
+            "start": start.isoformat() if start else "",
+            "end": end.isoformat() if end else ""}
+
+
+def date_sql(win: dict, alias: str = "") -> tuple[str, list]:
+    """A WHERE fragment restricting an items row to the chosen window.
+
+    An item with no publication date falls back to when it was collected,
+    so a forum post whose site gave no timestamp is not silently dropped
+    from every dated view. Returns ('', []) when no window is chosen.
+    """
+    if not win["key"]:
+        return "", []
+    p = f"{alias}." if alias else ""
+    col = f"COALESCE(NULLIF({p}published_at, ''), {p}created_at)"
+    frag, args = f"{col} >= ?", [win["start"]]
+    if win["end"]:
+        frag += f" AND {col} < ?"
+        args.append(win["end"])
+    return f"({frag})", args
+
+
 def render(request: Request, name: str, **ctx):
     ctx.setdefault("msg", request.query_params.get("msg"))
     ctx["taxonomy"] = taxonomy
     ctx["request"] = request
+    # Every page gets the chosen window and the query-string tail that
+    # carries it, so a drill-down out of a windowed screen stays windowed.
+    win = ctx.get("win") or date_window(request)
+    ctx["win"] = win
+    ctx["since_qs"] = f"&since={win['key']}" if win["key"] else ""
     if ctx.get("user") is not None and "todo_count" not in ctx:
         ctx["todo_count"] = _open_action_count(ctx["user"])
     return templates.TemplateResponse(request, name, ctx)
@@ -347,10 +417,12 @@ def queue(request: Request):
         on_day = request.query_params.get("on", "")
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", on_day or ""):
             on_day = ""
-        # No rolling window: supervision reads the whole record, and a
-        # fraud case four months old is exactly what belongs on screen.
-        # A single day is still selectable by clicking the dashboard's
+        # The default is still the whole record -- a fraud case four months
+        # old is exactly what belongs on screen -- but the Date dropdown
+        # narrows it when the question is "what came in this week".
+        # A single day is also selectable by clicking the dashboard's
         # activity chart, which is a drill-down, not a filter.
+        win = date_window(request)
 
         if entity is None:
             ids = [e["id"] for e in entities]
@@ -390,6 +462,10 @@ def queue(request: Request):
         if on_day:
             where.append("i.published_at LIKE ?")
             params.append(on_day + "%")
+        win_sql, win_args = date_sql(win, "i")
+        if win_sql:
+            where.append(win_sql)
+            params.extend(win_args)
         if factor:
             where.append("i.factor_matches LIKE ?")
             params.append(f'%"{factor}"%')
@@ -437,6 +513,12 @@ def queue(request: Request):
         else:
             scope_sql, scope_args = "entity_id = ?", [entity["id"]]
         scope_sql += " AND source_type != 'social'"
+        # The tab counts obey the window too, so the number on a tab is the
+        # number of rows it opens.
+        cnt_sql, cnt_args = date_sql(win)
+        if cnt_sql:
+            scope_sql += f" AND {cnt_sql}"
+            scope_args = list(scope_args) + cnt_args
         counts = {r["s"]: r["n"] for r in q(
             db, "SELECT CASE WHEN COALESCE(attribution,'') = 'rejected'"
                 "             THEN 'rejected'"
@@ -461,13 +543,18 @@ def queue(request: Request):
         extras = {k: v for k, v in (
             ("risk", risk), ("sev", sev),
             ("on", on_day), ("factor", factor), ("org", org), ("src", src),
-            ("complaints", "1" if complaints else ""), ("topic", topic)) if v}
+            ("complaints", "1" if complaints else ""), ("topic", topic),
+            ("since", win["key"])) if v}
         filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
-        return render(request, "queue.html", user=user, entity=entity,
+        # The period is a lens over every screen, not one of this screen's
+        # filter chips: the Date dropdown already names it, and "clear
+        # filters" keeps it rather than jumping back to the whole record.
+        chips = {k: v for k, v in extras.items() if k != "since"}
+        return render(request, "queue.html", user=user, entity=entity, chips=chips,
                       entity_qs="all" if entity is None else entity["id"],
                       office=request.query_params.get("office") or None,
                       entities=entities, items=prepped, grouped=grouped,
-                      status=status, risk=risk, counts=counts,
+                      status=status, risk=risk, counts=counts, win=win,
                       extras=extras, filter_qs=filter_qs)
     finally:
         db.close()
@@ -1079,11 +1166,18 @@ def social_page(request: Request):
             args = list(ids)
         else:
             scope, args = "entity_id = ?", [entity["id"]]
+        # The window is applied once, here, so every count on the page --
+        # collected, pending, per topic, per source -- speaks about the
+        # same period as the list below them.
+        win = date_window(request)
+        win_sql, win_args = date_sql(win, "i")
+        win_and = f" AND {win_sql}" if win_sql else ""
         rows = [prep_item(r) for r in q(
             db, "SELECT i.*, e.name AS entity_name FROM items i"
                 " JOIN entities e ON e.id = i.entity_id"
-                f" WHERE i.source_type = 'social' AND i.gated_out = 0 AND i.{scope}",
-            tuple(args))]
+                f" WHERE i.source_type = 'social' AND i.gated_out = 0 AND i.{scope}"
+                f"{win_and}",
+            tuple(args) + tuple(win_args))]
         # Posts the classifier dropped by what reviewers taught it. Shown
         # on their own tab: a learned gate that no one can inspect is a
         # silent loss, which is the one thing this pipeline never allows.
@@ -1092,7 +1186,7 @@ def social_page(request: Request):
                 " JOIN entities e ON e.id = i.entity_id"
                 " WHERE i.source_type = 'social' AND i.gated_out = 1"
                 " AND i.gate_reason LIKE 'matches posts this team set aside%'"
-                f" AND i.{scope}", tuple(args))]
+                f" AND i.{scope}{win_and}", tuple(args) + tuple(win_args))]
         for r in learned:
             r["platform"] = taxonomy.social_platform(r["url"])
 
@@ -1136,6 +1230,7 @@ def social_page(request: Request):
                       entity_qs="all" if entity is None else entity["id"],
                       office=request.query_params.get("office") or None,
                       entities=entities, rows=shown, topic=topic, src=src,
+                      win=win,
                       view_aside=view_aside, view_learned=view_learned,
                       learned_count=len(learned),
                       set_aside_count=len(set_aside_rows),
@@ -1163,11 +1258,14 @@ def social_page(request: Request):
 TREND_DAYS = 30
 
 
-def _entity_stats(db, entity_id: int) -> dict:
+def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
+    win = win or {"key": "", "start": "", "end": ""}
+    win_sql, win_args = date_sql(win)
+    win_and = f" AND {win_sql}" if win_sql else ""
     rows = [prep_item(r) for r in q(
         db, "SELECT * FROM items WHERE entity_id = ?"
-            " AND gated_out = 0 AND source_type != 'social'",
-        (entity_id,))]
+            f" AND gated_out = 0 AND source_type != 'social'{win_and}",
+        (entity_id, *win_args))]
 
     by_risk, by_sev, by_factor, by_day = Counter(), Counter(), Counter(), Counter()
     by_topic, complaints_total = Counter(), 0
@@ -1198,8 +1296,10 @@ def _entity_stats(db, entity_id: int) -> dict:
 
     open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
                          " status IN ('new','classified') AND gated_out = 0"
-                         " AND source_type != 'social'",
-                     (entity_id,))["n"]
+                         f" AND source_type != 'social'{win_and}",
+                     (entity_id, *win_args))["n"]
+    # Deliberately NOT windowed: this is the whole record, so "older" below
+    # can say how much a chosen period is leaving out.
     total_all = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id = ?"
                         " AND gated_out = 0 AND source_type != 'social'",
                     (entity_id,))["n"]
@@ -1214,8 +1314,8 @@ def _entity_stats(db, entity_id: int) -> dict:
     high_recent = [prep_item(r) for r in q(
         db, "SELECT * FROM items WHERE entity_id=?"
             " AND COALESCE(review_severity, severity)='high'"
-            " AND gated_out = 0 AND source_type != 'social'"
-            " ORDER BY published_at DESC LIMIT 6", (entity_id,))]
+            f" AND gated_out = 0 AND source_type != 'social'{win_and}"
+            " ORDER BY published_at DESC LIMIT 6", (entity_id, *win_args))]
 
     return {
         "total": len(rows),
@@ -1246,14 +1346,15 @@ def dashboard(request: Request):
     try:
         user = require_login(db, request)
         entity, entities = resolve_entity(db, user, request.query_params.get("entity"))
-        stats = _entity_stats(db, entity["id"])
+        win = date_window(request)
+        stats = _entity_stats(db, entity["id"], win)
         return render(request, "dashboard.html", user=user, entity=entity,
-                      entities=entities, stats=stats)
+                      entities=entities, stats=stats, win=win)
     finally:
         db.close()
 
 
-def _category_rows(db, entities, key_fn, categories):
+def _category_rows(db, entities, key_fn, categories, win=None):
     """Group every classified item by a category instead of by entity.
 
     `key_fn` returns the categories one item belongs to -- one for severity,
@@ -1269,11 +1370,14 @@ def _category_rows(db, entities, key_fn, categories):
                   "per_entity": Counter(), "open_per_entity": Counter()}
               for c in categories}
     names = {e["id"]: e["name"] for e in entities}
+    win_sql, win_args = date_sql(win or {"key": ""})
+    win_and = f" AND {win_sql}" if win_sql else ""
 
     for e in entities:
         rows = [prep_item(r) for r in q(
             db, "SELECT * FROM items WHERE entity_id = ? AND gated_out = 0"
-                " AND status != 'new' AND source_type != 'social'", (e["id"],))]
+                f" AND status != 'new' AND source_type != 'social'{win_and}",
+            (e["id"], *win_args))]
         for it in rows:
             awaiting = it["status"] == "classified"
             for cat in key_fn(it):
@@ -1319,18 +1423,24 @@ def overview(request: Request):
             kind = ""
         if kind:
             entities = [e for e in entities if e["kind"] == kind]
+        win = date_window(request)
+        win_sql, win_args = date_sql(win)
+        win_and = f" AND {win_sql}" if win_sql else ""
         rows = []
         for e in entities:
             items = [prep_item(r) for r in q(
                 db, "SELECT * FROM items WHERE entity_id=?"
-                    " AND gated_out = 0 AND source_type != 'social'",
-                (e["id"],))]
+                    f" AND gated_out = 0 AND source_type != 'social'{win_and}",
+                (e["id"], *win_args))]
             by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
             top_risk = by_risk.most_common(1)
             open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
                                  " status IN ('new','classified') AND gated_out = 0"
-                                 " AND source_type != 'social'",
-                             (e["id"],))["n"]
+                                 f" AND source_type != 'social'{win_and}",
+                             (e["id"], *win_args))["n"]
+            # "Latest item" answers "when did anything last land", so it
+            # reads the whole record even inside a window -- an empty
+            # column would otherwise say a bank went quiet when it did not.
             last = one(db, "SELECT MAX(published_at) m FROM items WHERE entity_id=?"
                            " AND source_type != 'social'",
                        (e["id"],))["m"]
@@ -1354,24 +1464,28 @@ def overview(request: Request):
         if view == "severity":
             sev_rows = _category_rows(
                 db, entities,
-                lambda it: [it["severity_shown"]], taxonomy.SEVERITIES)
+                lambda it: [it["severity_shown"]], taxonomy.SEVERITIES, win)
         elif view == "risk":
             risk_rows = [r for r in _category_rows(
                 db, entities,
-                lambda it: it["risk_areas_shown"], taxonomy.RISK_AREAS)]
+                lambda it: it["risk_areas_shown"], taxonomy.RISK_AREAS, win)]
             risk_rows.sort(key=lambda r: (-r["high"], -r["total"], r["category"]))
+        iwin_sql, iwin_args = date_sql(win, "i")
+        iwin_and = f" AND {iwin_sql}" if iwin_sql else ""
         if kind:
             unclassified = one(db, "SELECT COUNT(*) n FROM items i"
                                    " JOIN entities e ON e.id = i.entity_id"
                                    " WHERE i.status = 'new' AND i.gated_out = 0"
                                    " AND i.source_type != 'social'"
-                                   " AND e.kind = ?", (kind,))["n"]
+                                   f" AND e.kind = ?{iwin_and}",
+                               (kind, *iwin_args))["n"]
         else:
-            unclassified = one(db, "SELECT COUNT(*) n FROM items"
-                                   " WHERE status = 'new' AND gated_out = 0"
-                                   " AND source_type != 'social'")["n"]
+            unclassified = one(db, "SELECT COUNT(*) n FROM items i"
+                                   " WHERE i.status = 'new' AND i.gated_out = 0"
+                                   f" AND i.source_type != 'social'{iwin_and}",
+                               tuple(iwin_args))["n"]
         return render(request, "overview.html", user=user, rows=rows, view=view,
-                      sev_rows=sev_rows, risk_rows=risk_rows,
+                      sev_rows=sev_rows, risk_rows=risk_rows, win=win,
                       unclassified=unclassified, kinds=kinds, kind=kind)
     finally:
         db.close()
@@ -1910,6 +2024,9 @@ def rd_view(request: Request):
         kind_f = request.query_params.get("kind", "")
         if kind_f and kind_f not in kinds:
             kind_f = ""
+        win = date_window(request)
+        win_sql, win_args = date_sql(win)
+        win_and = f" AND {win_sql}" if win_sql else ""
 
         if selected == UNASSIGNED:
             ents = [e for e in every if not entity_offices(e)]
@@ -1925,8 +2042,8 @@ def rd_view(request: Request):
         for e in ents:
             items = [prep_item(r) for r in q(
                 db, "SELECT * FROM items WHERE entity_id=?"
-                    " AND gated_out = 0 AND source_type != 'social'",
-                (e["id"],))]
+                    f" AND gated_out = 0 AND source_type != 'social'{win_and}",
+                (e["id"], *win_args))]
             # An entity with no news says nothing on an office's page --
             # but the Unassigned bucket is a to-do list, not a news view,
             # so it keeps everything that still needs an office.
@@ -1938,8 +2055,8 @@ def rd_view(request: Request):
                 it for it in items if it["severity_shown"] == sev]
             grievances = [g for g in (prep_item(r) for r in q(
                 db, "SELECT * FROM items WHERE entity_id=?"
-                    " AND source_type = 'social' AND gated_out = 0",
-                (e["id"],))) if g["complaint_topics"]]
+                    f" AND source_type = 'social' AND gated_out = 0{win_and}",
+                (e["id"], *win_args))) if g["complaint_topics"]]
             rows.append({
                 "entity": e,
                 "total": len(items),
@@ -2009,8 +2126,9 @@ def rd_view(request: Request):
                         " WHERE i.entity_id = ? GROUP BY s.item_id",
                     (e["id"],))}
                 for r in q(db, "SELECT * FROM items WHERE entity_id=?"
-                               " AND gated_out = 0 AND source_type != 'social'",
-                           (e["id"],)):
+                               " AND gated_out = 0 AND source_type != 'social'"
+                               f"{win_and}",
+                           (e["id"], *win_args)):
                     it = prep_item(r)
                     text = " ".join(filter(None, (it.get("title"),
                                                   it.get("snippet"),
@@ -2034,18 +2152,17 @@ def rd_view(request: Request):
                 region_rows.sort(key=lambda it: {"high": 0, "medium": 1}.get(
                     it["severity_shown"], 2))
 
-        return templates.TemplateResponse(request, "rd.html", {
-            "user": user, "offices": offices, "selected": selected,
-            "rows": rows, "unassigned_label": UNASSIGNED,
-            "tab": tab, "has_region_tab": has_region_tab,
-            "region_desc": geography.describe(selected) if has_region_tab else "",
-            "region_rows": region_rows,
-            "sev": sev, "ent_filter": ent_filter, "sort": sort,
-            "kinds": kinds, "kind": kind_f,
-            "sev_counts": sev_counts, "region_sev": region_sev,
-            "entity_choices": entity_choices,
-            "msg": request.query_params.get("msg"),
-        })
+        return render(
+            request, "rd.html",
+            user=user, offices=offices, selected=selected,
+            rows=rows, unassigned_label=UNASSIGNED,
+            tab=tab, has_region_tab=has_region_tab,
+            region_desc=geography.describe(selected) if has_region_tab else "",
+            region_rows=region_rows,
+            sev=sev, ent_filter=ent_filter, sort=sort, win=win,
+            kinds=kinds, kind=kind_f,
+            sev_counts=sev_counts, region_sev=region_sev,
+            entity_choices=entity_choices)
     finally:
         db.close()
 

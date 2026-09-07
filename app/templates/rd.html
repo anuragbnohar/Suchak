@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% import "_filters.html" as filters %}
 {% block title %}RD View · Drishti{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <h1>RD View</h1>
-    <p class="page-sub">Monitoring by RBI office · entities headquartered in the region, and regional news about others</p>
+    <p class="page-sub">Monitoring by RBI office · entities headquartered in the region, and regional news about others{% if win.key %} · {{ win.label | lower }}{% endif %}</p>
   </div>
 </div>
 
@@ -21,6 +22,7 @@
         {% endfor %}
       </select>
     </label>
+    {{ filters.date_picker(win) }}
     <noscript><button type="submit" class="btn">Open</button></noscript>
   </form>
 </div>
@@ -29,10 +31,10 @@
 <div class="toolbar">
   <nav class="tabs" aria-label="View">
     <a class="tab {% if tab == 'hq' %}active{% endif %}"
-       href="/rd?office={{ selected | urlencode }}&tab=hq&sort={{ sort }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}">Headquartered here</a>
+       href="/rd?office={{ selected | urlencode }}&tab=hq&sort={{ sort }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}{{ since_qs }}">Headquartered here</a>
     {% if has_region_tab %}
     <a class="tab {% if tab == 'region' %}active{% endif %}"
-       href="/rd?office={{ selected | urlencode }}&tab=region&sort={{ sort }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}">In-region news · other entities</a>
+       href="/rd?office={{ selected | urlencode }}&tab=region&sort={{ sort }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}{{ since_qs }}">In-region news · other entities</a>
     {% endif %}
   </nav>
 </div>
@@ -42,7 +44,8 @@
 {% set tc = region_sev if tab == 'region' else sev_counts %}
 {% set qbase = "/rd?office=" ~ (selected | urlencode) ~ "&tab=" ~ tab ~ "&sort=" ~ sort
              ~ (("&kind=" ~ (kind | urlencode)) if kind else "")
-             ~ (("&ent=" ~ ent_filter) if ent_filter and tab == 'hq' else "") %}
+             ~ (("&ent=" ~ ent_filter) if ent_filter and tab == 'hq' else "")
+             ~ since_qs %}
 <div class="tile-row">
   <a class="tile {% if not sev %}tile-current{% endif %}" href="{{ qbase }}">
     <p class="tile-label">Items</p>
@@ -68,6 +71,7 @@
   <form method="get" action="/rd" class="fetch-form" id="rd-filters">
     <input type="hidden" name="office" value="{{ selected }}">
     <input type="hidden" name="tab" value="{{ tab }}">
+    {{ filters.date_hidden(win) }}
     {% if tab == 'hq' %}
     <label class="small">Entity
       <select name="ent" onchange="this.form.submit()">
@@ -102,7 +106,7 @@
     </label>
     <noscript><button type="submit" class="btn">Apply</button></noscript>
     {% if sev or ent_filter or kind %}
-    <a class="small" href="/rd?office={{ selected | urlencode }}&tab={{ tab }}&sort={{ sort }}">clear filters</a>
+    <a class="small" href="/rd?office={{ selected | urlencode }}&tab={{ tab }}&sort={{ sort }}{{ since_qs }}">clear filters</a>
     {% endif %}
   </form>
 </div>
@@ -119,7 +123,7 @@
   <h2>{{ r.entity.name }}
     <span class="meta-dim small">· {{ r.entity.kind }}</span></h2>
   <p class="meta-dim small">
-    {{ r.total }} news item{{ '' if r.total == 1 else 's' }} all time ·
+    {{ r.total }} news item{{ '' if r.total == 1 else 's' }} {{ win.label | lower if win.key else 'all time' }} ·
     {{ r.high }} high severity ·
     {{ r.open }} awaiting review ·
     top risk area: {{ r.top_risk }}
@@ -148,7 +152,7 @@
     <strong>Social media:</strong>
     {% if r.social_total %}
       {{ r.social_total }} grievance{{ '' if r.social_total == 1 else 's' }}
-      · <a href="/social?entity={{ r.entity.id }}">open the Social media tab</a>
+      · <a href="/social?entity={{ r.entity.id }}{{ since_qs }}">open the Social media tab</a>
     {% else %}
       <span class="meta-dim">no grievances collected yet</span>
     {% endif %}
@@ -156,7 +160,7 @@
   {% if r.social_topics %}
   <p class="chip-row-social">
     {% for topic, n in r.social_topics %}
-    <a class="mini-tile" href="/social?entity={{ r.entity.id }}&topic={{ topic | urlencode }}"
+    <a class="mini-tile" href="/social?entity={{ r.entity.id }}&topic={{ topic | urlencode }}{{ since_qs }}"
        title="Open these grievances on the Social media tab"><b>{{ n }}</b>{{ topic }}</a>
     {% endfor %}
   </p>
@@ -166,7 +170,7 @@
 {% if selected and not rows %}
 <p class="meta-dim">
   {% if sev or ent_filter %}Nothing matches these filters —
-  <a href="/rd?office={{ selected | urlencode }}">clear them</a>.
+  <a href="/rd?office={{ selected | urlencode }}{{ since_qs }}">clear them</a>.
   {% else %}No entity of {{ selected }} has news items yet — entities with
   nothing fetched are not listed. Fetch news from the
   <a href="/entities">Entities</a> page.{% endif %}</p>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_filters.html" as filters %}
 {% block title %}Overview · Drishti{% endblock %}
 {% block content %}
 {% set titles = {'entity': 'All regulated entities',
@@ -10,14 +11,14 @@
 <div class="page-head">
   <div>
     <h1>{{ titles[view] }}</h1>
-    <p class="page-sub">All collected items · {{ subs[view] }}</p>
+    <p class="page-sub">{% if win.key %}{{ win.label }}{% else %}All collected items{% endif %} · {{ subs[view] }}</p>
   </div>
 </div>
 
 <div class="toolbar">
   <nav class="tabs" aria-label="Group by">
     {% for v, label in [('entity','Entity'), ('severity','Severity'), ('risk','Risk area')] %}
-    <a class="tab {% if view == v %}active{% endif %}" href="/overview?view={{ v }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}">{{ label }}</a>
+    <a class="tab {% if view == v %}active{% endif %}" href="/overview?view={{ v }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}{{ since_qs }}">{{ label }}</a>
     {% endfor %}
   </nav>
   <form method="get" action="/overview" class="fetch-form">
@@ -30,6 +31,7 @@
         {% endfor %}
       </select>
     </label>
+    {{ filters.date_picker(win) }}
     <noscript><button type="submit" class="btn">Apply</button></noscript>
   </form>
 </div>
@@ -51,14 +53,14 @@
     <td><strong>{{ r.entity.name }}</strong></td>
     <td class="meta-dim">{{ r.entity.kind }}</td>
     <td class="num">
-      <a href="/queue?entity={{ r.entity.id }}&amp;status=all">{{ r.total }}</a>
+      <a href="/queue?entity={{ r.entity.id }}&amp;status=all{{ since_qs }}">{{ r.total }}</a>
     </td>
-    <td class="num">{% if r.high %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;sev=high"><span class="sev-chip sev-chip-high">{{ r.high }} high</span></a>{% else %}0{% endif %}</td>
-    <td class="num"><a href="/queue?entity={{ r.entity.id }}&amp;status=open">{{ r.open }}</a></td>
-    <td>{% if r.top_risk != '—' %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;risk={{ r.top_risk | urlencode }}">{{ r.top_risk }}</a>{% else %}—{% endif %}</td>
+    <td class="num">{% if r.high %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;sev=high{{ since_qs }}"><span class="sev-chip sev-chip-high">{{ r.high }} high</span></a>{% else %}0{% endif %}</td>
+    <td class="num"><a href="/queue?entity={{ r.entity.id }}&amp;status=open{{ since_qs }}">{{ r.open }}</a></td>
+    <td>{% if r.top_risk != '—' %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all&amp;risk={{ r.top_risk | urlencode }}{{ since_qs }}">{{ r.top_risk }}</a>{% else %}—{% endif %}</td>
     <td class="meta-dim">{{ r.last | timeago }}</td>
-    <td><a href="/dashboard?entity={{ r.entity.id }}">Dashboard</a> ·
-        <a href="/queue?entity={{ r.entity.id }}">Queue</a></td>
+    <td><a href="/dashboard?entity={{ r.entity.id }}{{ since_qs }}">Dashboard</a> ·
+        <a href="/queue?entity={{ r.entity.id }}{{ since_qs }}">Queue</a></td>
   </tr>
   {% endfor %}
 </table>
@@ -80,12 +82,12 @@
   <tr>
     <th scope="col">Severity</th>
     <th scope="col" class="num">Items</th>
-    <th scope="col" class="num">Awaiting review<br><span class="th-note">all time</span></th>
+    <th scope="col" class="num">Awaiting review<br><span class="th-note">{{ win.label | lower if win.key else 'all time' }}</span></th>
     <th scope="col">Across entities</th>
     <th scope="col">Latest item</th>
   </tr>
   {% for r in sev_rows %}
-  {% set sev_qs = '&sev=' ~ r.category %}
+  {% set sev_qs = '&sev=' ~ r.category ~ since_qs %}
   <tr class="{% if r.category == 'high' and r.total %}row-serious{% endif %}">
     <td><a href="/queue?entity=all&amp;status=all{{ sev_qs }}"
            class="cat-link"><span class="sev-chip sev-chip-{{ r.category }}">{{ r.category }}</span></a></td>
@@ -104,12 +106,12 @@
     <th scope="col">Risk area</th>
     <th scope="col" class="num">Items</th>
     <th scope="col" class="num">High</th>
-    <th scope="col" class="num">Awaiting review<br><span class="th-note">all time</span></th>
+    <th scope="col" class="num">Awaiting review<br><span class="th-note">{{ win.label | lower if win.key else 'all time' }}</span></th>
     <th scope="col">Across entities</th>
     <th scope="col">Latest item</th>
   </tr>
   {% for r in risk_rows %}
-  {% set risk_qs = '&risk=' ~ (r.category | urlencode) %}
+  {% set risk_qs = '&risk=' ~ (r.category | urlencode) ~ since_qs %}
   {% set risk_base = '/queue?entity=all&amp;status=all' ~ risk_qs %}
   <tr class="{% if r.high %}row-serious{% endif %}">
     <td><a href="{{ risk_base }}" class="cat-link"><strong>{{ r.category }}</strong></a></td>

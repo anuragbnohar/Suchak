@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_filters.html" as filters %}
 {% block title %}Social media · Drishti{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -12,6 +13,7 @@
   {% if entities|length > 1 %}
   <form method="get" action="/social" class="entity-picker">
     {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
+    {{ filters.date_hidden(win) }}
     <label>Entity
       <select name="entity" onchange="this.form.submit()">
         {% if user.role == 'superadmin' %}<option value="all" {% if not entity %}selected{% endif %}>All entities</option>{% endif %}
@@ -35,32 +37,42 @@
 <div class="toolbar">
   <nav class="tabs" aria-label="Complaint topic">
     <a class="tab {% if not topic %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}">All<span class="tab-count">{{ topic_all }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}{{ since_qs }}">All<span class="tab-count">{{ topic_all }}</span></a>
     {% for t, n in by_topic %}{% if n %}
     <a class="tab {% if topic == t %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;topic={{ t | urlencode }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}">{{ t }}<span class="tab-count">{{ n }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;topic={{ t | urlencode }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}{{ since_qs }}">{{ t }}<span class="tab-count">{{ n }}</span></a>
     {% endif %}{% endfor %}
   </nav>
+  <form method="get" action="/social" class="fetch-form">
+    {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
+    <input type="hidden" name="entity" value="{{ entity_qs }}">
+    {% if topic %}<input type="hidden" name="topic" value="{{ topic }}">{% endif %}
+    {% if src %}<input type="hidden" name="src" value="{{ src }}">{% endif %}
+    {% if view_aside %}<input type="hidden" name="view" value="aside">{% endif %}
+    {% if view_learned %}<input type="hidden" name="view" value="learned">{% endif %}
+    {{ filters.date_picker(win) }}
+    <noscript><button type="submit" class="btn">Apply</button></noscript>
+  </form>
 </div>
 
 <div class="toolbar">
   <nav class="tabs" aria-label="Source">
     <a class="tab {% if not src %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}">All sources<span class="tab-count">{{ by_source | sum(attribute=1) }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}{{ since_qs }}">All sources<span class="tab-count">{{ by_source | sum(attribute=1) }}</span></a>
     {% for p, n in by_source %}{% if n %}
     <a class="tab {% if src == p %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}&amp;src={{ p | urlencode }}">{{ p }}<span class="tab-count">{{ n }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}&amp;src={{ p | urlencode }}{{ since_qs }}">{{ p }}<span class="tab-count">{{ n }}</span></a>
     {% endif %}{% endfor %}
   </nav>
   {% if set_aside_count or view_aside or learned_count or view_learned %}
   <nav class="tabs" aria-label="Set aside">
     <a class="tab {% if not view_aside and not view_learned %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}">Counted in Insights</a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{{ since_qs }}">Counted in Insights</a>
     <a class="tab {% if view_aside %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;view=aside">Set aside<span class="tab-count">{{ set_aside_count }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;view=aside{{ since_qs }}">Set aside<span class="tab-count">{{ set_aside_count }}</span></a>
     {% if learned_count or view_learned %}
     <a class="tab {% if view_learned %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;view=learned">Auto-excluded<span class="tab-count">{{ learned_count }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;view=learned{{ since_qs }}">Auto-excluded<span class="tab-count">{{ learned_count }}</span></a>
     {% endif %}
   </nav>
   {% endif %}
@@ -98,7 +110,7 @@
       {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
       {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
       <a href="/item/{{ it.id }}">Review this post</a>
-      {% set back = '/social?' ~ (('office=' ~ (office | urlencode) ~ '&') if office else '') ~ 'entity=' ~ entity_qs ~ ('&view=aside' if view_aside else '') %}
+      {% set back = '/social?' ~ (('office=' ~ (office | urlencode) ~ '&') if office else '') ~ 'entity=' ~ entity_qs ~ ('&view=aside' if view_aside else '') ~ since_qs %}
       {% if it.set_aside %}
       <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form">
         <input type="hidden" name="back" value="{{ back }}">
@@ -125,7 +137,7 @@
 {% endif %}
 
 <p class="meta-dim small view-note">
-  {{ collected }} post{{ 's' if collected != 1 }} collected in total ·
+  {{ collected }} post{{ 's' if collected != 1 }} collected{% if win.key %} in the period shown ({{ win.label | lower }}){% else %} in total{% endif %} ·
   {{ total_grievances }} judged a grievance ·
   {% if pending %}{{ pending }} still awaiting classification ·
   {% endif %}{{ not_grievances }} not shown here because the classifier found no complaint in them.
