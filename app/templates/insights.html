@@ -22,15 +22,17 @@
 </div>
 
 {% if can_generate %}
-<form method="post" action="/insights/generate" class="fetch-form" style="margin-bottom:1rem">
-  <input type="hidden" name="entity_id" value="{{ entity.id }}">
-  <button type="submit" class="btn btn-primary"
-          title="Reads the entity's social grievances and asks the model for recurring deficiencies. One model call.">
-    {% if cards %}Regenerate insights{% else %}Generate insights{% endif %}
-  </button>
+<div class="toolbar">
+  <form method="post" action="/insights/generate" class="fetch-form">
+    <input type="hidden" name="entity_id" value="{{ entity.id }}">
+    <button type="submit" class="btn btn-primary"
+            title="Reads the entity's social grievances and asks the model for recurring deficiencies. One model call.">
+      {% if cards %}Regenerate insights{% else %}Generate insights{% endif %}
+    </button>
+  </form>
   <span class="meta-dim small">{{ n_grievances }} grievance{{ 's' if n_grievances != 1 }}
     available to analyse · takes about half a minute · replaces the current set</span>
-</form>
+</div>
 {% elif entity is none and user.role == 'superadmin' %}
 <p class="meta-dim small">Pick one entity to generate — insights are built per entity.</p>
 {% endif %}
@@ -44,25 +46,38 @@
   <a href="/entities">Entities</a> page first.{% endif %}
 </p>
 {% else %}
-<ul class="social-list">
+{# A finding, not a post: the product it concerns, what the complaints
+   have in common, what a supervisor should do about it, and the
+   complaints it stands on -- each labelled, and the prose kept to a
+   readable measure instead of the width of the screen. #}
+<ul class="insight-list">
   {% for c in cards %}
-  <li class="social-card sev-{{ c.severity }}">
-    <p class="social-head">
+  <li class="insight-card sev-{{ c.severity }}">
+    <div class="insight-head">
       <span class="sev-chip sev-chip-{{ c.severity }}">{{ c.severity }}</span>
       {% if not entity %}<span class="entity-chip">{{ c.entity_name }}</span>{% endif %}
-      <strong>{{ c.product }}</strong>
-      <span class="meta-dim small">{{ c.item_ids | length }} complaints</span>
-    </p>
-    <p class="social-text">{{ c.pattern }}</p>
-    <p class="social-text"><strong>Recommendation:</strong> {{ c.recommendation }}</p>
-    <p class="item-meta">
-      Evidence:
-      {% for iid in c.item_ids %}<a href="/item/{{ iid }}">#{{ iid }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
-    </p>
+      <h3 class="insight-title">{{ c.product }}</h3>
+    </div>
+    <div class="insight-body">
+      <div class="insight-text">
+        <p class="insight-label">What the complaints have in common</p>
+        <p>{{ c.pattern }}</p>
+        <p class="insight-label">Recommended supervisory step</p>
+        <p class="insight-rec">{{ c.recommendation }}</p>
+      </div>
+      <div class="insight-side">
+        <p class="insight-label">Complaints cited</p>
+        <p class="insight-count">{{ c.item_ids | length }}</p>
+        <p class="insight-label">Evidence</p>
+        <p class="insight-evidence">
+          {% for iid in c.item_ids %}<a class="ev-chip" href="/item/{{ iid }}">#{{ iid }}</a>{% endfor %}
+        </p>
+      </div>
+    </div>
   </li>
   {% endfor %}
 </ul>
-<p class="meta-dim small view-note">
+<p class="meta-dim small view-note table-note">
   Generated {{ cards[0].generated_at | timeago }} by {{ cards[0].model }} from
   {{ cards[0].n_grievances }} grievance{{ 's' if cards[0].n_grievances != 1 }}
   (last {{ cards[0].window_days }} days). Every pattern cites at least

@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.26"
+APP_BUILD = "2026-09-04.27"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1444,15 +1444,37 @@ def overview(request: Request):
             last = one(db, "SELECT MAX(published_at) m FROM items WHERE entity_id=?"
                            " AND source_type != 'social'",
                        (e["id"],))["m"]
+            # Only a classified item has a verdict. Counting the rest as
+            # "low" -- which is what reading severity off an unclassified
+            # row does -- would quietly understate a backlog, so they get a
+            # band of their own in the mix.
+            by_sev = Counter(it["severity_shown"] for it in items if it["classified"])
+            pending = sum(1 for it in items if not it["classified"])
             rows.append({
                 "entity": e,
                 "total": len(items),
-                "high": sum(1 for it in items if it["severity_shown"] == "high"),
+                "high": by_sev.get("high", 0),
+                # the whole severity split, so a row can show its mix rather
+                # than only the count of the worst band
+                "mix": dict({s: by_sev.get(s, 0) for s in taxonomy.SEVERITIES},
+                            pending=pending),
+                "complaints": sum(1 for it in items if it["complaint_topics"]),
                 "open": open_count,
                 "top_risk": top_risk[0][0] if top_risk else "—",
                 "last": last,
             })
         rows.sort(key=lambda r: (-r["high"], -r["total"]))
+        # The page's own totals, for the tiles: a supervisor opening the
+        # leftmost screen asks "how much is there, and how bad" before
+        # asking it entity by entity.
+        totals = {
+            "entities": len(rows),
+            # not "items": Jinja resolves totals.items to dict.items()
+            "n_items": sum(r["total"] for r in rows),
+            "high": sum(r["high"] for r in rows),
+            "open": sum(r["open"] for r in rows),
+            "complaints": sum(r["complaints"] for r in rows),
+        }
 
         # The same record, grouped three ways. Entity answers "who needs
         # attention", severity "how bad is it", risk "what kind of problem
@@ -1486,6 +1508,7 @@ def overview(request: Request):
                                tuple(iwin_args))["n"]
         return render(request, "overview.html", user=user, rows=rows, view=view,
                       sev_rows=sev_rows, risk_rows=risk_rows, win=win,
+                      totals=totals,
                       unclassified=unclassified, kinds=kinds, kind=kind)
     finally:
         db.close()
