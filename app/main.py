@@ -135,9 +135,14 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.18"
+APP_BUILD = "2026-09-04.19"
 
+# Templates load once, at startup, like the Python code. With live
+# reloading, extracting an update ZIP over a RUNNING app served new
+# screens against old code and crashed; now both change together, on
+# restart, the way the update instructions say.
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+templates.env.auto_reload = False
 templates.env.globals["app_build"] = APP_BUILD
 
 # Datalist suggestions wherever an office is typed; the jurisdictions
