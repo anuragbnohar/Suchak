@@ -38,6 +38,31 @@
 </div>
 {% endif %}
 
+{% if selected %}
+{% set tc = region_sev if tab == 'region' else sev_counts %}
+{% set qbase = "/rd?office=" ~ (selected | urlencode) ~ "&tab=" ~ tab ~ "&sort=" ~ sort
+             ~ (("&kind=" ~ (kind | urlencode)) if kind else "")
+             ~ (("&ent=" ~ ent_filter) if ent_filter and tab == 'hq' else "") %}
+<div class="tile-row">
+  <a class="tile {% if not sev %}tile-current{% endif %}" href="{{ qbase }}">
+    <p class="tile-label">Items</p>
+    <p class="tile-value">{{ tc['high'] + tc['medium'] + tc['low'] }}</p>
+  </a>
+  <a class="tile tile-serious {% if sev == 'high' %}tile-current{% endif %}" href="{{ qbase }}&sev=high">
+    <p class="tile-label">High severity</p>
+    <p class="tile-value">{{ tc['high'] }}</p>
+  </a>
+  <a class="tile tile-warning {% if sev == 'medium' %}tile-current{% endif %}" href="{{ qbase }}&sev=medium">
+    <p class="tile-label">Medium severity</p>
+    <p class="tile-value">{{ tc['medium'] }}</p>
+  </a>
+  <a class="tile {% if sev == 'low' %}tile-current{% endif %}" href="{{ qbase }}&sev=low">
+    <p class="tile-label">Low severity</p>
+    <p class="tile-value">{{ tc['low'] }}</p>
+  </a>
+</div>
+{% endif %}
+
 {% if selected and selected != unassigned_label %}
 <div class="toolbar">
   <form method="get" action="/rd" class="fetch-form" id="rd-filters">
@@ -80,14 +105,6 @@
     <a class="small" href="/rd?office={{ selected | urlencode }}&tab={{ tab }}&sort={{ sort }}">clear filters</a>
     {% endif %}
   </form>
-  {% if tab == 'hq' %}
-  <p class="small meta-dim">
-    {% for v in ['high','medium','low'] %}
-    <a href="/rd?office={{ selected | urlencode }}&tab=hq&sev={{ v }}{% if ent_filter %}&ent={{ ent_filter }}{% endif %}"
-       class="{% if sev == v %}sev sev-{{ v }}{% endif %}">{{ v | capitalize }}: {{ sev_counts.get(v, 0) }}</a>{{ ' · ' if not loop.last }}
-    {% endfor %}
-  </p>
-  {% endif %}
 </div>
 
 {% endif %}

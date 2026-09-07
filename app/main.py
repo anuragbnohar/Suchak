@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.16"
+APP_BUILD = "2026-09-04.17"
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.globals["app_build"] = APP_BUILD
@@ -1937,6 +1937,7 @@ def rd_view(request: Request):
 
         # In-region news from entities headquartered under other offices.
         region_rows = []
+        region_sev = Counter()
         place_terms = geography.office_places(selected) if has_region_tab else []
         exclusions = geography.office_exclusions(selected) if has_region_tab else []
         if tab == "region" and place_terms:
@@ -1988,6 +1989,7 @@ def rd_view(request: Request):
                     if hit and any(place_mentions(text, t) for t in exclusions):
                         continue
                     if hit:
+                        region_sev[it["severity_shown"]] += 1
                         if sev and it["severity_shown"] != sev:
                             continue
                         it["region_term"] = hit
@@ -2006,7 +2008,8 @@ def rd_view(request: Request):
             "region_rows": region_rows,
             "sev": sev, "ent_filter": ent_filter, "sort": sort,
             "kinds": kinds, "kind": kind_f,
-            "sev_counts": sev_counts, "entity_choices": entity_choices,
+            "sev_counts": sev_counts, "region_sev": region_sev,
+            "entity_choices": entity_choices,
             "msg": request.query_params.get("msg"),
         })
     finally:
