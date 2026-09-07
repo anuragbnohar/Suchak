@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.32"
+APP_BUILD = "2026-09-04.33"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -2080,6 +2080,9 @@ def rd_view(request: Request):
 
         rows = []
         sev_counts = Counter()
+        # everything in scope before the entity and read filters, so a
+        # narrowed tile can say what it is leaving out
+        scope_total = 0
         for e in ents:
             items = [prep_item(r) for r in q(
                 db, "SELECT * FROM items WHERE entity_id=?"
@@ -2090,10 +2093,16 @@ def rd_view(request: Request):
             # so it keeps everything that still needs an office.
             if not items and selected != UNASSIGNED:
                 continue
-            sev_counts.update(it["severity_shown"] for it in items)
             by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
             for it in items:
                 _mark(it)
+            # The tiles count what the page is actually showing, so they
+            # obey the entity and read filters. They do not obey the
+            # severity filter: the tiles are what sets it, and a band that
+            # zeroed itself could never be clicked back.
+            scope_total += len(items)
+            if (not ent_filter) or str(e["id"]) == ent_filter:
+                sev_counts.update(it["severity_shown"] for it in _by_read(items))
             shown = items if not sev else [
                 it for it in items if it["severity_shown"] == sev]
             unread_here = sum(1 for it in items if not it["is_read"])
@@ -2135,6 +2144,7 @@ def rd_view(request: Request):
         # In-region news from entities headquartered under other offices.
         region_rows = []
         region_sev = Counter()
+        region_total = 0
         # the entities that actually turned up in this region, for the
         # picker: the tab lists many banks, so it needs its own roster
         region_entities: dict = {}
@@ -2190,14 +2200,17 @@ def rd_view(request: Request):
                     if hit and any(place_mentions(text, t) for t in exclusions):
                         continue
                     if hit:
-                        region_sev[it["severity_shown"]] += 1
+                        # every bank that turns up stays in the picker,
+                        # whatever the filters currently show
                         region_entities[e["id"]] = e["name"]
-                        if sev and it["severity_shown"] != sev:
-                            continue
+                        region_total += 1
                         if ent_filter and str(e["id"]) != ent_filter:
                             continue
                         _mark(it)
                         if read_f and not _by_read([it]):
+                            continue
+                        region_sev[it["severity_shown"]] += 1
+                        if sev and it["severity_shown"] != sev:
                             continue
                         it["region_term"] = hit
                         it["entity_name"] = e["name"]
@@ -2218,6 +2231,7 @@ def rd_view(request: Request):
             region_desc=geography.describe(selected) if has_region_tab else "",
             region_rows=region_rows,
             sev=sev, ent_filter=ent_filter, sort=sort, win=win, read_f=read_f,
+            tile_total_all=(region_total if tab == "region" else scope_total),
             kinds=kinds, kind=kind_f,
             sev_counts=sev_counts, region_sev=region_sev,
             entity_choices=entity_choices)

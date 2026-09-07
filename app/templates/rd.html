@@ -65,9 +65,15 @@
              ~ since_qs %}
 {% set back = qbase ~ (("&sev=" ~ sev) if sev else "") %}
 <div class="tile-row">
+  {% set tile_shown = tc['high'] + tc['medium'] + tc['low'] %}
   <a class="tile {% if not sev %}tile-current{% endif %}" href="{{ qbase }}">
     <p class="tile-label">Items</p>
-    <p class="tile-value">{{ tc['high'] + tc['medium'] + tc['low'] }}</p>
+    <p class="tile-value">{{ tile_shown }}</p>
+    {# a narrowed figure says what it is leaving out, rather than quietly
+       standing in for the whole region #}
+    {% if tile_total_all and tile_total_all != tile_shown %}
+    <p class="tile-note tile-note-quiet">of {{ tile_total_all }} unfiltered</p>
+    {% endif %}
   </a>
   <a class="tile tile-serious {% if sev == 'high' %}tile-current{% endif %}" href="{{ qbase }}&sev=high">
     <p class="tile-label">High severity</p>
