@@ -22,7 +22,7 @@
 </div>
 
 <div class="toolbar">
-  <form method="get" action="/dashboard" class="fetch-form">
+  <form method="get" action="/dashboard" class="fetch-form filter-form">
     <input type="hidden" name="entity" value="{{ entity.id }}">
     {{ filters.date_picker(win) }}
     <noscript><button type="submit" class="btn">Apply</button></noscript>

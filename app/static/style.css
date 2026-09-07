@@ -252,7 +252,17 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--paper); bo
    One toolbar rather than a tile band above a tab row: the tiles repeated
    counts the tabs already carried, which cost a whole band of height and
    said nothing new. */
-.toolbar { display: flex; align-items: center; gap: 0.75rem 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+/* Bottom-aligned, not centre-aligned: a toolbar mixes bare tab groups with
+   labelled dropdowns, which are a caption taller. Centring them put the tabs
+   on one line and the dropdown boxes on another; sitting them on a common
+   bottom edge lines every control up as one row. */
+.toolbar { display: flex; align-items: flex-end; gap: 0.75rem 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+/* A row of labelled filter dropdowns. Each keeps its natural width so a long
+   entity type stays readable, but none falls below a common floor -- a
+   two-word "Date" box beside a wide neighbour reads as a mistake. */
+.filter-form { align-items: flex-end; }
+.filter-form label { margin: 0; }
+.filter-form select { width: auto; min-width: 9.5rem; }
 .toolbar-pills { display: flex; gap: 0.4rem; }
 .pill {
   display: inline-flex; align-items: center; gap: 0.35rem;

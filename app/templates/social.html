@@ -43,7 +43,7 @@
        href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;topic={{ t | urlencode }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}{{ since_qs }}">{{ t }}<span class="tab-count">{{ n }}</span></a>
     {% endif %}{% endfor %}
   </nav>
-  <form method="get" action="/social" class="fetch-form">
+  <form method="get" action="/social" class="fetch-form filter-form">
     {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
     <input type="hidden" name="entity" value="{{ entity_qs }}">
     {% if topic %}<input type="hidden" name="topic" value="{{ topic }}">{% endif %}

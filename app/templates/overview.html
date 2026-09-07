@@ -21,7 +21,7 @@
     <a class="tab {% if view == v %}active{% endif %}" href="/overview?view={{ v }}{% if kind %}&kind={{ kind | urlencode }}{% endif %}{{ since_qs }}">{{ label }}</a>
     {% endfor %}
   </nav>
-  <form method="get" action="/overview" class="fetch-form">
+  <form method="get" action="/overview" class="fetch-form filter-form">
     <input type="hidden" name="view" value="{{ view }}">
     <label class="small">Entity type
       <select name="kind" onchange="this.form.submit()">

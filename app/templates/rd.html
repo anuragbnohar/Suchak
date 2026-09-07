@@ -14,7 +14,7 @@
   <a href="/entities">Entities</a> → Edit, and this view will group them by region.</p>
 {% else %}
 <div class="toolbar">
-  <form method="get" action="/rd" class="fetch-form">
+  <form method="get" action="/rd" class="fetch-form filter-form">
     <label class="small">RBI office
       <select name="office" onchange="this.form.submit()">
         {% for o in offices %}
@@ -68,7 +68,7 @@
 
 {% if selected and selected != unassigned_label %}
 <div class="toolbar">
-  <form method="get" action="/rd" class="fetch-form" id="rd-filters">
+  <form method="get" action="/rd" class="fetch-form filter-form" id="rd-filters">
     <input type="hidden" name="office" value="{{ selected }}">
     <input type="hidden" name="tab" value="{{ tab }}">
     {{ filters.date_hidden(win) }}
