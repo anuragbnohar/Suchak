@@ -43,19 +43,9 @@
        href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;topic={{ t | urlencode }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}{{ since_qs }}">{{ t }}<span class="tab-count">{{ n }}</span></a>
     {% endif %}{% endfor %}
   </nav>
-  <form method="get" action="/social" class="fetch-form filter-form">
-    {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
-    <input type="hidden" name="entity" value="{{ entity_qs }}">
-    {% if topic %}<input type="hidden" name="topic" value="{{ topic }}">{% endif %}
-    {% if src %}<input type="hidden" name="src" value="{{ src }}">{% endif %}
-    {% if view_aside %}<input type="hidden" name="view" value="aside">{% endif %}
-    {% if view_learned %}<input type="hidden" name="view" value="learned">{% endif %}
-    {{ filters.date_picker(win) }}
-    <noscript><button type="submit" class="btn">Apply</button></noscript>
-  </form>
 </div>
 
-<div class="toolbar">
+<div class="toolbar toolbar-wrap">
   <nav class="tabs" aria-label="Source">
     <a class="tab {% if not src %}active{% endif %}"
        href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if topic %}&amp;topic={{ topic | urlencode }}{% endif %}{{ since_qs }}">All sources<span class="tab-count">{{ by_source | sum(attribute=1) }}</span></a>
@@ -76,6 +66,16 @@
     {% endif %}
   </nav>
   {% endif %}
+  <form method="get" action="/social" class="fetch-form filter-form">
+    {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
+    <input type="hidden" name="entity" value="{{ entity_qs }}">
+    {% if topic %}<input type="hidden" name="topic" value="{{ topic }}">{% endif %}
+    {% if src %}<input type="hidden" name="src" value="{{ src }}">{% endif %}
+    {% if view_aside %}<input type="hidden" name="view" value="aside">{% endif %}
+    {% if view_learned %}<input type="hidden" name="view" value="learned">{% endif %}
+    {{ filters.date_picker(win, bare=true) }}
+    <noscript><button type="submit" class="btn">Apply</button></noscript>
+  </form>
 </div>
 
 {% if view_learned %}
@@ -106,7 +106,7 @@
       <span class="meta-dim small">{{ it.published_at | timeago }}</span>
     </p>
     <p class="social-text">{{ it.snippet or it.title }}</p>
-    <p class="item-meta">
+    <div class="item-meta">
       {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
       {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
       <a href="/item/{{ it.id }}">Review this post</a>
@@ -118,25 +118,27 @@
         <button type="submit" class="btn btn-small btn-quiet">Restore</button>
       </form>
       {% else %}
-      <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form">
-        <input type="hidden" name="back" value="{{ back }}">
-        <select name="reason" aria-label="Set aside reason">
-          <option value="">Set aside as…</option>
-          {% for code, label in set_aside_reasons %}
-          <option value="{{ code }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="btn btn-small btn-quiet">Apply</button>
-      </form>
+      <details class="todo-more disclose">
+        <summary>Set aside</summary>
+        <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form disclose-body">
+          <input type="hidden" name="back" value="{{ back }}">
+          <select name="reason" aria-label="Set aside reason">
+            {% for code, label in set_aside_reasons %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-small btn-quiet">Apply</button>
+        </form>
+      </details>
       {% endif %}
       {% if it.status == 'reviewed' %}<span class="ok-chip">✓ reviewed</span>{% endif %}
-    </p>
+    </div>
   </li>
   {% endfor %}
 </ul>
 {% endif %}
 
-<p class="meta-dim small view-note">
+<p class="meta-dim small view-note table-note">
   {{ collected }} post{{ 's' if collected != 1 }} collected{% if win.key %} in the period shown ({{ win.label | lower }}){% else %} in total{% endif %} ·
   {{ total_grievances }} judged a grievance ·
   {% if pending %}{{ pending }} still awaiting classification ·

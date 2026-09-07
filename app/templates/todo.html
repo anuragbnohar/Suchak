@@ -78,8 +78,6 @@
         {% if entities|length > 1 %}<span class="meta-strong">{{ it.entity_name }}</span>{% endif %}
         {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
         {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
-        <span>Owner {{ it.owner_name or '—' }}</span>
-        {% if it.due_label %}<span>Due {{ it.due_label }}</span>{% endif %}
         <span>Raised by {{ it.reviewer_name }} · {{ it.reviewed_at | timeago }}</span>
       </p>
       {% if it.review_notes %}<p class="todo-note">{{ it.review_notes }}</p>{% endif %}
@@ -89,18 +87,27 @@
       {% endif %}
     </div>
 
-    <div class="todo-cta">
-      {% if it.can_close and it.action_status == 'open' %}
-      <form method="post" action="/todo/{{ it.id }}/done">
-        <input type="hidden" name="back" value="{{ back }}">
-        <button type="submit" class="btn btn-primary btn-small">Mark done</button>
-      </form>
-      {% elif it.can_close %}
-      <form method="post" action="/todo/{{ it.id }}/reopen">
-        <input type="hidden" name="back" value="{{ back }}">
-        <button type="submit" class="btn btn-small">Reopen</button>
-      </form>
-      {% endif %}
+    <div class="todo-side">
+      <div class="todo-facts">
+        <p class="prop-key">Owner</p>
+        <p class="todo-fact">{{ it.owner_name or '—' }}</p>
+        <p class="prop-key">Due</p>
+        <p class="todo-fact {% if it.overdue %}is-late-text{% endif %}">
+          {{ it.due_label or 'no date set' }}</p>
+      </div>
+      <div class="todo-cta">
+        {% if it.can_close and it.action_status == 'open' %}
+        <form method="post" action="/todo/{{ it.id }}/done">
+          <input type="hidden" name="back" value="{{ back }}">
+          <button type="submit" class="btn btn-primary btn-small">Mark done</button>
+        </form>
+        {% elif it.can_close %}
+        <form method="post" action="/todo/{{ it.id }}/reopen">
+          <input type="hidden" name="back" value="{{ back }}">
+          <button type="submit" class="btn btn-small">Reopen</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
 
     {% if it.action_status == 'open' and (it.can_close or it.can_assign) %}

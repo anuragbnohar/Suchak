@@ -986,3 +986,32 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2)
   .insight-body { grid-template-columns: 1fr; }
   .insight-side { border-left: none; border-top: 1px solid var(--line); padding: 0.85rem 0 0; }
 }
+
+
+/* ══ Social media ══════════════════════════════════════════════════════
+   Setting a post aside is a second thought, not the card's purpose: a
+   dropdown on every one of fourteen cards was the loudest thing on the
+   page and doubled every card's height. It waits behind a disclosure. */
+
+.disclose { display: inline-block; grid-column: auto; }
+.disclose > summary { font-size: 0.8rem; }
+.disclose-body { margin-top: 0.45rem; }
+/* opened, it takes a line of its own rather than stretching the row of
+   chips it was sitting in */
+.disclose[open] { flex-basis: 100%; }
+.toolbar-wrap { gap: 0.5rem 0.75rem; }
+
+/* ══ Follow-ups ════════════════════════════════════════════════════════
+   Who owns it and when it is due are facts about the follow-up, so they
+   sit in a column of their own beside the action -- rather than buried in
+   a meta line, with a lone button on an empty field opposite. */
+
+.todo-side {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 0.6rem; text-align: right; min-width: 8rem;
+}
+.todo-facts { display: grid; grid-template-columns: auto; gap: 0.1rem; }
+.todo-fact { margin: 0 0 0.35rem; font-size: 0.84rem; color: var(--ink); }
+.todo-fact:last-child { margin-bottom: 0; }
+.todo-side .prop-key { margin: 0; }
+.is-late-text { color: var(--serious); font-weight: 700; }
