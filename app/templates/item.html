@@ -4,160 +4,208 @@
 <p class="crumb"><a href="/queue?entity={{ entity.id }}">← Back to queue</a></p>
 
 {% if item.attribution == 'rejected' %}
-<div class="flash warn-note">
+<div class="warn-note detail-warn">
   This item was <strong>rejected as another entity's news</strong> — none of
   {{ entity.name }}'s stored aliases appears in its headline or snippet
   ({{ item.gate_reason }}). If you recognise it as this entity's, attribute it
   and it will be classified like any other item.
-  <form method="post" action="/item/{{ item.id }}/attribute" style="margin-top:0.5rem">
-    <button type="submit" class="btn btn-primary">This is {{ entity.name }}'s — classify it</button>
-  </form>
-  <p class="meta-dim small" style="margin:0.5rem 0 0">If the press spells the
-    name this way often, also add that spelling as an alias on the
-    <a href="/entities">Entities</a> page so future fetches match it themselves.</p>
+  <div class="form-actions">
+    <form method="post" action="/item/{{ item.id }}/attribute">
+      <button type="submit" class="btn btn-primary">This is {{ entity.name }}'s — classify it</button>
+    </form>
+    <p class="meta-dim small">If the press spells the name this way often, also add
+      that spelling as an alias on the <a href="/entities">Entities</a> page so
+      future fetches match it themselves.</p>
+  </div>
 </div>
 {% endif %}
 
 <article class="detail">
   <div class="detail-main">
-    <h1 class="detail-title">{{ item.title }}</h1>
-    <p class="item-meta">
-      <span class="sev-chip sev-chip-{{ item.severity_shown }}">{{ item.severity_shown }}</span>
-      {% if item.review_severity and item.review_severity != item.severity %}
-      <span class="meta-dim small">reviewer set severity (classifier said {{ item.severity }})</span>
-      {% endif %}
-      {% if item.source_type_label %}<span class="type-chip">{{ item.source_type_label }}</span>{% endif %}
-      <span class="meta-action">{{ item.actionability_label }}</span>
-      {% if item.geography %}<span class="meta-dim">📍 {{ item.geography }}</span>{% endif %}
-      <span class="meta-dim">{{ item.published_at | timeago }}</span>
-    </p>
+    <div class="panel item-panel">
+      <h1 class="detail-title">{{ item.title }}</h1>
 
-    {% if item.summary %}<p class="detail-summary">{{ item.summary }}</p>{% endif %}
-    {% if item.snippet and item.snippet != item.summary %}
-    <p class="detail-snippet">{{ item.snippet }}</p>
-    {% endif %}
+      {# The classifier's verdict as a property block rather than a run-on
+         line: an officer reads down a column of named facts far faster
+         than along a sentence of chips. #}
+      <dl class="prop-grid">
+        <div class="prop">
+          <dt class="prop-key">Severity</dt>
+          <dd class="prop-val">
+            <span class="sev-chip sev-chip-{{ item.severity_shown }}">{{ item.severity_shown }}</span>
+            {% if item.review_severity and item.review_severity != item.severity %}
+            <span class="meta-dim small">set by reviewer · classifier said {{ item.severity }}</span>
+            {% endif %}
+          </dd>
+        </div>
+        <div class="prop">
+          <dt class="prop-key">Recommendation</dt>
+          <dd class="prop-val">{{ item.actionability_label }}</dd>
+        </div>
+        {% if item.source_type_label %}
+        <div class="prop">
+          <dt class="prop-key">Type</dt>
+          <dd class="prop-val">{{ item.source_type_label }}</dd>
+        </div>
+        {% endif %}
+        <div class="prop">
+          <dt class="prop-key">Published</dt>
+          <dd class="prop-val">{{ item.published_at | timeago }}</dd>
+        </div>
+        {% if item.geography %}
+        <div class="prop">
+          <dt class="prop-key">Location named</dt>
+          <dd class="prop-val">{{ item.geography }}</dd>
+        </div>
+        {% endif %}
+        <div class="prop">
+          <dt class="prop-key">Relevance</dt>
+          <dd class="prop-val">{{ '%.0f' | format((item.relevance or 0) * 100) }}%</dd>
+        </div>
+      </dl>
 
-    <div class="chip-row">
-      {% for area in item.risk_areas_shown %}<span class="area-chip">{{ area }}</span>{% endfor %}
-      {% for t in item.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
-      {% if item.review_complaint_topics is not none
-            and item.review_complaint_topics != item.complaint_topics_model %}
-      <span class="meta-dim small">(classifier suggested: {{ item.complaint_topics_model | join(', ') or 'none' }})</span>
+      {% if item.risk_areas_shown or item.complaint_topics or item.factor_matches %}
+      <div class="chip-row">
+        {% for area in item.risk_areas_shown %}<span class="area-chip">{{ area }}</span>{% endfor %}
+        {% for t in item.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
+        {% if item.review_complaint_topics is not none
+              and item.review_complaint_topics != item.complaint_topics_model %}
+        <span class="meta-dim small">(classifier suggested: {{ item.complaint_topics_model | join(', ') or 'none' }})</span>
+        {% endif %}
+        {% for f in item.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
+      </div>
       {% endif %}
-      {% for f in item.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
+
+      {% if item.summary %}<p class="detail-summary">{{ item.summary }}</p>{% endif %}
+      {% if item.snippet and item.snippet != item.summary %}
+      <p class="detail-snippet">{{ item.snippet }}</p>
+      {% endif %}
+
+      {% if item.source_type == 'social' %}
+      <section class="detail-block">
+        <h2>Use in Insights</h2>
+        {% if item.set_aside %}
+        <p class="small">Set aside as <strong>{{ set_aside_labels.get(item.set_aside, item.set_aside) }}</strong>
+          {% if item.set_aside_by %}by {{ item.set_aside_by }}{% endif %} —
+          Insights does not count this post.</p>
+        <form method="post" action="/item/{{ item.id }}/set-aside">
+          <button type="submit" class="btn btn-small">Restore to Insights</button>
+        </form>
+        {% else %}
+        <p class="small meta-dim">A post can be a real grievance and still be no
+          use for spotting patterns. Set it aside and Insights stops counting it;
+          it stays here, with its severity and topics intact.</p>
+        <form method="post" action="/item/{{ item.id }}/set-aside" class="inline-form">
+          <select name="reason" aria-label="Set aside reason">
+            {% for code, label in set_aside_reasons %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-small">Set aside</button>
+        </form>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      <section class="detail-block">
+        <h2>Sources</h2>
+        <ul class="source-list">
+          <li>
+            <a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.source_name or 'Source' }}</a>
+            <span class="src-meta">
+              {%- if item.source_tier in ('official','trusted') %}<span class="ok-chip" title="trusted source">✓</span> trusted · {% endif -%}
+              shown on this item · {{ item.published_at | timeago }}</span>
+          </li>
+          {% for s in sources %}
+          <li>
+            <a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.source_name or 'Source' }}</a>
+            <span class="src-meta">
+              {%- if s.source_tier in ('official','trusted') %}<span class="ok-chip" title="trusted source">✓</span> trusted · {% endif -%}
+              same event · {{ s.published_at | timeago }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% if sources %}
+        <p class="meta-dim small">Reports of the same event, merged into one item so
+          the queue carries the story once.</p>
+        {% endif %}
+      </section>
+
+      {% if item.relationships %}
+      <section class="detail-block">
+        <h2>Linkages mentioned</h2>
+        <ul class="rel-list">
+          {% for r in item.relationships %}
+          <li><strong>{{ r.name }}</strong> <span class="meta-dim">({{ r.type | replace('_', ' ') }})</span></li>
+          {% endfor %}
+        </ul>
+        <p class="meta-dim small">Linked organizations feed second-order risk warnings across entities.</p>
+      </section>
+      {% endif %}
+
+      <p class="audit-line">Classified by {{ item.classifier or '—' }}
+        {%- if item.model %} ({{ item.model }}){% endif %}
+        {%- if item.classified_at %} · {{ item.classified_at | timeago }}{% endif %}</p>
     </div>
 
-    {% if item.source_type == 'social' %}
-    <section class="detail-block">
-      <h2>Use in Insights</h2>
-      {% if item.set_aside %}
-      <p class="small">Set aside as <strong>{{ set_aside_labels.get(item.set_aside, item.set_aside) }}</strong>
-        {% if item.set_aside_by %}by {{ item.set_aside_by }}{% endif %} —
-        Insights does not count this post.</p>
-      <form method="post" action="/item/{{ item.id }}/set-aside">
-        <button type="submit" class="btn btn-small">Restore to Insights</button>
-      </form>
-      {% else %}
-      <p class="small meta-dim">A post can be a real grievance and still be no
-        use for spotting patterns. Set it aside and Insights stops counting it;
-        it stays here, with its severity and topics intact.</p>
-      <form method="post" action="/item/{{ item.id }}/set-aside" class="inline-form">
-        <select name="reason" aria-label="Set aside reason">
-          {% for code, label in set_aside_reasons %}
-          <option value="{{ code }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="btn btn-small">Set aside</button>
-      </form>
-      {% endif %}
-    </section>
+  {% if history %}
+  <section class="panel">
+    <h2>Review history</h2>
+    <p class="meta-dim small hist-count">{{ history | length }}
+      review{{ 's' if history | length != 1 }} on record, oldest first.
+      Every review is kept — a later reviewer never overwrites an earlier one.</p>
+    {% if item.action_status %}
+    <p class="todo-state {% if item.overdue %}is-late{% endif %}">
+      {% if item.action_status == 'done' %}✓ Follow-up closed{% if item.action_close_note %} — “{{ item.action_close_note }}”{% endif %}
+      {% else %}⚠ Follow-up open{% if item.action_due %}, due {{ item.action_due }}{% endif %}{% endif %}
+      · <a href="/todo?status={{ 'done' if item.action_status == 'done' else 'open' }}">open the To-do page</a>
+    </p>
     {% endif %}
-
-    <section class="detail-block">
-      <h2>Sources</h2>
-      <ul class="source-list">
-        <li><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.source_name or 'Source' }}</a>
-            <span class="meta-dim">{{ item.published_at | timeago }}</span></li>
-        {% for s in sources %}
-        <li>{% if s.source_tier in ('official','trusted') %}<span class="ok-chip" title="trusted source">✓</span> {% endif %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.source_name or 'Source' }}</a>
-            <span class="meta-dim">{{ s.published_at | timeago }}</span></li>
-        {% endfor %}
-      </ul>
-    </section>
-
-    {% if item.relationships %}
-    <section class="detail-block">
-      <h2>Linkages mentioned</h2>
-      <ul class="rel-list">
-        {% for r in item.relationships %}
-        <li><strong>{{ r.name }}</strong> <span class="meta-dim">({{ r.type | replace('_', ' ') }})</span></li>
-        {% endfor %}
-      </ul>
-      <p class="meta-dim small">Linked organizations feed second-order risk warnings across entities.</p>
-    </section>
-    {% endif %}
-
-    <p class="audit-line">Classified by: {{ item.classifier or '—' }}
-      {% if item.model %}({{ item.model }}){% endif %}
-      {% if item.classified_at %} · {{ item.classified_at | timeago }}{% endif %}
-      · relevance {{ '%.0f' | format((item.relevance or 0) * 100) }}%</p>
+    <ol class="rev-list">
+      {% for r in history %}
+      <li class="rev {% if loop.last %}rev-current{% endif %}">
+        <p class="rev-head">
+          <strong>{{ r.reviewer_name or 'Deleted user' }}</strong>
+          {% if r.reviewer_role %}<span class="role-chip role-{{ r.reviewer_role }}">{{ r.reviewer_role }}</span>{% endif %}
+          <span class="meta-dim small" title="{{ r.created_at }}">{{ r.created_at | timeago }}</span>
+          {% if loop.last %}<span class="rev-now">current</span>{% endif %}
+        </p>
+        <p class="rev-verdict">
+          {{ 'Relevant' if r.relevant else 'Not relevant' }} ·
+          {{ 'actionable' if r.actionable else 'not actionable' }}
+          {%- if r.severity %} · severity {{ r.severity }}{% endif %}
+        </p>
+        {% if r.risk_areas or r.complaint_topics %}
+        <div class="chip-row rev-chips">
+          {% for a in r.risk_areas %}<span class="area-chip">{{ a }}</span>{% endfor %}
+          {% for t in r.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
+        </div>
+        {% endif %}
+        {% if r.action %}<p class="rev-action">Action: <strong>{{ r.action }}</strong></p>{% endif %}
+        {% if not r.first %}
+          {% if r.changes %}
+          <p class="rev-changes">{% for c in r.changes %}<span class="rev-change">{{ c }}</span>{% endfor %}</p>
+          {% else %}
+          <p class="meta-dim small">Confirmed the previous verdict unchanged.</p>
+          {% endif %}
+        {% endif %}
+        {% if r.notes %}<p class="rev-note">“{{ r.notes }}”</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% endif %}
   </div>
 
   <aside class="detail-side">
-    {% if history %}
-    <section class="panel">
-      <h2>Review history</h2>
-      <p class="meta-dim small hist-count">{{ history | length }}
-        review{{ 's' if history | length != 1 }} on record, oldest first.
-        Every review is kept — a later reviewer never overwrites an earlier one.</p>
-      <ol class="rev-list">
-        {% for r in history %}
-        <li class="rev {% if loop.last %}rev-current{% endif %}">
-          <p class="rev-head">
-            <strong>{{ r.reviewer_name or 'Deleted user' }}</strong>
-            {% if r.reviewer_role %}<span class="role-chip role-{{ r.reviewer_role }}">{{ r.reviewer_role }}</span>{% endif %}
-            <span class="meta-dim small" title="{{ r.created_at }}">{{ r.created_at | timeago }}</span>
-            {% if loop.last %}<span class="rev-now">current</span>{% endif %}
-          </p>
-          <p class="rev-verdict">
-            {{ 'Relevant' if r.relevant else 'Not relevant' }} ·
-            {{ 'actionable' if r.actionable else 'not actionable' }}
-            {%- if r.severity %} · severity {{ r.severity }}{% endif %}
-          </p>
-          {% if r.risk_areas %}
-          <div class="chip-row rev-chips">{% for a in r.risk_areas %}<span class="area-chip">{{ a }}</span>{% endfor %}</div>
-          {% endif %}
-          {% if r.complaint_topics %}
-          <div class="chip-row rev-chips">{% for t in r.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}</div>
-          {% endif %}
-          {% if r.action %}<p class="rev-action">Action: <strong>{{ r.action }}</strong></p>{% endif %}
-          {% if not r.first %}
-            {% if r.changes %}
-            <p class="rev-changes">{% for c in r.changes %}<span class="rev-change">{{ c }}</span>{% endfor %}</p>
-            {% else %}
-            <p class="meta-dim small">Confirmed the previous verdict unchanged.</p>
-            {% endif %}
-          {% endif %}
-          {% if r.notes %}<p class="rev-note">“{{ r.notes }}”</p>{% endif %}
-        </li>
-        {% endfor %}
-      </ol>
-      {% if item.action_status %}
-      <p class="todo-state {% if item.overdue %}is-late{% endif %}">
-        {% if item.action_status == 'done' %}✓ Follow-up closed{% if item.action_close_note %} — “{{ item.action_close_note }}”{% endif %}
-        {% else %}⚠ Follow-up open{% if item.action_due %}, due {{ item.action_due }}{% endif %}{% endif %}
-        · <a href="/todo?status={{ 'done' if item.action_status == 'done' else 'open' }}">open the To-do page</a>
-      </p>
-      {% endif %}
-    </section>
-    {% endif %}
-
+    {# The rail is the work: what past rulings say, then the decision.
+       The audit trail sits with the record it belongs to, on the left. #}
     <section class="panel">
       <h2>Similar reviewed items</h2>
       {% if similar %}
       {% if suggestion %}
-      <p class="suggestion">Suggested action: <strong>{{ suggestion }}</strong></p>
-      <p class="meta-dim small">Based on how this team handled similar items.</p>
+      <p class="suggestion">Suggested action: <strong>{{ suggestion }}</strong>
+        <span class="meta-dim small">— how this team handled similar items.</span></p>
       {% endif %}
       <ul class="similar-list">
         {% for s, score in similar %}
@@ -189,37 +237,46 @@
         </fieldset>
         <fieldset>
           <legend>Risk areas</legend>
-          {% for area in taxonomy.RISK_AREAS %}
-          <label class="check"><input type="checkbox" name="risk_areas" value="{{ area }}"
-            {% if (item.review_risk_areas and area in item.review_risk_areas)
-                  or (not item.review_risk_areas and area in item.risk_areas) %}checked{% endif %}>
-            {{ area }}</label>
-          {% endfor %}
+          <div class="check-grid">
+            {% for area in taxonomy.RISK_AREAS %}
+            <label class="check"><input type="checkbox" name="risk_areas" value="{{ area }}"
+              {% if (item.review_risk_areas and area in item.review_risk_areas)
+                    or (not item.review_risk_areas and area in item.risk_areas) %}checked{% endif %}>
+              {{ area }}</label>
+            {% endfor %}
+          </div>
         </fieldset>
         <fieldset>
-          <legend>Complaint topics <span class="meta-dim">— what the customer is aggrieved about; leave all unticked if this is not a grievance</span></legend>
-          {% for t in taxonomy.COMPLAINT_TOPICS %}
-          <label class="check"><input type="checkbox" name="complaint_topics" value="{{ t }}"
-            {% if (item.review_complaint_topics is not none and t in item.review_complaint_topics)
-                  or (item.review_complaint_topics is none and t in item.complaint_topics) %}checked{% endif %}>
-            {{ t }}</label>
-          {% endfor %}
+          <legend>Complaint topics</legend>
+          <p class="field-note">What the customer is aggrieved about. Leave all
+            unticked if this is not a grievance.</p>
+          <div class="check-grid">
+            {% for t in taxonomy.COMPLAINT_TOPICS %}
+            <label class="check"><input type="checkbox" name="complaint_topics" value="{{ t }}"
+              {% if (item.review_complaint_topics is not none and t in item.review_complaint_topics)
+                    or (item.review_complaint_topics is none and t in item.complaint_topics) %}checked{% endif %}>
+              {{ t }}</label>
+            {% endfor %}
+          </div>
         </fieldset>
-        <fieldset>
-          <legend>Severity</legend>
-          {% for sev in taxonomy.SEVERITIES %}
-          <label><input type="radio" name="severity" value="{{ sev }}"
-            {% if item.severity_shown == sev %}checked{% endif %}> {{ sev | capitalize }}</label>
-          {% endfor %}
-        </fieldset>
-        <fieldset>
-          <legend>Actionable?</legend>
-          <label><input type="radio" name="actionable" value="yes"
-            {% if item.review_actionable %}checked{% endif %}> Yes</label>
-          <label><input type="radio" name="actionable" value="no"
-            {% if not item.review_actionable %}checked{% endif %}> No</label>
-          <p class="meta-dim small">Yes puts this on the team’s To-do page until someone closes it.</p>
-        </fieldset>
+        <div class="field-row">
+          <fieldset>
+            <legend>Severity</legend>
+            {% for sev in taxonomy.SEVERITIES %}
+            <label><input type="radio" name="severity" value="{{ sev }}"
+              {% if item.severity_shown == sev %}checked{% endif %}> {{ sev | capitalize }}</label>
+            {% endfor %}
+          </fieldset>
+          <fieldset>
+            <legend>Actionable?</legend>
+            <label><input type="radio" name="actionable" value="yes"
+              {% if item.review_actionable %}checked{% endif %}> Yes</label>
+            <label><input type="radio" name="actionable" value="no"
+              {% if not item.review_actionable %}checked{% endif %}> No</label>
+          </fieldset>
+        </div>
+        <p class="field-note">Actionable: Yes puts this on the team's To-do page
+          until someone closes it.</p>
         <label>Action taken / proposed
           <select name="action">
             <option value="">—</option>
@@ -228,23 +285,28 @@
             {% endfor %}
           </select>
         </label>
-        <label>Assign follow-up to
-          <select name="action_owner">
-            {% for u in owners %}
-            <option value="{{ u.id }}"
-              {% if u.id == (item.action_owner or user.id) %}selected{% endif %}>
-              {{ u.display_name }}{% if u.role == 'superadmin' %} (super admin){% endif %}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label>Follow-up due (optional)
-          <input type="date" name="action_due" value="{{ item.action_due or '' }}">
-        </label>
+        <div class="field-row">
+          <label>Assign follow-up to
+            <select name="action_owner">
+              {% for u in owners %}
+              <option value="{{ u.id }}"
+                {% if u.id == (item.action_owner or user.id) %}selected{% endif %}>
+                {{ u.display_name }}{% if u.role == 'superadmin' %} (super admin){% endif %}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Follow-up due (optional)
+            <input type="date" name="action_due" value="{{ item.action_due or '' }}">
+          </label>
+        </div>
         <label>Notes
           <textarea name="notes" rows="3">{{ item.review_notes or '' }}</textarea>
         </label>
-        <button type="submit" class="btn btn-primary">Save review</button>
-        <p class="meta-dim small">Your review becomes a precedent that improves future classification.</p>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save review</button>
+          <p class="meta-dim small">Your review becomes a precedent that improves
+            future classification.</p>
+        </div>
       </form>
     </section>
   </aside>

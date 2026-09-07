@@ -48,10 +48,10 @@
       {% for r in rows %}
       <tr>
         <td><strong>{{ r.entity.name }}</strong></td>
-        <td class="meta-dim">{{ r.entity.kind }}</td>
+        <td class="meta-dim nowrap">{{ r.entity.kind }}</td>
         <td class="meta-dim">{{ r.languages | join(', ') }}</td>
         <td class="meta-dim">{% if r.entity.x_handle %}{% for h in r.entity.x_handle.split(',') %}@{{ h.strip() }}{{ ' ' if not loop.last }}{% endfor %}{% else %}—{% endif %}</td>
-        <td class="num">{{ r.n_items }}</td>
+        <td class="num">{% if r.n_items %}<a href="/queue?entity={{ r.entity.id }}&amp;status=all">{{ r.n_items }}</a>{% else %}0{% endif %}</td>
         <td class="meta-dim small">
           {% if r.last_fetch %}
             {{ r.last_fetch.ran_at | timeago }} · {{ r.last_fetch.added }} added,
@@ -63,7 +63,7 @@
         <td>
           <div class="row-actions">
             {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
-            <form method="post" action="/fetch" class="fetch-form">
+            <form method="post" action="/fetch" class="fetch-form control-group">
               <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
               <input type="hidden" name="channel" value="news">
               <select name="days" class="lookback-select" aria-label="Lookback window"
@@ -74,7 +74,7 @@
               </select>
               <button type="submit" class="btn btn-small">Fetch news</button>
             </form>
-            <form method="post" action="/fetch" class="fetch-form">
+            <form method="post" action="/fetch" class="fetch-form control-group">
               <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
               <input type="hidden" name="channel" value="social">
               <select name="days" class="lookback-select" aria-label="Lookback window"
@@ -86,7 +86,7 @@
               <button type="submit" class="btn btn-small"
                       title="Reddit, consumercomplaints.in and YouTube comments — free. The picker sets how far back this fetch looks.">Fetch social</button>
             </form>
-            <form method="post" action="/fetch" class="fetch-form">
+            <form method="post" action="/fetch" class="fetch-form control-group">
               <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
               <input type="hidden" name="channel" value="x">
               <select name="days" class="lookback-select" aria-label="Lookback window"
@@ -114,7 +114,7 @@
         <td colspan="7">
           <details class="todo-more">
             <summary>Edit {{ r.entity.name }} — aliases, news languages, X handle</summary>
-            <div class="todo-more-body">
+            <div class="edit-body">
               <form method="post" action="/entities/{{ r.entity.id }}/aliases"
                     class="stack-form entity-edit-form">
                 <label>Aliases — how the press actually writes this name,
@@ -150,7 +150,11 @@
                 <p class="meta-dim small">A regional entity is covered in the local
                   press first — add <code>mr</code> for Maharashtra, <code>hi</code>
                   for the Hindi belt, alongside <code>en</code>.</p>
-                <button type="submit" class="btn btn-primary">Save changes</button>
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary">Save changes</button>
+                  <p class="meta-dim small">Aliases decide what the next fetch keeps,
+                    so a spelling added here starts matching immediately.</p>
+                </div>
               </form>
             </div>
           </details>
@@ -160,7 +164,7 @@
       {% endfor %}
     </table>
     </div>
-    <p class="meta-dim small">Per-entity sources: Google News RSS (free, no key),
+    <p class="meta-dim small table-note">Per-entity sources: Google News RSS (free, no key),
       one feed per language listed above — <code>en</code>, <code>mr</code>,
       <code>hi</code>, <code>gu</code>, <code>bn</code>, <code>ta</code>,
       <code>te</code>, <code>kn</code>, <code>ml</code>. A language only helps

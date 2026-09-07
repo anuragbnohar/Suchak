@@ -569,3 +569,10 @@ The shell is two tiers: a dark masthead that never changes and says which
 application this is, and a light context bar beneath it that says which
 screen of the current workspace is open. Both live in `templates/base.html`.
 Shared filter controls live in `templates/_filters.html`.
+
+An item's page follows the record-and-inspector pattern: the left column is
+the record — the story, its sources, its linkages and the trail of reviews
+on it — and the right rail is the work, showing what past rulings say and
+then the form that records the decision. Settings and Factors share a
+third pattern: a rule's name and explanation on the left at a readable
+measure, its control on the right, one row to a rule.
