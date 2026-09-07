@@ -40,6 +40,10 @@
     <div class="chip-row">
       {% for area in item.risk_areas_shown %}<span class="area-chip">{{ area }}</span>{% endfor %}
       {% for t in item.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
+      {% if item.review_complaint_topics is not none
+            and item.review_complaint_topics != item.complaint_topics_model %}
+      <span class="meta-dim small">(classifier suggested: {{ item.complaint_topics_model | join(', ') or 'none' }})</span>
+      {% endif %}
       {% for f in item.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
     </div>
 
@@ -123,6 +127,9 @@
           {% if r.risk_areas %}
           <div class="chip-row rev-chips">{% for a in r.risk_areas %}<span class="area-chip">{{ a }}</span>{% endfor %}</div>
           {% endif %}
+          {% if r.complaint_topics %}
+          <div class="chip-row rev-chips">{% for t in r.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}</div>
+          {% endif %}
           {% if r.action %}<p class="rev-action">Action: <strong>{{ r.action }}</strong></p>{% endif %}
           {% if not r.first %}
             {% if r.changes %}
@@ -187,6 +194,15 @@
             {% if (item.review_risk_areas and area in item.review_risk_areas)
                   or (not item.review_risk_areas and area in item.risk_areas) %}checked{% endif %}>
             {{ area }}</label>
+          {% endfor %}
+        </fieldset>
+        <fieldset>
+          <legend>Complaint topics <span class="meta-dim">— what the customer is aggrieved about; leave all unticked if this is not a grievance</span></legend>
+          {% for t in taxonomy.COMPLAINT_TOPICS %}
+          <label class="check"><input type="checkbox" name="complaint_topics" value="{{ t }}"
+            {% if (item.review_complaint_topics is not none and t in item.review_complaint_topics)
+                  or (item.review_complaint_topics is none and t in item.complaint_topics) %}checked{% endif %}>
+            {{ t }}</label>
           {% endfor %}
         </fieldset>
         <fieldset>

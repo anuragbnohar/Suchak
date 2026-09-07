@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS items (
     review_relevant   INTEGER,
     review_severity   TEXT,
     review_risk_areas TEXT,
+    review_complaint_topics TEXT,
     review_actionable INTEGER,
     review_action     TEXT,
     review_notes      TEXT,
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     relevant   INTEGER,
     severity   TEXT,
     risk_areas TEXT NOT NULL DEFAULT '[]',
+    complaint_topics TEXT NOT NULL DEFAULT '[]',
     actionable INTEGER,
     action     TEXT,
     notes      TEXT
@@ -220,6 +222,10 @@ MIGRATIONS = [
     # Attached sources carry their own trust tier, so the queue's trusted
     # filter can find a story whose trusted report arrived second.
     ("item_sources", "source_tier", "TEXT NOT NULL DEFAULT ''"),
+    # A reviewer's correction of the complaint categories. NULL = no
+    # ruling (the classifier's list shows); '[]' = ruled not a grievance.
+    ("items", "review_complaint_topics", "TEXT"),
+    ("reviews", "complaint_topics", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 

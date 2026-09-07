@@ -102,11 +102,14 @@ def grievances_for(db, entity_id: int) -> list[dict]:
     (generic, venting, duplicate...) are excluded -- a pattern built on
     noise is worse than no pattern."""
     rows = q(db,
-             "SELECT id, title, snippet, published_at, complaint_topics,"
+             "SELECT id, title, snippet, published_at,"
+             " COALESCE(review_complaint_topics, complaint_topics, '[]')"
+             "   AS complaint_topics,"
              " COALESCE(review_severity, severity) AS sev"
              " FROM items WHERE entity_id = ? AND source_type = 'social'"
              " AND gated_out = 0 AND status != 'new'"
-             " AND complaint_topics IS NOT NULL AND complaint_topics != '[]'"
+             " AND COALESCE(review_complaint_topics, complaint_topics, '[]')"
+             "     != '[]'"
              " AND set_aside IS NULL"
              " ORDER BY COALESCE(published_at, '') DESC LIMIT ?",
              (entity_id, MAX_GRIEVANCES))

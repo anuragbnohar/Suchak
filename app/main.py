@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.20"
+APP_BUILD = "2026-09-04.21"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -207,6 +207,19 @@ def prep_item(row) -> dict:
     d["actionability_label"] = taxonomy.ACTIONABILITY_LABELS.get(
         d.get("actionability") or "", d.get("actionability") or "")
     d["source_type_label"] = taxonomy.SOURCE_TYPE_LABELS.get(d.get("source_type") or "news")
+    # A reviewer's correction of the complaint categories wins everywhere
+    # topics are read -- tiles, filters, Insights -- while the
+    # classifier's own list stays visible on the item page. NULL means no
+    # ruling; a stored empty list means "ruled not a grievance".
+    d["complaint_topics_model"] = d.get("complaint_topics") or []
+    raw_rct = d.get("review_complaint_topics")
+    try:
+        d["review_complaint_topics"] = (json.loads(raw_rct)
+                                        if raw_rct is not None else None)
+    except (TypeError, ValueError):
+        d["review_complaint_topics"] = None
+    if d["review_complaint_topics"] is not None:
+        d["complaint_topics"] = d["review_complaint_topics"]
     # a reviewer's correction wins over the classifier's verdict, for the
     # risk areas exactly as for the severity
     d["severity_shown"] = d.get("review_severity") or d.get("severity") or "low"
@@ -392,9 +405,11 @@ def queue(request: Request):
                          "    WHERE ts.item_id = i.id"
                          "      AND ts.source_tier IN ('official','trusted')))")
         if complaints or topic:
-            where.append("i.complaint_topics != '[]'")
+            where.append("COALESCE(i.review_complaint_topics, i.complaint_topics,"
+                         " '[]') != '[]'")
         if topic:
-            where.append("i.complaint_topics LIKE ?")
+            where.append("COALESCE(i.review_complaint_topics, i.complaint_topics,"
+                         " '[]') LIKE ?")
             params.append(f'%"{topic}"%')
 
         rows = q(
@@ -495,6 +510,10 @@ def _review_history(db, item_id: int) -> list[dict]:
             d["risk_areas"] = json.loads(d["risk_areas"] or "[]")
         except (TypeError, ValueError):
             d["risk_areas"] = []
+        try:
+            d["complaint_topics"] = json.loads(d["complaint_topics"] or "[]")
+        except (TypeError, ValueError, KeyError):
+            d["complaint_topics"] = []
         d["changes"] = _review_changes(prev, d) if prev else []
         d["first"] = prev is None
         out.append(d)
@@ -623,6 +642,8 @@ async def item_review(request: Request, item_id: int):
         if severity not in taxonomy.SEVERITIES:
             severity = None
         risk_areas = [a for a in form.getlist("risk_areas") if a in taxonomy.RISK_AREAS]
+        topics = [t for t in form.getlist("complaint_topics")
+                  if t in taxonomy.COMPLAINT_TOPICS]
         action = form.get("action") or None
         if action not in taxonomy.ACTIONS:
             action = None
@@ -631,18 +652,20 @@ async def item_review(request: Request, item_id: int):
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         x(db, "UPDATE items SET status=?, reviewed_by=?, reviewed_at=?, review_relevant=?,"
-              " review_severity=?, review_risk_areas=?, review_actionable=?, review_action=?,"
+              " review_severity=?, review_risk_areas=?, review_complaint_topics=?,"
+              " review_actionable=?, review_action=?,"
               " review_notes=? WHERE id=?",
           (status, user["id"], now, relevant, severity, json.dumps(risk_areas),
-           actionable, action, notes, item_id))
+           json.dumps(topics), actionable, action, notes, item_id))
 
         # The items row holds the CURRENT verdict, which the queue, dashboards
         # and learning loop read. This table holds every verdict ever recorded,
         # so a later reviewer can never erase who said what before them.
         x(db, "INSERT INTO reviews (item_id, user_id, created_at, relevant, severity,"
-              " risk_areas, actionable, action, notes) VALUES (?,?,?,?,?,?,?,?,?)",
+              " risk_areas, complaint_topics, actionable, action, notes)"
+              " VALUES (?,?,?,?,?,?,?,?,?,?)",
           (item_id, user["id"], now, relevant, severity, json.dumps(risk_areas),
-           actionable, action, notes))
+           json.dumps(topics), actionable, action, notes))
 
         # The review decides whether follow-up is owed; the To-do page tracks
         # whether it has happened. COALESCE keeps an existing action's state,
