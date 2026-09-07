@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.19"
+APP_BUILD = "2026-09-04.20"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1090,6 +1090,12 @@ def social_page(request: Request):
         by_topic = Counter(t for r in grievances
                            if not src or r["platform"] == src
                            for t in r["complaint_topics"])
+        # The topic row's "All" chip counts POSTS, like the source row's.
+        # Summing the per-topic counts instead double-counted every post
+        # that carries several topics (most real complaints do), so the
+        # two "All" chips disagreed on the same page.
+        topic_all = sum(1 for r in grievances
+                        if not src or r["platform"] == src)
         by_source = Counter(r["platform"] for r in grievances
                             if not topic or topic in r["complaint_topics"])
         pool = (learned if view_learned else
@@ -1112,6 +1118,7 @@ def social_page(request: Request):
                       set_aside_count=len(set_aside_rows),
                       set_aside_reasons=taxonomy.SOCIAL_SET_ASIDE,
                       by_topic=[(t, by_topic.get(t, 0)) for t in taxonomy.COMPLAINT_TOPICS],
+                      topic_all=topic_all,
                       by_source=[(p, by_source.get(p, 0)) for p in
                                  taxonomy.SOCIAL_PLATFORMS + ["Other"]],
                       total_grievances=len(grievances),

@@ -35,7 +35,7 @@
 <div class="toolbar">
   <nav class="tabs" aria-label="Complaint topic">
     <a class="tab {% if not topic %}active{% endif %}"
-       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}">All<span class="tab-count">{{ by_topic | sum(attribute=1) }}</span></a>
+       href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}">All<span class="tab-count">{{ topic_all }}</span></a>
     {% for t, n in by_topic %}{% if n %}
     <a class="tab {% if topic == t %}active{% endif %}"
        href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}&amp;topic={{ t | urlencode }}{% if src %}&amp;src={{ src | urlencode }}{% endif %}">{{ t }}<span class="tab-count">{{ n }}</span></a>
