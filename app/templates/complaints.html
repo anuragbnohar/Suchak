@@ -2,7 +2,7 @@
 {% import "_filters.html" as filters %}
 {% block title %}Complaints · Drishti{% endblock %}
 
-{% macro heat_table(heat, head, note) %}
+{% macro heat_table(heat, head, note, footer=true) %}
 <div class="table-scroll">
   <table class="data-table heat-table">
     <thead>
@@ -14,10 +14,10 @@
     </thead>
     <tbody>
       {% for row in heat.rows %}
-      <tr>
+      <tr class="{% if row.on %}heat-row-on{% endif %}">
         <th scope="row" class="heat-row-head"><a href="{{ row.href }}">{{ row.label }}</a></th>
         {% for c in row.cells %}
-        <td class="heat-cell heat-{{ c.level }}">
+        <td class="heat-cell heat-{{ c.level }} {% if c.on %}heat-on{% endif %}">
           {% if c.n %}<a href="{{ c.href }}" title="{{ row.label }} · {{ c.topic }} · {{ c.n }}">{{ c.n }}</a>
           {% else %}<span class="heat-nil">·</span>{% endif %}
         </td>
@@ -26,6 +26,7 @@
       </tr>
       {% endfor %}
     </tbody>
+    {% if footer %}
     <tfoot>
       <tr>
         <th scope="row">All</th>
@@ -35,6 +36,7 @@
         <td class="num heat-total">{{ heat.total }}</td>
       </tr>
     </tfoot>
+    {% endif %}
   </table>
 </div>
 <p class="panel-note">{{ note }}{% if heat.dropped %} Showing the {{ heat.rows | length }} with the most complaints; {{ heat.dropped }} more are not listed.{% endif %}</p>
@@ -51,6 +53,10 @@
     {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
     {% if topic_f %}<input type="hidden" name="topic" value="{{ topic_f }}">{% endif %}
     {% if district_f %}<input type="hidden" name="district" value="{{ district_f }}">{% endif %}
+    {# The severity is chosen by clicking a tile, not by a box in this row.
+       Without it as a hidden field, changing the date would silently drop
+       it and the page would quietly widen. #}
+    {% if sev_f %}<input type="hidden" name="sev" value="{{ sev_f }}">{% endif %}
     {% if entities | length > 1 %}
     <label class="small">Entity
       <select name="entity" onchange="this.form.submit()">
@@ -96,9 +102,9 @@
     <p class="tile-label">Complaints</p>
     <p class="tile-value">{{ total }}</p>
     {% if prev_total is not none %}
-    {% if total > prev_total %}<p class="tile-note">▲ {{ total - prev_total }} vs previous {{ win.label | lower | replace('last ', '') }}</p>
-    {% elif total < prev_total %}<p class="tile-note tile-note-quiet">▼ {{ prev_total - total }} vs previous {{ win.label | lower | replace('last ', '') }}</p>
-    {% else %}<p class="tile-note tile-note-quiet">unchanged on the previous period</p>{% endif %}
+    {% if total > prev_total %}<p class="tile-note">▲ {{ total - prev_total }} {{ prev_label }}</p>
+    {% elif total < prev_total %}<p class="tile-note tile-note-quiet">▼ {{ prev_total - total }} {{ prev_label }}</p>
+    {% else %}<p class="tile-note tile-note-quiet">unchanged {{ prev_label }}</p>{% endif %}
     {% elif scope_total > total %}
     <p class="tile-note tile-note-quiet">of {{ scope_total }} before filtering</p>
     {% endif %}
@@ -111,16 +117,16 @@
     <p class="tile-label">Medium severity</p>
     <p class="tile-value">{{ by_sev.get('medium', 0) }}</p>
   </a>
-  <div class="tile">
+  <a class="tile" href="#matrix">
     <p class="tile-label">Entities affected</p>
     <p class="tile-value">{{ entities_hit }}</p>
     <p class="tile-note tile-note-quiet">of {{ entities | length }} supervised</p>
-  </div>
-  <div class="tile">
+  </a>
+  <a class="tile" href="#bytype">
     <p class="tile-label">Kinds of grievance</p>
     <p class="tile-value">{{ topics_seen }}</p>
     <p class="tile-note tile-note-quiet">of {{ topics | length }} categories</p>
-  </div>
+  </a>
   <a class="tile" href="#where">
     <p class="tile-label">Place named</p>
     <p class="tile-value">{{ located }}</p>
@@ -135,9 +141,9 @@
 
 {% if not scope_total %}
 <div class="empty">
-  <p>No complaints in this period.</p>
+  <p>{% if win.key %}No complaints in this period.{% else %}No complaints collected yet.{% endif %}</p>
   <p class="meta-dim">A complaint is an item the classifier — or a reviewer correcting it — marked
-    with at least one grievance category. Widen the date filter, or use
+    with at least one grievance category. {% if win.key %}Widen the date filter, or use{% else %}Use{% endif %}
     <a href="/entities">Entities → Fetch now</a> to collect fresh items.</p>
 </div>
 {% else %}
@@ -146,19 +152,20 @@
   <h2>Entity against kind of grievance</h2>
   {% if entity_heat.rows %}
   {{ heat_table(entity_heat, "Entity",
-     "A row total counts complaints; a cell counts complaints carrying that category. Most grievances carry more than one, so a row of cells adds up to more than its total. Shade is relative to the busiest cell in this table.") }}
+     "A row total counts complaints; a cell counts complaints carrying that category. Most grievances carry more than one, so a row of cells adds up to more than its total. The matrix keeps every entity and category in view whatever you have selected, so you can move to another; the tiles and the list show the selection itself.") }}
   {% else %}
   <p class="meta-dim">Nothing matches the current filters.</p>
   {% endif %}
 </section>
 
 <div class="dash-grid">
-  <section class="panel">
+  <section class="panel" id="bytype">
     <h2>By kind of grievance</h2>
-    {% set tmax = entity_heat.col_totals | map(attribute='n') | max %}
+    {% set tmax = by_topic | map(attribute='n') | max %}
     <div class="hbar-chart">
-      {% for c in entity_heat.col_totals | sort(attribute='n', reverse=true) %}
-      <a class="hbar-row" href="{{ link(topic=c.topic) if topic_f != c.topic else link(topic=None) }}">
+      {% for c in by_topic %}
+      <a class="hbar-row {% if c.on %}hbar-row-on{% endif %}"
+         href="{{ link(topic=c.topic) if not c.on else link(topic=None) }}">
         <span class="hbar-label">{{ c.topic }}</span>
         <span class="hbar-track"><span class="hbar-fill" style="width: {{ (100 * c.n / tmax) | round(1) if tmax else 0 }}%"></span></span>
         <span class="hbar-value">{{ c.n }}</span>
@@ -171,8 +178,8 @@
     <h2>Where complaints are happening</h2>
     <div class="hbar-chart">
       {% for p in places %}
-      <a class="hbar-row {% if not p.known %}hbar-row-quiet{% endif %}"
-         href="{{ link(loc=p.bucket, district=None) if loc_f != p.bucket else link(loc=None) }}">
+      <a class="hbar-row {% if not p.known %}hbar-row-quiet{% endif %} {% if p.on %}hbar-row-on{% endif %}"
+         href="{{ p.href if not p.on else link(loc=None) }}">
         <span class="hbar-label">{{ p.bucket }}</span>
         <span class="hbar-track"><span class="hbar-fill" style="width: {{ p.pct }}%"></span></span>
         <span class="hbar-value">{{ p.n }}</span>
@@ -189,7 +196,8 @@
 <section class="panel wide" id="states">
   <h2>State against kind of grievance</h2>
   {{ heat_table(state_heat, "State",
-     "Only the complaints whose story names a place. Districts roll up to their state; a district two states share is left unplaced rather than guessed.") }}
+     "Only the complaints whose story names a place. Districts roll up to their state; a district two states share keeps its own row in the panel above rather than being guessed into a state. Shade is on the same scale as the matrix above.",
+     footer=false) }}
 </section>
 {% endif %}
 

@@ -250,8 +250,17 @@ X recent search is capped at 7 days by its API regardless.
   total counts complaints and a cell counts complaints carrying that
   category, so a row of cells adds up to more than its total — most
   grievances carry more than one — and the page says so under every matrix.
-  Social posts a reviewer set aside as no use for pattern-finding are left
-  out, as they are on Insights. The per-entity dashboard's Complaints tile
+  Every control counts as if its own choice were not made, so a figure
+  beside a control always matches the page that control opens: with Medium
+  selected, the High severity tile still shows how many high-severity
+  complaints are there to switch to, and the matrix keeps every entity and
+  category in view so you can move to another. The tiles for the total, the
+  entities and the categories, and the list at the foot, show the selection
+  itself. Left out: social posts a reviewer set aside as no use for
+  pattern-finding, as on Insights, and anything a reviewer dismissed as not
+  this entity's — the review form arrives with the classifier's categories
+  already ticked, so a dismissal would otherwise reach this screen as the
+  reviewer's own ruling that the item *is* a grievance. The per-entity dashboard's Complaints tile
   still opens the queue grouped by topic, for one bank at a time.
 - **Dashboards** — per-entity risk-area breakdown, severity tiles, complaints
   tile with by-topic breakdown, an **Open actions** tile (with an overdue

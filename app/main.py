@@ -1350,11 +1350,22 @@ def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
 # What the classifier writes into items.geography when a story is not
 # about one place. Matched case-folded, as words rather than as a code,
 # because words are what the model returns.
-PAN_INDIA_TERMS = ("pan-india", "pan india", "all india", "all-india",
-                   "nationwide", "countrywide", "national", "multiple states",
-                   "across india", "india")
+# Matched as whole words over the whole geography field, never as a
+# substring: "India" sits inside "Bhiwandi, India" and "national" inside
+# "International", and a local complaint filed as a national one is a
+# district that never has to answer for it.
+PAN_INDIA_WORDS = {"india", "pan", "panindia", "national", "nationwide",
+                   "countrywide", "nationally", "everywhere", "multiple",
+                   "states", "country", "wide"}
+PAN_INDIA_FILLER = {"across", "all", "in", "the", "and", "of", "a", "an",
+                    "throughout", "over"}
 PLACE_PAN = "Across India"
+# A district two states share, with nothing in the story to say which.
+# Its own answer, not the same answer as "nothing was named": the
+# district is a fact, and the districts panel prints it by name.
+PLACE_AMBIG = "District named, state unclear"
 PLACE_NONE = "Not ascertainable"
+UNPLACED = (PLACE_PAN, PLACE_AMBIG, PLACE_NONE)
 
 
 def _complaint_rows(db, entities, win):
@@ -1363,8 +1374,14 @@ def _complaint_rows(db, entities, win):
     This is the complaint test the rest of the application uses, with the
     exclusions each screen applies on its own brought together in one
     place: an item the pipeline gated out, one still awaiting
-    classification, one whose attribution a reviewer rejected, and a
-    social post set aside as no use for pattern-finding are all left out.
+    classification, one whose attribution a reviewer rejected, one a
+    reviewer dismissed as not this entity's, and a social post set aside
+    as no use for pattern-finding are all left out. The dismissal matters
+    most of the four: the review form arrives with the classifier's topics
+    already ticked, so a reviewer who dismisses an item without unticking
+    them stores those topics as their own ruling -- and "this is not our
+    bank's story" would otherwise reach this screen as the strongest
+    possible evidence that it is.
     A reviewer's correction of the topics decides -- and a corrected list
     with nothing in it means "ruled not a grievance", so it must not fall
     through to the classifier's verdict, which is why there is no NULLIF
@@ -1377,12 +1394,12 @@ def _complaint_rows(db, entities, win):
     win_sql, win_args = date_sql(win, "i")
     win_and = f" AND {win_sql}" if win_sql else ""
     rows = [prep_item(r) for r in q(
-        db, "SELECT i.*, e.name AS entity_name,"
+        db, "SELECT i.*, e.name AS entity_name, e.aliases AS entity_aliases,"
             " (SELECT group_concat(COALESCE(s.title, ''), ' ') FROM item_sources s"
             "  WHERE s.item_id = i.id) AS source_titles"
             " FROM items i JOIN entities e ON e.id = i.entity_id"
             f" WHERE i.entity_id IN ({holes})"
-            " AND i.gated_out = 0 AND i.status != 'new'"
+            " AND i.gated_out = 0 AND i.status NOT IN ('new', 'dismissed')"
             " AND COALESCE(i.attribution, '') != 'rejected'"
             " AND COALESCE(i.review_complaint_topics, i.complaint_topics, '[]') != '[]'"
             " AND (i.source_type != 'social' OR i.set_aside IS NULL)"
@@ -1392,22 +1409,49 @@ def _complaint_rows(db, entities, win):
     return [r for r in rows if r["complaint_topics"]]
 
 
+def _alias_words(it) -> list:
+    """An entity's other names, to be struck out of a place scan along with
+    its main one: a bank that merged keeps the old name in the copy, and
+    Vijaya Bank should no more place a complaint than Bank of Maharashtra."""
+    try:
+        return [a for a in json.loads(it.get("entity_aliases") or "[]")
+                if isinstance(a, str)]
+    except (TypeError, ValueError):
+        return []
+
+
+def _reads_as_pan_india(geo: str) -> bool:
+    """Is the classifier's geography saying "everywhere" and nothing else?
+
+    A whole-string test, not a substring one. "India" appears inside
+    "Bhiwandi, India" and "national" inside "International transactions",
+    and either would otherwise file a local complaint as a national one and
+    never look at the story again.
+    """
+    words = [w for w in re.split(r"[^a-z]+", (geo or "").lower()) if w]
+    if not words:
+        return False
+    rest = [w for w in words if w not in PAN_INDIA_FILLER]
+    return bool(rest) and all(w in PAN_INDIA_WORDS for w in rest)
+
+
 def _complaint_place(it) -> dict:
     """Where a complaint happened, as far as its own words can say.
 
     The classifier is asked for the geography outright, so its answer is
     read first and a national story is left national: a district named
     somewhere in the body of a pan-India story is an example, not the
-    place the complaint is about. Only when the classifier is silent is
-    the story's own text scanned. The entity's name is excluded from that
-    scan throughout, so "Bank of Maharashtra" never places a complaint in
+    place the complaint is about. Only when the classifier is silent, or
+    says something no place index knows, is the story's own text scanned.
+    The entity's name and its aliases are excluded from that scan
+    throughout, so "Bank of Maharashtra" never places a complaint in
     Maharashtra.
     """
-    name = it.get("entity_name") or ""
+    name = " ".join([it.get("entity_name") or ""] + _alias_words(it))
     geo = (it.get("geography") or "").strip()
     hit = geography.locate(geo, exclude=name) if geo else None
     if not (hit and (hit["district"] or hit["state"])):
-        if geo and any(t in geo.lower() for t in PAN_INDIA_TERMS):
+        if _reads_as_pan_india(geo):
             return {"district": None, "state": None, "bucket": PLACE_PAN,
                     "term": geo}
         text = " ".join(filter(None, (it.get("title"), it.get("snippet"),
@@ -1422,17 +1466,16 @@ def _complaint_place(it) -> dict:
         # nothing in the story to say which. The district is a fact and is
         # reported; the state is not, and is not guessed.
         return {"district": hit["district"], "state": None,
-                "bucket": PLACE_NONE, "term": hit["district"]}
+                "bucket": PLACE_AMBIG, "term": hit["district"]}
     return {"district": None, "state": None, "bucket": PLACE_NONE, "term": None}
 
 
 def _place_choices(pool) -> list:
     """The place buckets present in a set of complaints, busiest first,
-    with the two that are answers rather than places kept last."""
+    with the ones that are answers rather than places kept last."""
     counts = Counter(r["place"]["bucket"] for r in pool)
     return [b for b, _ in sorted(
-        counts.items(), key=lambda kv: (kv[0] in (PLACE_PAN, PLACE_NONE),
-                                        -kv[1], kv[0]))]
+        counts.items(), key=lambda kv: (kv[0] in UNPLACED, -kv[1], kv[0]))]
 
 
 def _previous_window(win: dict):
@@ -1440,10 +1483,17 @@ def _previous_window(win: dict):
     figure can be said to have risen or fallen rather than just to be."""
     if not win["key"]:
         return None
-    days = 1 if win["key"] in ("today", "yesterday") else int(win["key"])
     start = datetime.fromisoformat(win["start"]).date()
+    # An open-ended window runs to the end of today, so "last 7 days" is
+    # eight dates wide, not seven. Deriving the comparison period from the
+    # key instead of from the window measured seven against eight, and a
+    # perfectly flat complaint rate read as a rise in every period on the
+    # screen.
+    end = (datetime.fromisoformat(win["end"]).date() if win["end"]
+           else datetime.now(timezone.utc).date() + timedelta(days=1))
+    span = max(1, (end - start).days)
     return {"key": "previous", "label": "previous period",
-            "start": (start - timedelta(days=days)).isoformat(),
+            "start": (start - timedelta(days=span)).isoformat(),
             "end": start.isoformat()}
 
 
@@ -1456,13 +1506,43 @@ def _heat_level(n: int, mx: int) -> int:
     return 1 + min(4, int(n / mx * 5))
 
 
-def _heat_matrix(sel, key_fn, label_fn, topics, link, param, limit=0):
+def _period_before(win: dict) -> str:
+    """How to name the period a figure is being compared against, in words
+    a sentence can carry: "vs the 7 days before", "vs yesterday"."""
+    if not win["key"]:
+        return ""
+    if win["key"] == "today":
+        return "vs yesterday"
+    if win["key"] == "yesterday":
+        return "vs the day before"
+    return f"vs the {win['key']} days before"
+
+
+def _heat_scale(pools, key_fns, topics) -> int:
+    """The busiest cell any of these matrices will print, so all of them
+    can be shaded against the same number."""
+    mx = 0
+    for pool, key_fn in zip(pools, key_fns):
+        cells = Counter((key_fn(it), t) for it in pool
+                        if key_fn(it) is not None
+                        for t in it["complaint_topics"] if t in topics)
+        mx = max([mx] + list(cells.values()))
+    return mx
+
+
+def _heat_matrix(sel, key_fn, label_fn, topics, link, param, limit=0,
+                 on_key=None, on_topic="", scale=0):
     """Complaints crossed against complaint type, for whatever a row is.
 
     A row's total counts complaints; a cell counts complaints carrying
     that topic. Most grievances carry more than one, so a row of cells
     legitimately adds up to more than the row total -- the page says so
     rather than quietly reconciling them.
+
+    `scale` is the busiest cell on the whole screen, passed in so both
+    matrices shade against the same figure. Left to their own maxima, a 1
+    could be the palest cell in one table and the darkest in the other,
+    which is a lie told in colour.
     """
     cells, totals = Counter(), Counter()
     for it in sel:
@@ -1477,17 +1557,22 @@ def _heat_matrix(sel, key_fn, label_fn, topics, link, param, limit=0):
     dropped = 0
     if limit and len(keys) > limit:
         dropped, keys = len(keys) - limit, keys[:limit]
-    mx = max(cells.values()) if cells else 0
+    mx = scale or (max(cells.values()) if cells else 0)
     rows = [{
         "label": label_fn(k), "total": totals[k], "href": link(**{param: k}),
+        "on": on_key is not None and k == on_key,
         "cells": [{"n": cells.get((k, t), 0), "topic": t,
                    "level": _heat_level(cells.get((k, t), 0), mx),
+                   "on": on_key is not None and k == on_key and t == on_topic,
                    "href": link(**{param: k, "topic": t})}
                   for t in topics],
     } for k in keys]
+    # Counted over everything in the pool, not just the rows that have a
+    # key: a state matrix skips the complaints it could not place, and a
+    # footer that skipped them too would print one number and open a page
+    # showing a bigger one.
     col_totals = [{"topic": t, "href": link(topic=t),
-                   "n": sum(1 for it in sel if key_fn(it) is not None
-                            and t in it["complaint_topics"])}
+                   "n": sum(1 for it in sel if t in it["complaint_topics"])}
                   for t in topics]
     return {"rows": rows, "cols": topics, "col_totals": col_totals,
             "total": sum(totals.values()), "dropped": dropped}
@@ -1550,21 +1635,26 @@ def complaints(request: Request):
         def narrow(pool, skip=()):
             """The complaints left once the filters in force are applied.
 
-            `skip` leaves one filter out, so a dropdown can still offer
-            the choices its own filter is currently hiding -- a Location
-            box that lists only the state already chosen is a box you
-            cannot get out of.
+            `skip` leaves named filters out. Every control that offers a
+            choice counts as if its own choice were not made, so a figure
+            beside a control always matches the page that control opens:
+            a High severity tile reading 0 while Medium is selected, that
+            opens a page with two items on it, is a number nobody can
+            trust again. The tiles that describe the selection itself --
+            the total, the entities, the categories, the list -- use the
+            fully narrowed set.
             """
             out = pool
-            if ent_f:
+            if ent_f and "entity" not in skip:
                 out = [r for r in out if str(r["entity_id"]) == ent_f]
-            if topic_f:
+            if topic_f and "topic" not in skip:
                 out = [r for r in out if topic_f in r["complaint_topics"]]
-            if src_f == "social":
-                out = [r for r in out if r["source_type"] == "social"]
-            elif src_f == "other":
-                out = [r for r in out if r["source_type"] != "social"]
-            if sev_f:
+            if "src" not in skip:
+                if src_f == "social":
+                    out = [r for r in out if r["source_type"] == "social"]
+                elif src_f == "other":
+                    out = [r for r in out if r["source_type"] != "social"]
+            if sev_f and "sev" not in skip:
                 out = [r for r in out if r["severity_shown"] == sev_f]
             if loc_f and "loc" not in skip:
                 out = [r for r in out if r["place"]["bucket"] == loc_f]
@@ -1573,41 +1663,61 @@ def complaints(request: Request):
             return out
 
         sel = narrow(rows)
+        # Each control counts as if its own choice were not made, so every
+        # figure equals the page it opens; the selection's own figures come
+        # from `sel`.
+        sev_pool = narrow(rows, skip=("sev",))
+        src_pool = narrow(rows, skip=("src",))
+        topic_pool = narrow(rows, skip=("topic",))
+        place_pool = narrow(rows, skip=("loc", "district"))
+        matrix_pool = narrow(rows, skip=("entity", "topic"))
+        state_pool = narrow(rows, skip=("loc", "district", "topic"))
 
-        # Every filter on this page narrows every figure on it, tiles
-        # included: a screen whose headline number ignores the filter
-        # under it is how a quiet week gets believed.
-        by_sev = Counter(r["severity_shown"] for r in sel)
-        by_bucket = Counter(r["place"]["bucket"] for r in sel)
-        by_district = Counter(r["place"]["district"] for r in sel
+        by_sev = Counter(r["severity_shown"] for r in sev_pool)
+        by_bucket = Counter(r["place"]["bucket"] for r in place_pool)
+        by_district = Counter(r["place"]["district"] for r in place_pool
                               if r["place"]["district"])
-        social_n = sum(1 for r in sel if r["source_type"] == "social")
-        located = sum(n for b, n in by_bucket.items()
-                      if b not in (PLACE_PAN, PLACE_NONE))
+        social_n = sum(1 for r in src_pool if r["source_type"] == "social")
+        news_n = len(src_pool) - social_n
+        # A complaint whose district is known but whose state is not was
+        # still placed: the districts panel prints it by name, and a tile
+        # that called it unplaced would contradict the panel beside it.
+        located = sum(1 for r in sel
+                      if r["place"]["state"] or r["place"]["district"])
         topics_seen = {t for r in sel for t in r["complaint_topics"]}
 
+        by_entity = lambda r: r["entity_id"]                    # noqa: E731
+        by_state = lambda r: (r["place"]["state"] or None)      # noqa: E731
+        scale = _heat_scale([matrix_pool, state_pool], [by_entity, by_state],
+                            topics)
         entity_heat = _heat_matrix(
-            sel, lambda r: r["entity_id"], lambda k: names.get(k, "—"),
-            topics, link, "entity")
+            matrix_pool, by_entity, lambda k: names.get(k, "\u2014"),
+            topics, link, "entity", on_key=int(ent_f) if ent_f else None,
+            on_topic=topic_f, scale=scale)
         state_heat = _heat_matrix(
-            sel, lambda r: (r["place"]["state"] or None), lambda k: k,
-            topics, link, "loc", limit=12)
+            state_pool, by_state, lambda k: k, topics, link, "loc", limit=12,
+            on_key=loc_f or None, on_topic=topic_f, scale=scale)
 
         # A location table that hid what it could not place would
-        # understate every other figure beside it, so the two honest
-        # buckets are rows of it like any state.
+        # understate every other figure beside it, so the honest buckets
+        # are rows of it like any state.
         max_bucket = max(by_bucket.values()) if by_bucket else 0
-        places = [{"bucket": b, "n": by_bucket[b], "href": link(loc=b),
+        places = [{"bucket": b, "n": by_bucket[b],
+                   "href": link(loc=b, district=None),
                    "pct": round(100 * by_bucket[b] / max_bucket) if max_bucket else 0,
-                   "known": b not in (PLACE_PAN, PLACE_NONE)}
-                  for b in _place_choices(sel)]
+                   "known": b not in UNPLACED, "on": b == loc_f}
+                  for b in _place_choices(place_pool)]
 
         prev_win, prev_total = _previous_window(win), None
         if prev_win:
             prev_rows = _complaint_rows(db, entities, prev_win)
-            for it in prev_rows:
-                it["place"] = _complaint_place(it)
-            prev_total = len(narrow(prev_rows))
+            if loc_f or district_f:
+                # only the location filters need a place, and resolving one
+                # means scanning the story
+                for it in prev_rows:
+                    it["place"] = _complaint_place(it)
+            prev_total = len(narrow(prev_rows)) if (loc_f or district_f) else len(
+                narrow(prev_rows, skip=("loc", "district")))
 
         chips = []
         if ent_f:
@@ -1631,6 +1741,12 @@ def complaints(request: Request):
         shown.sort(key=lambda r: taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3))
         listed = shown[:60]
 
+        by_topic = [{"topic": t, "href": link(topic=t),
+                     "on": t == topic_f,
+                     "n": sum(1 for r in topic_pool if t in r["complaint_topics"])}
+                    for t in topics]
+        by_topic.sort(key=lambda c: -c["n"])
+
         return render(request, "complaints.html", user=user, win=win,
                       entities=entities, office=office, link=link,
                       topics=topics, chips=chips,
@@ -1640,13 +1756,16 @@ def complaints(request: Request):
                       prev_total=prev_total,
                       by_sev=by_sev, entities_hit=len({r["entity_id"] for r in sel}),
                       topics_seen=len(topics_seen), located=located,
-                      social_n=social_n, news_n=len(sel) - social_n,
+                      social_n=social_n, news_n=news_n, by_topic=by_topic,
+                      prev_label=_period_before(win),
                       entity_heat=entity_heat, state_heat=state_heat,
                       places=places,
                       districts=by_district.most_common(14),
                       district_total=len(by_district),
                       listed=listed, listed_more=max(0, len(sel) - len(listed)),
-                      loc_choices=_place_choices(narrow(rows, skip=("loc", "district"))))
+                      loc_choices=_place_choices(place_pool)
+                      + ([loc_f] if loc_f and loc_f not in
+                         _place_choices(place_pool) else []))
     finally:
         db.close()
 

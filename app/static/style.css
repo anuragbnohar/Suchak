@@ -1151,15 +1151,30 @@ tr.is-read .sev::before { opacity: 0.45; }
 .heat-2 { background: #D7E8E6; }
 .heat-3 { background: #B4D6D2; color: var(--ink); }
 .heat-4 { background: #7EBBB4; color: #10302E; }
-.heat-5 { background: #3E938B; color: #fff; }
+/* Dark enough to carry white text at AA: the darkest band is where the
+   eye lands first, so it is the one that must not be a guess. */
+.heat-5 { background: #22645E; color: #fff; }
 .heat-5 a { color: #fff; }
 .heat-5 a:hover { color: #fff; text-decoration: underline; }
+/* the cell, row or bar the page is currently narrowed to */
+.heat-on { box-shadow: inset 0 0 0 2px var(--accent-ink); }
+.heat-row-on .heat-row-head { color: var(--accent-ink); }
+.hbar-row-on { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+.hbar-row-on .hbar-label { font-weight: 700; }
 .heat-total { font-weight: 700; }
 .heat-table tfoot td, .heat-table tfoot th {
   border-top: 1px solid var(--line-strong); border-bottom: none;
   font-weight: 700; font-size: 0.8rem; padding-top: 0.4rem;
 }
-.heat-table tr:hover td { background: inherit; }
+/* .data-table tints a hovered row, which on a heat matrix would erase
+   the one thing it is drawn for. Only the empty cells take the tint. */
+.heat-table tr:hover td { background: transparent; }
+.heat-table tr:hover td.heat-0 { background: var(--surface-2); }
+.heat-table td.heat-1 { background: #EDF4F3; }
+.heat-table td.heat-2 { background: #D7E8E6; }
+.heat-table td.heat-3 { background: #B4D6D2; }
+.heat-table td.heat-4 { background: #7EBBB4; }
+.heat-table td.heat-5 { background: #22645E; }
 
 /* A note under a panel: what the figures above it do and do not count.
    Every aggregate on this screen has an honest answer to that, and the

@@ -617,7 +617,12 @@ _FORM_TO_STATE_ONLY: dict = {}
 for _office, _states in OFFICE_STATES.items():
     for _st in _states:
         _label = _state_label(_st)
-        for _t in STATE_NAMES.get(_st, [_label]):
+        # The whole label as well as its parts. "Jammu and Kashmir" is
+        # listed under STATE_NAMES as Jammu and Kashmir separately, and
+        # Jammu is also a district, so without the whole label as a form of
+        # its own a story about the state is filed under the district --
+        # a precision the story never offered.
+        for _t in [_label] + list(STATE_NAMES.get(_st, [])):
             for _form in [_t] + DEVANAGARI.get(_t, []):
                 _FORM_TO_STATE_ONLY.setdefault(_form.lower(), _label)
         for _t in STATE_DISTRICTS.get(_st, []):
@@ -640,6 +645,26 @@ for _form in list(_FORM_TO_STATES) + list(_FORM_TO_STATE_ONLY):
     _BY_FIRST_TOKEN.setdefault(_head, set()).add(_form)
     if not _head.isascii():
         _DEV_FORMS.append((_head, _form))
+
+
+# District names that are also ordinary words or common personal names.
+# India has 800-odd districts and some of them are spelled like the rest of
+# the language: "along with", "margins erode", "the grain mandi", and
+# Anand, Krishna, Sagar, Hassan as the names of the people a story quotes.
+# A form in here places a complaint only where the story names one of its
+# states too. A place missed becomes a row in "not ascertainable"; a place
+# invented puts a district in the dock for a complaint that was never about
+# it, which is the worse of the two by a distance. Add to this list rather
+# than to a stop-word file: it is a statement about India, not about English.
+_WEAK_FORMS = {
+    # ordinary English words
+    "along", "erode", "dang", "mon", "samba", "una",
+    # ordinary words in Indian English prose
+    "mandi", "basti", "gaya", "guna", "puri",
+    # common personal names and surnames
+    "anand", "krishna", "sagar", "nirmal", "hassan", "dhar",
+    "senapati", "chandel", "champa", "mansa", "banda",
+}
 
 
 def locate(text: str, exclude: str = "") -> dict:
@@ -686,10 +711,33 @@ def locate(text: str, exclude: str = "") -> dict:
                 hits.append((i, form))
     if not hits:
         return {"district": None, "state": None, "term": None}
-    hits.sort()
+    # One place per starting word, the longest form winning. "Jammu and
+    # Kashmir" and the district Jammu inside it both match at the same
+    # word, and reporting the district is a precision the story never
+    # offered.
+    hits.sort(key=lambda h: (h[0], -len(h[1])))
+    first, taken = [], set()
+    for i, form in hits:
+        if i in taken:
+            continue
+        taken.add(i)
+        first.append((i, form))
+    hits = first
+    # A state whose whole name the story spelled out swallows the districts
+    # spelled inside it: "the Andaman and Nicobar Islands" is not a story
+    # about Nicobar district.
+    _labels = {f for _, f in hits if f in _FORM_TO_STATE_ONLY and " " in f}
+    if _labels:
+        _parts = {w for f in _labels for w in f.split()}
+        hits = [(i, f) for i, f in hits if f in _labels or f not in _parts]
 
     named_states = {_FORM_TO_STATE_ONLY[f] for _, f in hits
                     if f in _FORM_TO_STATE_ONLY}
+    # a word that is only a place if the story says so (see _WEAK_FORMS)
+    hits = [(i, f) for i, f in hits
+            if f not in _WEAK_FORMS or _FORM_TO_STATES.get(f, set()) & named_states]
+    if not hits:
+        return {"district": None, "state": None, "term": None}
     for _, form in hits:
         states = _FORM_TO_STATES.get(form)
         if not states:
@@ -710,8 +758,3 @@ def locate(text: str, exclude: str = "") -> dict:
         return {"district": None, "state": state, "term": state}
     return {"district": None, "state": None, "term": None}
 
-
-def all_states() -> list[str]:
-    """Every state label, for the Complaints location filter."""
-    return sorted({_state_label(s) for ss in OFFICE_STATES.values()
-                   for s in ss})
