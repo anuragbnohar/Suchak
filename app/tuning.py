@@ -75,6 +75,31 @@ TOGGLES = [
      "@handle, which finds standalone posts addressed to the bank.", 1),
 ]
 
+# Presentation only: how the Settings page groups the knobs above, so a
+# reader meets "what X costs" and "how far back a fetch reaches" as
+# subjects rather than as one flat list of fourteen fields. A key that is
+# not listed here still appears, under "Other" -- adding a setting must
+# never hide it.
+GROUPS = [
+    ("Collection windows",
+     "How far back a fetch reaches when no window is chosen on the button.",
+     ["lookback_days", "social_lookback_days"]),
+    ("News matching",
+     "How hard the collector works to decide that an article is about the "
+     "bank and not merely mentions it.",
+     ["news_query_aliases", "body_checks"]),
+    ("X (Twitter)",
+     "X bills per post and again per author record, so these are the spend "
+     "controls as much as the collection ones.",
+     ["x_only_complaints", "x_exclude_replies", "x_author_handles", "x_max_posts"]),
+    ("Reddit and consumer forums",
+     "Free sources: the caps are about volume, not cost.",
+     ["reddit_max", "forums_max"]),
+    ("YouTube comments",
+     "Comments under videos about the bank, read in two searches per bank.",
+     ["yt_comment_videos", "yt_comments_per_video", "yt_comments_max"]),
+]
+
 DEFAULTS = {key: default for key, _, _, _, default in SPEC}
 DEFAULTS.update({key: default for key, _, _, default in TOGGLES})
 BOUNDS = {key: bounds for key, _, _, bounds, _ in SPEC}

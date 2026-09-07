@@ -4,35 +4,57 @@
 <div class="page-head">
   <div>
     <h1>Settings</h1>
-    <p class="page-sub">Fetching windows, budgets and caps · superadmin only</p>
+    <p class="page-sub">Collection windows, budgets and caps · super admin only</p>
   </div>
 </div>
 
-<section class="panel">
-  <form method="post" action="/settings" class="stack-form">
-    <input type="hidden" name="toggles_present" value="1">
-    {% for key, label, help, default in toggles %}
-    <label class="small"><input type="checkbox" name="{{ key }}"
-      {% if effective[key] %}checked{% endif %}> {{ label }}</label>
-    <p class="meta-dim small">{{ help }}
-      Default: <strong>{{ 'on' if default else 'off' }}</strong>.</p>
-    {% endfor %}
-    {% for key, label, help, bounds, default in spec %}
-    <label>{{ label }}
-      <input type="number" name="{{ key }}" min="{{ bounds[0] }}" max="{{ bounds[1] }}"
-             value="{{ overrides.get(key, '') }}" placeholder="{{ default }}">
-    </label>
-    <p class="meta-dim small">{{ help }}
-      Default: <strong>{{ default }}</strong>
-      ({{ bounds[0] }}–{{ bounds[1] }}){% if key in overrides %} ·
-      <strong>currently overridden</strong>{% endif %}.</p>
-    {% endfor %}
-    <p class="meta-dim small">Leave a field blank to use its default. Changes apply
-      from the next fetch — nothing already collected is touched.</p>
-    <button type="submit" class="btn btn-primary">Save settings</button>
-  </form>
-</section>
+{# One form across every group: an officer changes two knobs on different
+   subjects and saves once, so the groups are headings, not separate forms. #}
+<form method="post" action="/settings" class="settings-form">
+  <input type="hidden" name="toggles_present" value="1">
 
-<p class="meta-dim small">Risk and severity definitions (the RBI guidance-note text
-  the classifier follows) are edited on the <a href="/factors">Factors</a> page.</p>
+  {% for g in groups %}
+  <section class="panel setting-group">
+    <h2>{{ g.title }}</h2>
+    {% if g.blurb %}<p class="group-blurb meta-dim small">{{ g.blurb }}</p>{% endif %}
+
+    {% for f in g.rows %}
+    <div class="setting-row">
+      <div class="setting-text">
+        <label class="setting-name" for="set-{{ f.key }}">{{ f.label }}</label>
+        <p class="setting-help">{{ f.help }}
+          {%- if f.kind == 'toggle' %}
+          Default: <strong>{{ 'on' if f.default else 'off' }}</strong>.
+          {%- else %}
+          Default: <strong>{{ f.default }}</strong> ({{ f.bounds[0] }}–{{ f.bounds[1] }}).
+          {%- endif %}</p>
+      </div>
+      <div class="setting-control">
+        {% if f.kind == 'toggle' %}
+        <input type="checkbox" id="set-{{ f.key }}" name="{{ f.key }}"
+               {% if effective[f.key] %}checked{% endif %}>
+        {% else %}
+        <input type="number" id="set-{{ f.key }}" name="{{ f.key }}"
+               min="{{ f.bounds[0] }}" max="{{ f.bounds[1] }}"
+               value="{{ overrides.get(f.key, '') }}" placeholder="{{ f.default }}">
+        {% if f.key in overrides %}
+        <span class="mini-chip setting-flag">currently overridden</span>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <div class="form-actions form-actions-plain">
+    <button type="submit" class="btn btn-primary">Save settings</button>
+    <p class="meta-dim small">Leave a number blank to use its default. Changes apply
+      from the next fetch — nothing already collected is touched.</p>
+  </div>
+</form>
+
+<p class="meta-dim small view-note">Risk and severity definitions (the RBI
+  guidance-note text the classifier follows) are edited on the
+  <a href="/factors">Factors</a> page.</p>
 {% endblock %}

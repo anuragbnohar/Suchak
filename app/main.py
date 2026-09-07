@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.24"
+APP_BUILD = "2026-09-04.25"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -2263,6 +2263,31 @@ async def fetch_now(request: Request):
                             status_code=303)
 
 
+def _settings_groups() -> list[dict]:
+    """The tuning knobs arranged into the subjects a reader thinks in.
+
+    The grouping lives in app/tuning.py beside the settings themselves; a
+    key that no group claims lands under "Other", so a setting added there
+    always appears on the page even if nobody updates the grouping.
+    """
+    fields = {key: {"key": key, "kind": "number", "label": label, "help": note,
+                    "bounds": bounds, "default": default}
+              for key, label, note, bounds, default in tuning.SPEC}
+    fields.update({key: {"key": key, "kind": "toggle", "label": label,
+                         "help": note, "bounds": None, "default": default}
+                   for key, label, note, default in tuning.TOGGLES})
+    out, claimed = [], set()
+    for title, blurb, keys in tuning.GROUPS:
+        rows = [fields[k] for k in keys if k in fields]
+        claimed.update(f["key"] for f in rows)
+        if rows:
+            out.append({"title": title, "blurb": blurb, "rows": rows})
+    rest = [f for k, f in fields.items() if k not in claimed]
+    if rest:
+        out.append({"title": "Other", "blurb": "", "rows": rest})
+    return out
+
+
 @app.get("/settings")
 def settings_page(request: Request):
     """Operational knobs, stored in the database: windows, budgets and
@@ -2271,12 +2296,9 @@ def settings_page(request: Request):
     try:
         user = require_login(db, request)
         require_role(user, "superadmin")
-        return templates.TemplateResponse(request, "settings.html", {
-            "user": user, "spec": tuning.SPEC,
-            "toggles": tuning.TOGGLES, "effective": tuning.load(db),
-            "overrides": tuning.overrides(db),
-            "msg": request.query_params.get("msg"),
-        })
+        return render(request, "settings.html",
+                      user=user, groups=_settings_groups(),
+                      effective=tuning.load(db), overrides=tuning.overrides(db))
     finally:
         db.close()
 

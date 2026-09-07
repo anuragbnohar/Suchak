@@ -252,6 +252,12 @@ input, select, textarea {
   min-height: var(--control-h);
 }
 input:hover, select:hover, textarea:hover { border-color: var(--muted); }
+/* A tick box is not a text field. The blanket 100% width turned every
+   checkbox on the Settings page into a full-width blue slab. */
+input[type="checkbox"], input[type="radio"] {
+  width: 1rem; height: 1rem; min-height: 0; margin: 0;
+  accent-color: var(--accent); cursor: pointer; flex: none;
+}
 select { cursor: pointer; }
 textarea { min-height: 4rem; line-height: 1.5; }
 
@@ -774,4 +780,70 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2)
   .panel, .tile, .item-row, .social-card, .todo-card, .overview-table { box-shadow: none; break-inside: avoid; }
   a { color: inherit; text-decoration: none; }
   .app-footer { border-top: 1px solid #999; }
+}
+
+
+/* ══ Settings and policy editors ═══════════════════════════════════════
+   Both pages are the same object: written rules an officer edits. The
+   pattern throughout is name and explanation on the left at a readable
+   measure, the control on the right, one row to a rule. */
+
+.settings-form { display: flex; flex-direction: column; gap: 1rem; }
+.setting-group { padding-bottom: 0.5rem; }
+.group-blurb { margin: -0.35rem 0 0.25rem; max-width: 72ch; }
+
+.setting-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.4rem 2rem; align-items: start;
+  padding: 0.75rem 0; border-top: 1px solid var(--line);
+}
+.setting-group .setting-row:first-of-type { border-top: none; }
+.setting-name { display: block; font-size: 0.9rem; font-weight: 600; color: var(--ink); }
+/* A measure, not a full-width line: help text that runs the width of a
+   1400px screen is help nobody reads. */
+.setting-help { margin: 0.2rem 0 0; font-size: 0.82rem; color: var(--muted); max-width: 76ch; }
+.setting-control { justify-self: end; display: flex; align-items: center; gap: 0.5rem; padding-top: 0.15rem; }
+.setting-control input[type="number"] {
+  width: 6.5rem; text-align: right; font-variant-numeric: tabular-nums;
+}
+/* a knob that no longer sits at its default says so where the value is */
+.setting-flag { background: var(--warning-soft); color: #7A4712; }
+
+/* An action row closing a form: the button keeps its own width and the
+   note that qualifies it sits alongside, rather than a primary button
+   stretched across the whole panel. */
+.form-actions {
+  display: flex; align-items: center; gap: 0.6rem 1rem; flex-wrap: wrap;
+  margin-top: 0.9rem; padding-top: 0.85rem; border-top: 1px solid var(--line);
+}
+.form-actions p { margin: 0; flex: 1 1 16rem; }
+.form-actions-plain { border-top: none; padding-top: 0; }
+
+.factors-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(19rem, 1fr); gap: 1rem; align-items: start; }
+.section-head { margin: 1.75rem 0 0.2rem; font-size: 0.78rem; }
+.section-sub { margin: 0 0 0.9rem; max-width: 76ch; }
+/* Equal heights across the row: four editors of four different sizes read
+   as four unrelated boxes rather than one set of policies. The box absorbs
+   the difference, so the Save buttons land on one line. */
+.policy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(27rem, 1fr)); gap: 1rem; align-items: start; }
+/* Only where the boxes can absorb it. A reader without edit rights sees
+   text, not textareas, and stretching those to a common height would open
+   a hole under the shorter policy. */
+.policy-grid:has(.policy-form) { align-items: stretch; }
+.policy-card { display: flex; flex-direction: column; }
+.policy-form { display: flex; flex-direction: column; flex: 1; margin-top: 0.6rem; }
+.policy-form textarea { flex: 1; min-height: 13rem; resize: vertical; line-height: 1.5; }
+/* the stored text keeps its own line breaks when it is read, not edited */
+.policy-text { white-space: pre-wrap; font-size: 0.88rem; margin-top: 0.6rem; }
+/* a caption the screen already gives in the heading above, kept for the
+   textarea's accessible name */
+.sr-label {
+  position: absolute; width: 1px; height: 1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+@media (max-width: 950px) {
+  .factors-grid { grid-template-columns: 1fr; }
+  .setting-row { grid-template-columns: 1fr; }
+  .setting-control { justify-self: start; }
 }

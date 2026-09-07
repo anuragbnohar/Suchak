@@ -3,13 +3,17 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Factors</h1>
-    <p class="page-sub">Named rules in plain language — the classifier flags every item that meets a factor's conditions.</p>
+    <h1>Factors &amp; classification policy</h1>
+    <p class="page-sub">The written rules the classifier follows — named factors it
+      flags, and the definitions it judges every item against.</p>
   </div>
 </div>
 
-<div class="dash-grid">
-  <section class="panel wide">
+{# The named rules first: they are the page's subject. The policy texts
+   below are the standing instructions the classifier reads every time. #}
+<div class="factors-grid">
+  <section class="panel">
+    <h2>Factors in force</h2>
     {% if factors %}
     <table class="data-table">
       <tr>
@@ -26,7 +30,7 @@
         <td>{{ f.entity_name or 'All entities' }}</td>
         <td>{% if f.active %}<span class="ok-chip">active</span>{% else %}<span class="meta-dim">inactive</span>{% endif %}</td>
         {% if user.role in ('lead','superadmin') %}
-        <td>
+        <td class="row-actions">
           <form method="post" action="/factors/{{ f.id }}/toggle">
             <button type="submit" class="btn btn-small">{{ 'Deactivate' if f.active else 'Activate' }}</button>
           </form>
@@ -35,89 +39,12 @@
       </tr>
       {% endfor %}
     </table>
-    {% else %}<p class="meta-dim">No factors defined yet.</p>{% endif %}
-  </section>
-
-  <section class="panel">
-    <h2>Risk area definitions</h2>
-    {% if user.role == 'superadmin' %}
-    <form method="post" action="/settings/risk" class="stack-form">
-      <label>Definitions the classifier applies, anchored to the RBI guidance
-        notes on Credit Risk Management (2002), Market Risk Management (2002,
-        which also covers liquidity) and Operational Risk Management &amp;
-        Operational Resilience (2024)
-        <textarea name="risk_defs" rows="16" required>{{ risk_defs }}</textarea>
-      </label>
-      <button type="submit" class="btn btn-primary">Save definitions</button>
-      <p class="meta-dim small">Applies to items classified from now on;
-        already-classified items keep their verdicts (re-run old ones with
-        <code>python -m scripts.reclassify</code>). Refine this text against
-        the guidance notes themselves — the classifier follows whatever is
-        written here. The category names are fixed; this text decides what
-        belongs in each.</p>
-    </form>
     {% else %}
-    <p class="conditions">{{ risk_defs }}</p>
-    <p class="meta-dim small">Editable by the super admin. Your risk-area
-      corrections on individual reviews also teach the classifier.</p>
-    {% endif %}
-  </section>
-
-  <section class="panel">
-    <h2>Severity criteria</h2>
-    {% if user.role == 'superadmin' %}
-    <form method="post" action="/settings/severity" class="stack-form">
-      <label>Definitions the classifier applies (plain language)
-        <textarea name="severity_defs" rows="6" required>{{ severity_defs }}</textarea>
-      </label>
-      <button type="submit" class="btn btn-primary">Save criteria</button>
-      <p class="meta-dim small">Applies to items classified from now on; already-classified
-        items keep their verdicts. The no-API-key keyword fallback has its own fixed
-        trigger words and ignores this text.</p>
-    </form>
-    {% else %}
-    <p class="conditions">{{ severity_defs }}.</p>
-    <p class="meta-dim small">Editable by the super admin. Your severity corrections on
-      individual reviews also teach the classifier.</p>
-    {% endif %}
-  </section>
-
-  <section class="panel">
-    <h2>Negative list — not analysed</h2>
-    {% if user.role == 'superadmin' %}
-    <form method="post" action="/settings/exclusions" class="stack-form">
-      <label>Item types the system should filter out (plain language)
-        <textarea name="exclusion_rules" rows="6" required>{{ exclusion_rules }}</textarea>
-      </label>
-      <button type="submit" class="btn btn-primary">Save negative list</button>
-      <p class="meta-dim small">Matching items are parked under the queue's
-        <em>Filtered out</em> tab with the reason recorded — nothing is silently
-        deleted. Applies to items fetched from now on. Genuine company events are
-        never excluded just because the share price is mentioned.</p>
-    </form>
-    {% else %}
-    <p class="conditions">{{ exclusion_rules }}</p>
-    <p class="meta-dim small">Editable by the super admin. Excluded items remain
-      visible under the queue's <em>Filtered out</em> tab.</p>
-    {% endif %}
-  </section>
-
-  <section class="panel">
-    <h2>Trusted sources</h2>
-    {% if user.role == 'superadmin' %}
-    <form method="post" action="/settings/trusted" class="stack-form">
-      <label>Outlets ranked above the rest (one per line)
-        <textarea name="trusted_sources" rows="8">{{ trusted_sources }}</textarea>
-      </label>
-      <button type="submit" class="btn btn-primary">Save trusted sources</button>
-      <p class="meta-dim small">Items from these outlets rank above others of the
-        same severity and carry a ✓ beside the source name; RBI and exchange
-        items always rank first. The queue's source filter can show trusted
-        sources only. Saving re-tiers every stored item immediately.</p>
-    </form>
-    {% else %}
-    <p class="conditions">{{ trusted_sources | replace('\n', ' · ') }}</p>
-    <p class="meta-dim small">Editable by the super admin.</p>
+    <div class="empty">
+      <p>No factors defined yet.</p>
+      <p class="meta-dim">A factor is a named rule in plain language. Every new item
+        is checked against the active ones, and a match is flagged on the item.</p>
+    </div>
     {% endif %}
   </section>
 
@@ -138,10 +65,108 @@
           {% if user.role == 'superadmin' %}<option value="global">All entities</option>{% endif %}
         </select>
       </label>
-      <button type="submit" class="btn btn-primary">Add factor</button>
-      <p class="meta-dim small">New items are evaluated against active factors at classification time.</p>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add factor</button>
+        <p class="meta-dim small">Evaluated at classification time, on new items.</p>
+      </div>
     </form>
   </section>
   {% endif %}
+</div>
+
+<h2 class="mt section-head">Classification policy</h2>
+<p class="meta-dim small section-sub">Plain-language text the classifier is given on
+  every item. Policy stays in officers' hands: change the words here and the next
+  classification follows them — no code is involved.</p>
+
+<div class="policy-grid">
+  <section class="panel policy-card">
+    <h2>Risk area definitions</h2>
+    <p class="setting-help">What belongs in each risk area, anchored to the RBI
+      guidance notes on Credit Risk Management (2002), Market Risk Management
+      (2002, which also covers liquidity) and Operational Risk Management &amp;
+      Operational Resilience (2024). The category names are fixed; this text
+      decides what falls under each.</p>
+    {% if user.role == 'superadmin' %}
+    <form method="post" action="/settings/risk" class="policy-form">
+      <label class="sr-label" for="risk-defs">Risk area definitions</label>
+      <textarea id="risk-defs" name="risk_defs" rows="14" required>{{ risk_defs }}</textarea>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save definitions</button>
+        <p class="meta-dim small">Applies from now on; already-classified items keep
+          their verdicts — re-run them with <code>python -m scripts.reclassify</code>.</p>
+      </div>
+    </form>
+    {% else %}
+    <p class="policy-text">{{ risk_defs }}</p>
+    <p class="meta-dim small">Editable by the super admin. Your risk-area corrections
+      on individual reviews also teach the classifier.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel policy-card">
+    <h2>Severity criteria</h2>
+    <p class="setting-help">What makes an item high, medium or low. Written in plain
+      language, in the team's own words.</p>
+    {% if user.role == 'superadmin' %}
+    <form method="post" action="/settings/severity" class="policy-form">
+      <label class="sr-label" for="sev-defs">Severity criteria</label>
+      <textarea id="sev-defs" name="severity_defs" rows="14" required>{{ severity_defs }}</textarea>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save criteria</button>
+        <p class="meta-dim small">Applies from now on. The no-API-key keyword fallback
+          has its own fixed trigger words and ignores this text.</p>
+      </div>
+    </form>
+    {% else %}
+    <p class="policy-text">{{ severity_defs }}</p>
+    <p class="meta-dim small">Editable by the super admin. Your severity corrections on
+      individual reviews also teach the classifier.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel policy-card">
+    <h2>Negative list — not analysed</h2>
+    <p class="setting-help">Item types the system should filter out before analysis,
+      described in plain language.</p>
+    {% if user.role == 'superadmin' %}
+    <form method="post" action="/settings/exclusions" class="policy-form">
+      <label class="sr-label" for="excl-rules">Negative list</label>
+      <textarea id="excl-rules" name="exclusion_rules" rows="14" required>{{ exclusion_rules }}</textarea>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save negative list</button>
+        <p class="meta-dim small">Matching items are parked under the queue's
+          <em>Filtered out</em> tab with the reason recorded — nothing is silently
+          deleted. A genuine company event is never excluded just because the share
+          price is mentioned.</p>
+      </div>
+    </form>
+    {% else %}
+    <p class="policy-text">{{ exclusion_rules }}</p>
+    <p class="meta-dim small">Editable by the super admin. Excluded items remain
+      visible under the queue's <em>Filtered out</em> tab.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel policy-card">
+    <h2>Trusted sources</h2>
+    <p class="setting-help">Outlets ranked above the rest, one per line. RBI and the
+      exchanges always rank first, whatever this list says.</p>
+    {% if user.role == 'superadmin' %}
+    <form method="post" action="/settings/trusted" class="policy-form">
+      <label class="sr-label" for="trusted-src">Trusted sources</label>
+      <textarea id="trusted-src" name="trusted_sources" rows="14">{{ trusted_sources }}</textarea>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save trusted sources</button>
+        <p class="meta-dim small">These outlets rank above others of the same severity
+          and carry a ✓ beside the source name; the queue can show them only. Saving
+          re-tiers every stored item immediately.</p>
+      </div>
+    </form>
+    {% else %}
+    <p class="policy-text">{{ trusted_sources | replace('\n', ' · ') }}</p>
+    <p class="meta-dim small">Editable by the super admin.</p>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}
