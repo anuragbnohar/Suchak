@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.33"
+APP_BUILD = "2026-09-04.34"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1338,6 +1338,317 @@ def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
         ],
         "trend_days": TREND_DAYS,
     }
+
+
+# ══ Complaints ════════════════════════════════════════════════════════
+# Everywhere else in this application a grievance is met one at a time.
+# This screen asks the other question -- what shape does the whole set
+# have -- so it opens on no individual complaint at all: which entities,
+# which kinds of grievance, and where in the country, with news coverage
+# and social media counted together for once.
+
+# What the classifier writes into items.geography when a story is not
+# about one place. Matched case-folded, as words rather than as a code,
+# because words are what the model returns.
+PAN_INDIA_TERMS = ("pan-india", "pan india", "all india", "all-india",
+                   "nationwide", "countrywide", "national", "multiple states",
+                   "across india", "india")
+PLACE_PAN = "Across India"
+PLACE_NONE = "Not ascertainable"
+
+
+def _complaint_rows(db, entities, win):
+    """Every grievance in scope, from news and social media alike.
+
+    This is the complaint test the rest of the application uses, with the
+    exclusions each screen applies on its own brought together in one
+    place: an item the pipeline gated out, one still awaiting
+    classification, one whose attribution a reviewer rejected, and a
+    social post set aside as no use for pattern-finding are all left out.
+    A reviewer's correction of the topics decides -- and a corrected list
+    with nothing in it means "ruled not a grievance", so it must not fall
+    through to the classifier's verdict, which is why there is no NULLIF
+    here as there is for risk areas.
+    """
+    if not entities:
+        return []
+    ids = [e["id"] for e in entities]
+    holes = ",".join("?" * len(ids))
+    win_sql, win_args = date_sql(win, "i")
+    win_and = f" AND {win_sql}" if win_sql else ""
+    rows = [prep_item(r) for r in q(
+        db, "SELECT i.*, e.name AS entity_name,"
+            " (SELECT group_concat(COALESCE(s.title, ''), ' ') FROM item_sources s"
+            "  WHERE s.item_id = i.id) AS source_titles"
+            " FROM items i JOIN entities e ON e.id = i.entity_id"
+            f" WHERE i.entity_id IN ({holes})"
+            " AND i.gated_out = 0 AND i.status != 'new'"
+            " AND COALESCE(i.attribution, '') != 'rejected'"
+            " AND COALESCE(i.review_complaint_topics, i.complaint_topics, '[]') != '[]'"
+            " AND (i.source_type != 'social' OR i.set_aside IS NULL)"
+            f"{win_and}", (*ids, *win_args))]
+    # The SQL test above compares stored text against '[]'; the parsed list
+    # is the truth, and a reviewer who cleared every topic drops out here.
+    return [r for r in rows if r["complaint_topics"]]
+
+
+def _complaint_place(it) -> dict:
+    """Where a complaint happened, as far as its own words can say.
+
+    The classifier is asked for the geography outright, so its answer is
+    read first and a national story is left national: a district named
+    somewhere in the body of a pan-India story is an example, not the
+    place the complaint is about. Only when the classifier is silent is
+    the story's own text scanned. The entity's name is excluded from that
+    scan throughout, so "Bank of Maharashtra" never places a complaint in
+    Maharashtra.
+    """
+    name = it.get("entity_name") or ""
+    geo = (it.get("geography") or "").strip()
+    hit = geography.locate(geo, exclude=name) if geo else None
+    if not (hit and (hit["district"] or hit["state"])):
+        if geo and any(t in geo.lower() for t in PAN_INDIA_TERMS):
+            return {"district": None, "state": None, "bucket": PLACE_PAN,
+                    "term": geo}
+        text = " ".join(filter(None, (it.get("title"), it.get("snippet"),
+                                      it.get("summary"),
+                                      it.get("source_titles"))))
+        hit = geography.locate(text, exclude=name)
+    if hit["state"]:
+        return {"district": hit["district"], "state": hit["state"],
+                "bucket": hit["state"], "term": hit["term"]}
+    if hit["district"]:
+        # A district two states share (Aurangabad, Bilaspur, Hamirpur) with
+        # nothing in the story to say which. The district is a fact and is
+        # reported; the state is not, and is not guessed.
+        return {"district": hit["district"], "state": None,
+                "bucket": PLACE_NONE, "term": hit["district"]}
+    return {"district": None, "state": None, "bucket": PLACE_NONE, "term": None}
+
+
+def _place_choices(pool) -> list:
+    """The place buckets present in a set of complaints, busiest first,
+    with the two that are answers rather than places kept last."""
+    counts = Counter(r["place"]["bucket"] for r in pool)
+    return [b for b, _ in sorted(
+        counts.items(), key=lambda kv: (kv[0] in (PLACE_PAN, PLACE_NONE),
+                                        -kv[1], kv[0]))]
+
+
+def _previous_window(win: dict):
+    """The period of equal length immediately before the chosen one, so a
+    figure can be said to have risen or fallen rather than just to be."""
+    if not win["key"]:
+        return None
+    days = 1 if win["key"] in ("today", "yesterday") else int(win["key"])
+    start = datetime.fromisoformat(win["start"]).date()
+    return {"key": "previous", "label": "previous period",
+            "start": (start - timedelta(days=days)).isoformat(),
+            "end": start.isoformat()}
+
+
+def _heat_level(n: int, mx: int) -> int:
+    """A cell's shade, 0 (empty) to 5, relative to the busiest cell on the
+    screen. Shade only qualifies the figure printed in the cell; it never
+    replaces it."""
+    if not n or not mx:
+        return 0
+    return 1 + min(4, int(n / mx * 5))
+
+
+def _heat_matrix(sel, key_fn, label_fn, topics, link, param, limit=0):
+    """Complaints crossed against complaint type, for whatever a row is.
+
+    A row's total counts complaints; a cell counts complaints carrying
+    that topic. Most grievances carry more than one, so a row of cells
+    legitimately adds up to more than the row total -- the page says so
+    rather than quietly reconciling them.
+    """
+    cells, totals = Counter(), Counter()
+    for it in sel:
+        key = key_fn(it)
+        if key is None:
+            continue
+        totals[key] += 1
+        for t in it["complaint_topics"]:
+            if t in topics:
+                cells[(key, t)] += 1
+    keys = [k for k, _ in totals.most_common()]
+    dropped = 0
+    if limit and len(keys) > limit:
+        dropped, keys = len(keys) - limit, keys[:limit]
+    mx = max(cells.values()) if cells else 0
+    rows = [{
+        "label": label_fn(k), "total": totals[k], "href": link(**{param: k}),
+        "cells": [{"n": cells.get((k, t), 0), "topic": t,
+                   "level": _heat_level(cells.get((k, t), 0), mx),
+                   "href": link(**{param: k, "topic": t})}
+                  for t in topics],
+    } for k in keys]
+    col_totals = [{"topic": t, "href": link(topic=t),
+                   "n": sum(1 for it in sel if key_fn(it) is not None
+                            and t in it["complaint_topics"])}
+                  for t in topics]
+    return {"rows": rows, "cols": topics, "col_totals": col_totals,
+            "total": sum(totals.values()), "dropped": dropped}
+
+
+@app.get("/complaints")
+def complaints(request: Request):
+    db = connect()
+    try:
+        user = require_login(db, request)
+        office = request.query_params.get("office") or None
+        entities = visible_entities(db, user)
+        if office:
+            if user["role"] != "superadmin" and (user["rbi_office"] or "") != office:
+                raise HTTPException(403, "That office is not visible to your role")
+            entities = [e for e in entities if office in entity_offices(e)]
+        if not entities:
+            raise HTTPException(404, "No entities configured")
+        # This screen is an aggregate over everything the signed-in officer
+        # may see, so it scopes itself through visible_entities rather than
+        # through resolve_entity: the cross-entity view there is the super
+        # admin's alone, and a team lead has every right to the shape of
+        # their own entities' grievances.
+        names = {e["id"]: e["name"] for e in entities}
+
+        topics = taxonomy.COMPLAINT_TOPICS
+        ent_f = request.query_params.get("entity", "")
+        if ent_f not in {str(e["id"]) for e in entities}:
+            ent_f = ""
+        topic_f = request.query_params.get("topic", "")
+        if topic_f not in topics:
+            topic_f = ""
+        loc_f = request.query_params.get("loc", "")
+        district_f = request.query_params.get("district", "")
+        src_f = request.query_params.get("src", "")
+        if src_f not in ("social", "other"):
+            src_f = ""
+        sev_f = request.query_params.get("sev", "")
+        if sev_f not in taxonomy.SEVERITIES:
+            sev_f = ""
+        win = date_window(request)
+
+        def link(**over):
+            """This same screen with one more thing decided. Every figure
+            here is a link, and a click narrows the page rather than
+            replacing it, so a supervisor can walk from a shape to the
+            complaints behind it without losing the way back."""
+            parts = {"entity": ent_f, "topic": topic_f, "loc": loc_f,
+                     "district": district_f, "src": src_f, "sev": sev_f,
+                     "since": win["key"], "office": office or ""}
+            parts.update({k: ("" if v is None else str(v))
+                          for k, v in over.items()})
+            tail = "&".join(f"{k}={quote(str(v))}" for k, v in parts.items() if v)
+            return "/complaints" + (f"?{tail}" if tail else "")
+
+        rows = _complaint_rows(db, entities, win)
+        for it in rows:
+            it["place"] = _complaint_place(it)
+
+        def narrow(pool, skip=()):
+            """The complaints left once the filters in force are applied.
+
+            `skip` leaves one filter out, so a dropdown can still offer
+            the choices its own filter is currently hiding -- a Location
+            box that lists only the state already chosen is a box you
+            cannot get out of.
+            """
+            out = pool
+            if ent_f:
+                out = [r for r in out if str(r["entity_id"]) == ent_f]
+            if topic_f:
+                out = [r for r in out if topic_f in r["complaint_topics"]]
+            if src_f == "social":
+                out = [r for r in out if r["source_type"] == "social"]
+            elif src_f == "other":
+                out = [r for r in out if r["source_type"] != "social"]
+            if sev_f:
+                out = [r for r in out if r["severity_shown"] == sev_f]
+            if loc_f and "loc" not in skip:
+                out = [r for r in out if r["place"]["bucket"] == loc_f]
+            if district_f and "district" not in skip:
+                out = [r for r in out if (r["place"]["district"] or "") == district_f]
+            return out
+
+        sel = narrow(rows)
+
+        # Every filter on this page narrows every figure on it, tiles
+        # included: a screen whose headline number ignores the filter
+        # under it is how a quiet week gets believed.
+        by_sev = Counter(r["severity_shown"] for r in sel)
+        by_bucket = Counter(r["place"]["bucket"] for r in sel)
+        by_district = Counter(r["place"]["district"] for r in sel
+                              if r["place"]["district"])
+        social_n = sum(1 for r in sel if r["source_type"] == "social")
+        located = sum(n for b, n in by_bucket.items()
+                      if b not in (PLACE_PAN, PLACE_NONE))
+        topics_seen = {t for r in sel for t in r["complaint_topics"]}
+
+        entity_heat = _heat_matrix(
+            sel, lambda r: r["entity_id"], lambda k: names.get(k, "—"),
+            topics, link, "entity")
+        state_heat = _heat_matrix(
+            sel, lambda r: (r["place"]["state"] or None), lambda k: k,
+            topics, link, "loc", limit=12)
+
+        # A location table that hid what it could not place would
+        # understate every other figure beside it, so the two honest
+        # buckets are rows of it like any state.
+        max_bucket = max(by_bucket.values()) if by_bucket else 0
+        places = [{"bucket": b, "n": by_bucket[b], "href": link(loc=b),
+                   "pct": round(100 * by_bucket[b] / max_bucket) if max_bucket else 0,
+                   "known": b not in (PLACE_PAN, PLACE_NONE)}
+                  for b in _place_choices(sel)]
+
+        prev_win, prev_total = _previous_window(win), None
+        if prev_win:
+            prev_rows = _complaint_rows(db, entities, prev_win)
+            for it in prev_rows:
+                it["place"] = _complaint_place(it)
+            prev_total = len(narrow(prev_rows))
+
+        chips = []
+        if ent_f:
+            chips.append(("Entity", names.get(int(ent_f), ent_f), link(entity=None)))
+        if topic_f:
+            chips.append(("Type", topic_f, link(topic=None)))
+        if loc_f:
+            chips.append(("Location", loc_f, link(loc=None)))
+        if district_f:
+            chips.append(("District", district_f, link(district=None)))
+        if src_f:
+            chips.append(("Source", "Social media" if src_f == "social"
+                          else "News & official", link(src=None)))
+        if sev_f:
+            chips.append(("Severity", sev_f, link(sev=None)))
+
+        # Newest first within a severity, and an undated forum post sorts
+        # by when it was collected rather than falling to the bottom.
+        shown = sorted(sel, key=lambda r: r["published_at"] or r["created_at"] or "",
+                       reverse=True)
+        shown.sort(key=lambda r: taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3))
+        listed = shown[:60]
+
+        return render(request, "complaints.html", user=user, win=win,
+                      entities=entities, office=office, link=link,
+                      topics=topics, chips=chips,
+                      entity_f=ent_f, topic_f=topic_f, loc_f=loc_f,
+                      district_f=district_f, src_f=src_f, sev_f=sev_f,
+                      total=len(sel), scope_total=len(rows),
+                      prev_total=prev_total,
+                      by_sev=by_sev, entities_hit=len({r["entity_id"] for r in sel}),
+                      topics_seen=len(topics_seen), located=located,
+                      social_n=social_n, news_n=len(sel) - social_n,
+                      entity_heat=entity_heat, state_heat=state_heat,
+                      places=places,
+                      districts=by_district.most_common(14),
+                      district_total=len(by_district),
+                      listed=listed, listed_more=max(0, len(sel) - len(listed)),
+                      loc_choices=_place_choices(narrow(rows, skip=("loc", "district"))))
+    finally:
+        db.close()
 
 
 @app.get("/dashboard")

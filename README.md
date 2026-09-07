@@ -232,11 +232,27 @@ X recent search is capped at 7 days by its API regardless.
   on the Entities page. Collection is the `care_handle` strategy — `to:handle`
   — capped at `SUCHAK_X_MAX_POSTS` (default 50) per entity per fetch, and off
   until `SUCHAK_X_ENABLED=1`.
-- **Complaints view** — the classifier tags customer-grievance items (from
-  news and social posts) with topics: Mis-selling, Recovery practices,
-  Service disruption, Unauthorized transactions, Charges & fees, Harassment,
-  Account access / KYC. The dashboard's Complaints tile opens the queue
-  grouped by topic; a by-topic table drills into each.
+- **Complaints tab** — the one screen that counts news coverage and social
+  media together, and the only one that opens on no individual complaint at
+  all. The classifier tags customer-grievance items with topics —
+  Mis-selling, Recovery practices, Service disruption, Unauthorized
+  transactions, Charges & fees, Harassment, Account access / KYC, Other
+  grievance — and this screen crosses them against the entity and against
+  the place the story is about, as two heat matrices. Filters for date,
+  entity, location, source, and severity narrow every figure on the page,
+  tiles included; every cell, bar and tile is a link that narrows the page
+  further, down to the complaints themselves at the foot of it. Where a
+  complaint happened is read from the classifier's own geography verdict
+  first and from the districts and states the story names second, with the
+  entity's own name excluded from that scan so *Bank of Maharashtra* is
+  never placed in Maharashtra; a national story and one that names no place
+  each get an honest row of their own rather than being dropped. A row
+  total counts complaints and a cell counts complaints carrying that
+  category, so a row of cells adds up to more than its total — most
+  grievances carry more than one — and the page says so under every matrix.
+  Social posts a reviewer set aside as no use for pattern-finding are left
+  out, as they are on Insights. The per-entity dashboard's Complaints tile
+  still opens the queue grouped by topic, for one bank at a time.
 - **Dashboards** — per-entity risk-area breakdown, severity tiles, complaints
   tile with by-topic breakdown, an **Open actions** tile (with an overdue
   sub-count) into the To-do page, daily volume trend, factor hits, and

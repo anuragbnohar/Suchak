@@ -12,8 +12,8 @@
   {% set path = request.url.path %}
   {% set office_q = request.query_params.get('office') %}
   {% set is_rd_user = user.rbi_office and user.role != 'superadmin' %}
-  {% set dos_paths = ['/dashboard', '/queue', '/social', '/insights', '/todo'] %}
-  {% set rd_ctx = path.startswith('/rd') or (office_q and path in ['/queue', '/social'])
+  {% set dos_paths = ['/dashboard', '/queue', '/social', '/complaints', '/insights', '/todo'] %}
+  {% set rd_ctx = path.startswith('/rd') or (office_q and path in ['/queue', '/social', '/complaints'])
                   or (is_rd_user and path in dos_paths) %}
   {% set ov_ctx = (not rd_ctx) and path == '/overview' %}
   {% set dos_ctx = (not rd_ctx) and (not ov_ctx) and (path == '/' or path in dos_paths
@@ -54,12 +54,14 @@
     <a class="{% if path.startswith('/rd') %}is-here{% endif %}" href="/rd">Region overview</a>
     <a class="{% if path == '/queue' %}is-here{% endif %}" href="/queue{{ osuffix }}">Queue</a>
     <a class="{% if path == '/social' %}is-here{% endif %}" href="/social{{ osuffix }}">Social media</a>
+    <a class="{% if path == '/complaints' %}is-here{% endif %}" href="/complaints{{ osuffix }}">Complaints</a>
   </nav>
   {% else %}
   <nav class="nav subnav" aria-label="Supervisory screens">
     <a class="{% if path == '/dashboard' %}is-here{% endif %}" href="/dashboard">Dashboard</a>
     <a class="{% if path == '/queue' %}is-here{% endif %}" href="/queue">Queue</a>
     <a class="{% if path == '/social' %}is-here{% endif %}" href="/social">Social media</a>
+    <a class="{% if path == '/complaints' %}is-here{% endif %}" href="/complaints">Complaints</a>
     <a class="{% if path == '/insights' %}is-here{% endif %}" href="/insights">Insights</a>
     <a class="{% if path == '/todo' %}is-here{% endif %}" href="/todo">To-do{% if todo_count %}<span class="nav-badge">{{ todo_count }}</span>{% endif %}</a>
   </nav>

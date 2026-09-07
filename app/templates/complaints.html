@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% import "_filters.html" as filters %}
+{% block title %}Complaints · Drishti{% endblock %}
+
+{% macro heat_table(heat, head, note) %}
+<div class="table-scroll">
+  <table class="data-table heat-table">
+    <thead>
+      <tr>
+        <th>{{ head }}</th>
+        {% for t in heat.cols %}<th class="heat-col">{{ t }}</th>{% endfor %}
+        <th class="num">Complaints</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in heat.rows %}
+      <tr>
+        <th scope="row" class="heat-row-head"><a href="{{ row.href }}">{{ row.label }}</a></th>
+        {% for c in row.cells %}
+        <td class="heat-cell heat-{{ c.level }}">
+          {% if c.n %}<a href="{{ c.href }}" title="{{ row.label }} · {{ c.topic }} · {{ c.n }}">{{ c.n }}</a>
+          {% else %}<span class="heat-nil">·</span>{% endif %}
+        </td>
+        {% endfor %}
+        <td class="num heat-total"><a href="{{ row.href }}">{{ row.total }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <th scope="row">All</th>
+        {% for c in heat.col_totals %}
+        <td class="num">{% if c.n %}<a href="{{ c.href }}">{{ c.n }}</a>{% else %}<span class="heat-nil">·</span>{% endif %}</td>
+        {% endfor %}
+        <td class="num heat-total">{{ heat.total }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+<p class="panel-note">{{ note }}{% if heat.dropped %} Showing the {{ heat.rows | length }} with the most complaints; {{ heat.dropped }} more are not listed.{% endif %}</p>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Complaints</h1>
+    <p class="page-sub">Customer grievances in news coverage and social media, counted together
+      · {% if win.key %}{{ win.label | lower }}{% else %}all collected items{% endif %}{% if office %} · {{ office }} office{% endif %}</p>
+  </div>
+  <form method="get" action="/complaints" class="fetch-form filter-form">
+    {% if office %}<input type="hidden" name="office" value="{{ office }}">{% endif %}
+    {% if topic_f %}<input type="hidden" name="topic" value="{{ topic_f }}">{% endif %}
+    {% if district_f %}<input type="hidden" name="district" value="{{ district_f }}">{% endif %}
+    {% if entities | length > 1 %}
+    <label class="small">Entity
+      <select name="entity" onchange="this.form.submit()">
+        <option value="">All entities</option>
+        {% for e in entities %}
+        <option value="{{ e.id }}" {% if entity_f == e.id | string %}selected{% endif %}>{{ e.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="small">Location
+      <select name="loc" onchange="this.form.submit()">
+        <option value="">Everywhere</option>
+        {% for b in loc_choices %}
+        <option value="{{ b }}" {% if loc_f == b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="small">Source
+      <select name="src" onchange="this.form.submit()">
+        <option value="">News &amp; social</option>
+        <option value="other" {% if src_f == 'other' %}selected{% endif %}>News &amp; official only</option>
+        <option value="social" {% if src_f == 'social' %}selected{% endif %}>Social media only</option>
+      </select>
+    </label>
+    {{ filters.date_picker(win) }}
+    <noscript><button type="submit" class="btn">Apply</button></noscript>
+  </form>
+</div>
+
+{% if chips %}
+<div class="filter-note">
+  <span>Showing:</span>
+  {% for label, value, clear in chips %}
+  <span class="filter-chip">{{ label }}: {{ value }} <a href="{{ clear }}" title="remove this filter">✕</a></span>
+  {% endfor %}
+  <a href="{{ link(entity=None, topic=None, loc=None, district=None, src=None, sev=None) }}">✕ clear filters</a>
+</div>
+{% endif %}
+
+<div class="tile-row">
+  <a class="tile tile-complaint" href="#list">
+    <p class="tile-label">Complaints</p>
+    <p class="tile-value">{{ total }}</p>
+    {% if prev_total is not none %}
+    {% if total > prev_total %}<p class="tile-note">▲ {{ total - prev_total }} vs previous {{ win.label | lower | replace('last ', '') }}</p>
+    {% elif total < prev_total %}<p class="tile-note tile-note-quiet">▼ {{ prev_total - total }} vs previous {{ win.label | lower | replace('last ', '') }}</p>
+    {% else %}<p class="tile-note tile-note-quiet">unchanged on the previous period</p>{% endif %}
+    {% elif scope_total > total %}
+    <p class="tile-note tile-note-quiet">of {{ scope_total }} before filtering</p>
+    {% endif %}
+  </a>
+  <a class="tile tile-serious {% if sev_f == 'high' %}tile-current{% endif %}" href="{{ link(sev='high') if sev_f != 'high' else link(sev=None) }}">
+    <p class="tile-label">High severity</p>
+    <p class="tile-value">{{ by_sev.get('high', 0) }}</p>
+  </a>
+  <a class="tile tile-warning {% if sev_f == 'medium' %}tile-current{% endif %}" href="{{ link(sev='medium') if sev_f != 'medium' else link(sev=None) }}">
+    <p class="tile-label">Medium severity</p>
+    <p class="tile-value">{{ by_sev.get('medium', 0) }}</p>
+  </a>
+  <div class="tile">
+    <p class="tile-label">Entities affected</p>
+    <p class="tile-value">{{ entities_hit }}</p>
+    <p class="tile-note tile-note-quiet">of {{ entities | length }} supervised</p>
+  </div>
+  <div class="tile">
+    <p class="tile-label">Kinds of grievance</p>
+    <p class="tile-value">{{ topics_seen }}</p>
+    <p class="tile-note tile-note-quiet">of {{ topics | length }} categories</p>
+  </div>
+  <a class="tile" href="#where">
+    <p class="tile-label">Place named</p>
+    <p class="tile-value">{{ located }}</p>
+    <p class="tile-note tile-note-quiet">{% if total %}{{ (100 * located / total) | round | int }}% of complaints{% else %}nothing to place{% endif %}</p>
+  </a>
+  <a class="tile tile-accent {% if src_f == 'social' %}tile-current{% endif %}" href="{{ link(src='social') if src_f != 'social' else link(src=None) }}">
+    <p class="tile-label">From social media</p>
+    <p class="tile-value">{{ social_n }}</p>
+    <p class="tile-note tile-note-quiet">{{ news_n }} from news &amp; official</p>
+  </a>
+</div>
+
+{% if not scope_total %}
+<div class="empty">
+  <p>No complaints in this period.</p>
+  <p class="meta-dim">A complaint is an item the classifier — or a reviewer correcting it — marked
+    with at least one grievance category. Widen the date filter, or use
+    <a href="/entities">Entities → Fetch now</a> to collect fresh items.</p>
+</div>
+{% else %}
+
+<section class="panel wide" id="matrix">
+  <h2>Entity against kind of grievance</h2>
+  {% if entity_heat.rows %}
+  {{ heat_table(entity_heat, "Entity",
+     "A row total counts complaints; a cell counts complaints carrying that category. Most grievances carry more than one, so a row of cells adds up to more than its total. Shade is relative to the busiest cell in this table.") }}
+  {% else %}
+  <p class="meta-dim">Nothing matches the current filters.</p>
+  {% endif %}
+</section>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2>By kind of grievance</h2>
+    {% set tmax = entity_heat.col_totals | map(attribute='n') | max %}
+    <div class="hbar-chart">
+      {% for c in entity_heat.col_totals | sort(attribute='n', reverse=true) %}
+      <a class="hbar-row" href="{{ link(topic=c.topic) if topic_f != c.topic else link(topic=None) }}">
+        <span class="hbar-label">{{ c.topic }}</span>
+        <span class="hbar-track"><span class="hbar-fill" style="width: {{ (100 * c.n / tmax) | round(1) if tmax else 0 }}%"></span></span>
+        <span class="hbar-value">{{ c.n }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel" id="where">
+    <h2>Where complaints are happening</h2>
+    <div class="hbar-chart">
+      {% for p in places %}
+      <a class="hbar-row {% if not p.known %}hbar-row-quiet{% endif %}"
+         href="{{ link(loc=p.bucket, district=None) if loc_f != p.bucket else link(loc=None) }}">
+        <span class="hbar-label">{{ p.bucket }}</span>
+        <span class="hbar-track"><span class="hbar-fill" style="width: {{ p.pct }}%"></span></span>
+        <span class="hbar-value">{{ p.n }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    <p class="panel-note">Read from the classifier's own reading of the story, and from the
+      districts and states its text names. A story about the bank rather than about a place
+      cannot be placed, and is counted as such rather than dropped.</p>
+  </section>
+</div>
+
+{% if state_heat.rows %}
+<section class="panel wide" id="states">
+  <h2>State against kind of grievance</h2>
+  {{ heat_table(state_heat, "State",
+     "Only the complaints whose story names a place. Districts roll up to their state; a district two states share is left unplaced rather than guessed.") }}
+</section>
+{% endif %}
+
+{% if districts %}
+<section class="panel wide" id="districts">
+  <h2>Districts named</h2>
+  <div class="chip-cloud">
+    {% for d, n in districts %}
+    <a class="mini-tile {% if district_f == d %}mini-tile-on{% endif %}"
+       href="{{ link(district=d, loc=None) if district_f != d else link(district=None) }}">{{ d }} <b>{{ n }}</b></a>
+    {% endfor %}
+  </div>
+  {% if district_total > districts | length %}
+  <p class="panel-note">The {{ districts | length }} most complained-about of {{ district_total }} districts named.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel wide" id="list">
+  <h2>{% if chips %}Complaints behind this selection{% else %}The complaints counted above{% endif %}
+    <span class="tab-count">{{ total }}</span></h2>
+  {% if listed %}
+  <ul class="item-list">
+    {% for it in listed %}
+    <li class="item-row sev-{{ it.severity_shown }}">
+      <a class="item-link" href="/item/{{ it.id }}">
+        <div class="item-top">
+          <span class="sev-chip sev-chip-{{ it.severity_shown }}">{{ it.severity_shown }}</span>
+          <span class="item-title">{{ it.title }}</span>
+          {% if it.source_type_label %}<span class="type-chip">{{ it.source_type_label }}</span>{% endif %}
+        </div>
+        <div class="item-meta">
+          <span class="item-tags">
+            <span class="entity-chip">{{ it.entity_name }}</span>
+            {% for t in it.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
+          </span>
+          <span class="item-trail">
+            <span class="meta-dim">{{ it.source_name }}</span>
+            <span class="meta-dim trail-date">{{ it.published_at | timeago }}</span>
+            <span class="trail-state meta-dim">{% if it.place.term %}{{ it.place.term }}{% else %}place not named{% endif %}</span>
+          </span>
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if listed_more %}
+  <p class="panel-note">The {{ listed | length }} most serious are listed; {{ listed_more }} more match this
+    selection. Narrow by entity, category or place to see them.</p>
+  {% endif %}
+  {% else %}
+  <p class="meta-dim">Nothing matches the current filters.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

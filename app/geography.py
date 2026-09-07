@@ -601,3 +601,117 @@ def describe(office: str) -> str:
                         " — Vidarbha and Marathwada districts")
               for s in states]
     return ", ".join(pretty)
+
+
+# ── locating a story ──────────────────────────────────────────────────
+# The tables above answer "which office covers this place". The
+# Complaints dashboard asks the reverse: given the words of a complaint,
+# where did it happen? Built from the same tables, so a district added
+# for an office is locatable the same day.
+
+# form (lowercased, English or Devanagari) -> {state label}
+_FORM_TO_STATES: dict = {}
+# state form -> state label, kept apart from districts because naming a
+# state locates a story less precisely than naming a district
+_FORM_TO_STATE_ONLY: dict = {}
+for _office, _states in OFFICE_STATES.items():
+    for _st in _states:
+        _label = _state_label(_st)
+        for _t in STATE_NAMES.get(_st, [_label]):
+            for _form in [_t] + DEVANAGARI.get(_t, []):
+                _FORM_TO_STATE_ONLY.setdefault(_form.lower(), _label)
+        for _t in STATE_DISTRICTS.get(_st, []):
+            for _form in [_t] + DEVANAGARI.get(_t, []):
+                _FORM_TO_STATES.setdefault(_form.lower(), set()).add(_label)
+
+# first token -> the forms starting with it, so a story is scanned in the
+# length of the story rather than against all 1,200 place names
+def _first(form: str) -> str:
+    return form.split()[0] if form.split() else form
+
+
+_BY_FIRST_TOKEN: dict = {}
+# Devanagari place names are matched on a prefix, because the inflected
+# form is the norm there (Nagpur -> नागपूरच्या), so they cannot be found
+# by an exact first-token lookup and are scanned separately.
+_DEV_FORMS: list = []
+for _form in list(_FORM_TO_STATES) + list(_FORM_TO_STATE_ONLY):
+    _head = _first(_form)
+    _BY_FIRST_TOKEN.setdefault(_head, set()).add(_form)
+    if not _head.isascii():
+        _DEV_FORMS.append((_head, _form))
+
+
+def locate(text: str, exclude: str = "") -> dict:
+    """Where a story happened, as far as its words can say.
+
+    Returns {"district": str|None, "state": str|None, "term": str|None}.
+    A story that names a district gets both; one that names only a state
+    gets the state; one that names neither gets all three as None, and
+    the caller must report it as unascertained rather than guess.
+
+    `exclude` is the entity's own name. A place inside the name proves
+    nothing about where anything happened -- every Bank of Maharashtra
+    headline says Maharashtra, and every Punjab National Bank one says
+    Punjab -- so those words are struck out before the scan, the same
+    defence the RD View's in-region scan uses.
+
+    An ambiguous district (Aurangabad is in Maharashtra and in Bihar) is
+    resolved only if the story names one of the candidate states too;
+    otherwise the district is reported and the state left None, because a
+    coin-flip between two states is not a fact.
+    """
+    from .matching import _match_tokens, place_mentions
+
+    hay = _match_tokens(text)
+    if not hay:
+        return {"district": None, "state": None, "term": None}
+    banned = set(_match_tokens(exclude))
+
+    # every place form the story actually mentions, in the order the
+    # story mentions them: the first is almost always its subject
+    hits = []
+    seen = set()
+    for i, word in enumerate(hay):
+        candidates = set(_BY_FIRST_TOKEN.get(word, ()))
+        if not word.isascii():
+            candidates |= {f for head, f in _DEV_FORMS if word.startswith(head)}
+        for form in candidates:
+            if form in seen or form in banned:
+                continue
+            if set(_match_tokens(form)) & banned:
+                continue
+            if place_mentions(text, form):
+                seen.add(form)
+                hits.append((i, form))
+    if not hits:
+        return {"district": None, "state": None, "term": None}
+    hits.sort()
+
+    named_states = {_FORM_TO_STATE_ONLY[f] for _, f in hits
+                    if f in _FORM_TO_STATE_ONLY}
+    for _, form in hits:
+        states = _FORM_TO_STATES.get(form)
+        if not states:
+            continue
+        district = _FORM_TO_DISTRICT.get(form)
+        if len(states) == 1:
+            return {"district": district, "state": next(iter(states)),
+                    "term": district}
+        shared = states & named_states
+        if len(shared) == 1:
+            return {"district": district, "state": next(iter(shared)),
+                    "term": district}
+        # named in two states and the story does not say which
+        return {"district": district, "state": None, "term": district}
+    if named_states:
+        state = _FORM_TO_STATE_ONLY[next(f for _, f in hits
+                                         if f in _FORM_TO_STATE_ONLY)]
+        return {"district": None, "state": state, "term": state}
+    return {"district": None, "state": None, "term": None}
+
+
+def all_states() -> list[str]:
+    """Every state label, for the Complaints location filter."""
+    return sorted({_state_label(s) for ss in OFFICE_STATES.values()
+                   for s in ss})
