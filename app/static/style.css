@@ -764,25 +764,26 @@ a.trend-col:hover { text-decoration: none; }
 
 .login-wrap { display: flex; justify-content: center; padding-top: 6vh; }
 .login-card {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 1fr);
+  /* the identity side takes a little less than the form beside it: it
+     carries two lines now, and the form's demo table must not be squeezed
+     into wrapping a bank name onto its own row */
+  display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(23rem, 1fr);
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r); overflow: hidden;
   width: 100%; max-width: 52rem; box-shadow: var(--shadow-md);
 }
-/* the identity side: the one place in the application that says, in full,
-   what it is for */
+/* The identity side: the name and what this is, and nothing else. Two
+   lines against the full height of the form beside them, so they are
+   centred -- pinned to the top they would read as a panel whose contents
+   failed to arrive. */
 .login-intro {
   background: var(--masthead); color: #DCE6EF;
-  padding: 2rem 2rem 2.25rem;
+  padding: 2.5rem 2rem;
+  display: flex; flex-direction: column; justify-content: center;
 }
 .login-brand { font-size: 1.6rem; font-weight: 700; margin: 0; color: #fff; }
 .login-intro .devanagari { color: #9FB6C9; }
-.login-sub { color: #9FB6C9; margin: 0.3rem 0 1.5rem; font-size: 0.9rem; }
-.login-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.85rem; }
-.login-points li {
-  font-size: 0.85rem; line-height: 1.5; color: #C6D4E0;
-  border-left: 2px solid rgba(47, 163, 155, 0.6); padding-left: 0.75rem;
-}
+.login-sub { color: #9FB6C9; margin: 0.35rem 0 0; font-size: 0.9rem; }
 .login-panel { padding: 2rem 2rem 2.25rem; }
 .login-panel > h2 { margin-bottom: 1.1rem; }
 .login-form { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.5rem; }
