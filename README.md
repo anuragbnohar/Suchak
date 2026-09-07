@@ -232,9 +232,12 @@ X recent search is capped at 7 days by its API regardless.
   on the Entities page. Collection is the `care_handle` strategy — `to:handle`
   — capped at `SUCHAK_X_MAX_POSTS` (default 50) per entity per fetch, and off
   until `SUCHAK_X_ENABLED=1`.
-- **Complaints tab** — the one screen that counts news coverage and social
-  media together, and the only one that opens on no individual complaint at
-  all. The classifier tags customer-grievance items with topics —
+- **Complaints tab** — a workspace of its own in the masthead, beside
+  Overview, DoS View and RD View rather than inside either of them: it spans
+  every entity the signed-in officer can see and both kinds of source, which
+  is neither the DoS team's per-entity beat nor one RD's region. It is the
+  one screen that counts news coverage and social media together, and the
+  only one that opens on no individual complaint at all. The classifier tags customer-grievance items with topics —
   Mis-selling, Recovery practices, Service disruption, Unauthorized
   transactions, Charges & fees, Harassment, Account access / KYC, Other
   grievance — and this screen crosses them against the entity and against
