@@ -470,7 +470,11 @@ label.check { display: flex; margin: 0.15rem 0; }
   margin: -0.15rem -1.15rem 0.85rem; padding: 0 1.15rem 0.7rem;
   border-bottom: 1px solid var(--line);
 }
-.dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; align-items: start; }
+/* Panels in a row share a height. Left to their natural sizes they left
+   holes between rows -- a short chart beside a long list, then a gap --
+   which reads as a page that failed to load rather than as a layout. */
+.dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; align-items: stretch; }
+.dash-grid > .panel { display: flex; flex-direction: column; }
 .empty {
   text-align: center; color: var(--muted); background: var(--surface);
   border: 1px dashed var(--line-strong); border-radius: var(--r);
@@ -1015,3 +1019,27 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2)
 .todo-fact:last-child { margin-bottom: 0; }
 .todo-side .prop-key { margin: 0; }
 .is-late-text { color: var(--serious); font-weight: 700; }
+
+
+/* ══ Queue rows ════════════════════════════════════════════════════════
+   What the item is, on the left; where it came from and where it stands,
+   on the right. Thirty items scanned by running the eye down a column is
+   the whole job of this screen, and one ragged line denies it. */
+
+.item-meta { justify-content: space-between; }
+.item-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.5rem; min-width: 0; }
+.item-trail {
+  display: flex; align-items: center; gap: 0.3rem 0.85rem;
+  flex-wrap: wrap; justify-content: flex-end; margin-left: auto;
+}
+/* fixed columns, so dates and states line up down the list rather than
+   floating wherever the source name happens to end */
+.trail-date { font-variant-numeric: tabular-nums; min-width: 5.5rem; text-align: right; }
+.trail-state { min-width: 5.5rem; text-align: right; }
+/* the classifier's recommendation is a verdict, not a headline: present,
+   but never louder than the entity it is about */
+.meta-action { font-weight: 600; font-size: 0.78rem; color: var(--ink-2); }
+@media (max-width: 780px) {
+  .item-trail { justify-content: flex-start; margin-left: 0; }
+  .trail-state { min-width: 0; text-align: left; }
+}

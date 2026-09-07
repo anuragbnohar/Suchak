@@ -11,17 +11,25 @@
         {% if it.source_type_label %}<span class="type-chip">{{ it.source_type_label }}</span>{% endif %}
       </div>
       <div class="item-meta">
-        {% if not entity %}<span class="entity-chip">{{ it.entity_name }}</span>{% endif %}
-        <span class="meta-action">{{ it.actionability_label }}</span>
-        {% for area in it.risk_areas_shown %}<span class="area-chip">{{ area }}</span>{% endfor %}
-        {% for t in it.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
-        {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
-        <span class="meta-dim">{% if it.source_tier == 'trusted' %}<span class="ok-chip" title="trusted source">✓</span> {% endif %}{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }} more source{{ 's' if it.extra_sources > 1 }}{% endif %}</span>
-        <span class="meta-dim">{{ it.published_at | timeago }}</span>
-        {% if it.status == 'reviewed' %}<span class="meta-dim">✓ reviewed by {{ it.reviewer_name or "a removed user" }}{% if it.review_count and it.review_count > 1 %} · {{ it.review_count }} reviews{% endif %}</span>{% endif %}
-        {% if it.status == 'dismissed' %}<span class="meta-dim">✕ dismissed</span>{% endif %}
-        {% if it.status == 'new' %}<span class="meta-dim">awaiting classification</span>{% endif %}
-        {% if it.gated_out %}<span class="meta-dim">filtered: {{ it.gate_reason }}</span>{% endif %}
+        {# What the item is, on the left; where it came from and where it
+           stands, on the right. Scanning a queue of thirty means running
+           the eye down one column, which a single ragged line denies. #}
+        <span class="item-tags">
+          {% if not entity %}<span class="entity-chip">{{ it.entity_name }}</span>{% endif %}
+          <span class="meta-action">{{ it.actionability_label }}</span>
+          {% for area in it.risk_areas_shown %}<span class="area-chip">{{ area }}</span>{% endfor %}
+          {% for t in it.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
+          {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
+        </span>
+        <span class="item-trail">
+          <span class="meta-dim">{% if it.source_tier == 'trusted' %}<span class="ok-chip" title="trusted source">✓</span> {% endif %}{{ it.source_name }}{% if it.extra_sources %} +{{ it.extra_sources }}{% endif %}</span>
+          <span class="meta-dim trail-date">{{ it.published_at | timeago }}</span>
+          {% if it.status == 'reviewed' %}<span class="trail-state ok-chip" title="reviewed by {{ it.reviewer_name or 'a removed user' }}">✓ reviewed{% if it.review_count and it.review_count > 1 %} ×{{ it.review_count }}{% endif %}</span>
+          {% elif it.status == 'dismissed' %}<span class="trail-state meta-dim">✕ dismissed</span>
+          {% elif it.status == 'new' %}<span class="trail-state meta-dim">awaiting classification</span>
+          {% else %}<span class="trail-state meta-dim">to review</span>{% endif %}
+          {% if it.gated_out %}<span class="trail-state meta-dim" title="{{ it.gate_reason }}">filtered</span>{% endif %}
+        </span>
       </div>
     </a>
   </li>
