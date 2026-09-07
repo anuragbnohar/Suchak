@@ -1,28 +1,45 @@
 {% extends "base.html" %}
 {% block title %}Sign in · Drishti{% endblock %}
 {% block content %}
+{# Identity on one side, the form on the other. A sign-in screen is the
+   first thing an officer sees of the application, and a small box adrift
+   in an empty page says nothing about what they are signing in to. #}
 <div class="login-wrap">
   <div class="login-card">
-    <h1 class="login-brand">Drishti <span class="devanagari">दृष्टि</span></h1>
-    <p class="login-sub">Supervisory intelligence for SSM teams</p>
-    {% if error %}<div class="error">{{ error }}</div>{% endif %}
-    <form method="post" action="/login" class="login-form">
-      <label>Username
-        <input name="username" autocomplete="username" autofocus required>
-      </label>
-      <label>Password
-        <input name="password" type="password" autocomplete="current-password" required>
-      </label>
-      <button type="submit" class="btn btn-primary">Sign in</button>
-    </form>
-    <div class="demo-creds">
-      <p class="demo-title">Demo accounts</p>
-      <table>
-        <tr><td><code>admin / admin123</code></td><td>Super admin — all entities</td></tr>
-        <tr><td><code>priya / priya123</code></td><td>Team lead — Bharat National Bank</td></tr>
-        <tr><td><code>rahul / rahul123</code></td><td>Team member — Bharat National Bank</td></tr>
-      </table>
-    </div>
+    <section class="login-intro">
+      <h1 class="login-brand">Drishti <span class="devanagari">दृष्टि</span></h1>
+      <p class="login-sub">Supervisory intelligence for SSM teams</p>
+      <ul class="login-points">
+        <li>Collects what is being said about the entities you supervise —
+          news, social media and consumer forums.</li>
+        <li>Judges each item against the team's own written definitions of
+          risk area and severity, not against anything hard-coded.</li>
+        <li>Keeps every ruling, and shows it back as precedent the next time
+          something comparable arrives.</li>
+      </ul>
+    </section>
+
+    <section class="login-panel">
+      <h2>Sign in</h2>
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <form method="post" action="/login" class="login-form">
+        <label>Username
+          <input name="username" autocomplete="username" autofocus required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary">Sign in</button>
+      </form>
+      <div class="demo-creds">
+        <p class="demo-title">Demo accounts</p>
+        <table>
+          <tr><td><code>admin / admin123</code></td><td>Super admin — all entities</td></tr>
+          <tr><td><code>priya / priya123</code></td><td>Team lead — Bharat National Bank</td></tr>
+          <tr><td><code>rahul / rahul123</code></td><td>Team member — Bharat National Bank</td></tr>
+        </table>
+      </div>
+    </section>
   </div>
 </div>
 {% endblock %}

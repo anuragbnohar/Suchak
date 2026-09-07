@@ -119,14 +119,13 @@
 
 {% if tab == 'hq' %}
 {% for r in rows %}
-<section class="rd-entity">
+<section class="panel rd-entity">
   <h2>{{ r.entity.name }}
     <span class="meta-dim small">· {{ r.entity.kind }}</span></h2>
   <p class="meta-dim small">
-    {{ r.total }} news item{{ '' if r.total == 1 else 's' }} {{ win.label | lower if win.key else 'all time' }} ·
-    {{ r.high }} high severity ·
-    {{ r.open }} awaiting review ·
-    top risk area: {{ r.top_risk }}
+    {{ r.total }} item{{ '' if r.total == 1 else 's' }} {{ win.label | lower if win.key else 'all time' }} ·
+    {{ r.high }} high · {{ r.open }} awaiting review ·
+    top risk area: <strong>{{ r.top_risk }}</strong>
   </p>
   {% if sev %}
   <p class="small">{{ r.matching }} {{ sev }}-severity item{{ '' if r.matching == 1 else 's' }}:</p>
@@ -177,11 +176,12 @@
 {% endif %}
 
 {% else %}{# region tab #}
-<p class="meta-dim small">Region: <strong>{{ region_desc }}</strong> — news from
+<p class="meta-dim small table-note rd-region-note">Region: <strong>{{ region_desc }}</strong> — news from
   entities headquartered under other offices, where the story mentions a place
   in this region. Matching is by state and district names.</p>
 {% if region_rows %}
-<table class="data-table">
+<div class="panel rd-region">
+<table class="data-table rd-region-table">
   <tr><th scope="col">Severity</th><th scope="col">Item</th>
       <th scope="col">Entity</th><th scope="col">Mentions</th>
       <th scope="col">Published</th></tr>
@@ -195,6 +195,7 @@
   </tr>
   {% endfor %}
 </table>
+</div>
 {% else %}
 <p class="meta-dim">No news from other entities currently mentions this region.</p>
 {% endif %}

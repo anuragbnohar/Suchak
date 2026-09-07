@@ -433,7 +433,7 @@ label.check { display: flex; margin: 0.15rem 0; }
 .data-table td.num a, .overview-table td.num a { font-weight: 600; }
 
 /* A table that is the screen's main object gets a frame of its own. */
-.overview-table, .rd-entity .data-table {
+.overview-table {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r);
   /* `clip` rather than `hidden`: both round off the corners, but `hidden`
@@ -442,10 +442,8 @@ label.check { display: flex; margin: 0.15rem 0; }
   overflow: hidden;
   overflow: clip;
 }
-.overview-table td:first-child, .overview-table th:first-child,
-.rd-entity .data-table td:first-child, .rd-entity .data-table th:first-child { padding-left: 1rem; }
-.overview-table td:last-child, .overview-table th:last-child,
-.rd-entity .data-table td:last-child, .rd-entity .data-table th:last-child { padding-right: 1rem; }
+.overview-table td:first-child, .overview-table th:first-child { padding-left: 1rem; }
+.overview-table td:last-child, .overview-table th:last-child { padding-right: 1rem; }
 /* A row that needs attention is marked on its leading edge, never by
    tinting the whole row: tinted rows stop meaning anything by the tenth. */
 .row-serious td:first-child { box-shadow: inset 3px 0 0 var(--serious); }
@@ -707,7 +705,10 @@ a.trend-col:hover { text-decoration: none; }
 
 /* ══ Regional view ═════════════════════════════════════════════════════ */
 
-.rd-entity { margin-bottom: 1.6rem; }
+/* Each entity is a card: a heading, a summary line, its items and its
+   grievances belong together, and on a page of six banks the frame is
+   what says where one ends and the next begins. */
+.rd-entity { margin-bottom: 0.85rem; }
 .rd-entity h2 {
   display: flex; align-items: baseline; gap: 0.4rem;
   font-size: 0.95rem; text-transform: none; letter-spacing: 0;
@@ -761,20 +762,39 @@ a.trend-col:hover { text-decoration: none; }
 
 /* ══ Sign in ═══════════════════════════════════════════════════════════ */
 
-.login-wrap { display: flex; justify-content: center; padding-top: 8vh; }
+.login-wrap { display: flex; justify-content: center; padding-top: 6vh; }
 .login-card {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 1fr);
   background: var(--surface); border: 1px solid var(--line);
-  border-top: 3px solid var(--accent); border-radius: var(--r);
-  padding: 2rem 2.25rem; width: 100%; max-width: 26rem; box-shadow: var(--shadow-md);
+  border-radius: var(--r); overflow: hidden;
+  width: 100%; max-width: 52rem; box-shadow: var(--shadow-md);
 }
-.login-brand { font-size: 1.7rem; font-weight: 700; margin: 0; }
-.login-sub { color: var(--muted); margin: 0.25rem 0 1.5rem; }
+/* the identity side: the one place in the application that says, in full,
+   what it is for */
+.login-intro {
+  background: var(--masthead); color: #DCE6EF;
+  padding: 2rem 2rem 2.25rem;
+}
+.login-brand { font-size: 1.6rem; font-weight: 700; margin: 0; color: #fff; }
+.login-intro .devanagari { color: #9FB6C9; }
+.login-sub { color: #9FB6C9; margin: 0.3rem 0 1.5rem; font-size: 0.9rem; }
+.login-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.85rem; }
+.login-points li {
+  font-size: 0.85rem; line-height: 1.5; color: #C6D4E0;
+  border-left: 2px solid rgba(47, 163, 155, 0.6); padding-left: 0.75rem;
+}
+.login-panel { padding: 2rem 2rem 2.25rem; }
+.login-panel > h2 { margin-bottom: 1.1rem; }
 .login-form { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.5rem; }
 .demo-creds { border-top: 1px solid var(--line); padding-top: 1rem; font-size: 0.82rem; }
-.demo-title { margin: 0 0 0.4rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.7rem; }
-.demo-creds table { border-collapse: collapse; }
-.demo-creds td { padding: 0.15rem 0.9rem 0.15rem 0; color: var(--muted); vertical-align: top; }
+.demo-title { margin: 0 0 0.5rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.7rem; }
+.demo-creds table { border-collapse: collapse; width: 100%; }
+.demo-creds td { padding: 0.2rem 0.75rem 0.2rem 0; color: var(--muted); vertical-align: top; }
 .demo-creds td:first-child { white-space: nowrap; }
+@media (max-width: 760px) {
+  .login-card { grid-template-columns: 1fr; max-width: 28rem; }
+  .login-intro { padding: 1.5rem; }
+}
 code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0.05rem 0.3rem; }
 
 /* ══ Footer ════════════════════════════════════════════════════════════
@@ -1043,3 +1063,24 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2)
   .item-trail { justify-content: flex-start; margin-left: 0; }
   .trail-state { min-width: 0; text-align: left; }
 }
+
+
+/* ══ Regional view tables ══════════════════════════════════════════════
+   Fixed columns. Six entity cards each sizing their own table put SOURCE
+   and PUBLISHED in six different places down the page, which is exactly
+   the comparison the screen exists to make. */
+
+.rd-entity .data-table { margin-top: 0.15rem; }
+.rd-entity .data-table th:nth-child(1),
+.rd-entity .data-table td:nth-child(1) { width: 7.5rem; }
+.rd-entity .data-table th:nth-child(3),
+.rd-entity .data-table td:nth-child(3) { width: 11rem; }
+.rd-entity .data-table th:nth-child(4),
+.rd-entity .data-table td:nth-child(4) { width: 7rem; white-space: nowrap; }
+.rd-region { padding-top: 0.35rem; }
+.rd-region-note { margin-bottom: 0.7rem; }
+.rd-region-table th:nth-child(1), .rd-region-table td:nth-child(1) { width: 7.5rem; }
+.rd-region-table th:nth-child(3), .rd-region-table td:nth-child(3) { width: 12rem; }
+.rd-region-table th:nth-child(4), .rd-region-table td:nth-child(4) { width: 9rem; }
+.rd-region-table th:nth-child(5), .rd-region-table td:nth-child(5) { width: 7rem; white-space: nowrap; }
+.rd-entity .chip-row-social { margin-bottom: 0; }
