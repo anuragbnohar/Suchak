@@ -7,23 +7,18 @@
     <h1>Entity dashboard</h1>
     <p class="page-sub">{{ entity.name }} · {{ entity.kind }} · {% if win.key %}{{ win.label | lower }}{% else %}all collected items{% endif %}</p>
   </div>
-  {% if entities|length > 1 %}
-  <form method="get" action="/dashboard" class="entity-picker">
-    {{ filters.date_hidden(win) }}
-    <label>Entity
+  <form method="get" action="/dashboard" class="fetch-form filter-form">
+    {% if entities|length > 1 %}
+    <label class="small">Entity
       <select name="entity" onchange="this.form.submit()">
         {% for e in entities %}
         <option value="{{ e.id }}" {% if e.id == entity.id %}selected{% endif %}>{{ e.name }}</option>
         {% endfor %}
       </select>
     </label>
-  </form>
-  {% endif %}
-</div>
-
-<div class="toolbar">
-  <form method="get" action="/dashboard" class="fetch-form filter-form">
+    {% else %}
     <input type="hidden" name="entity" value="{{ entity.id }}">
+    {% endif %}
     {{ filters.date_picker(win) }}
     <noscript><button type="submit" class="btn">Apply</button></noscript>
   </form>

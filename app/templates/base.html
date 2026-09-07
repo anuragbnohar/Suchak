@@ -8,7 +8,6 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/">Drishti <span class="devanagari">दृष्टि</span></a>
   {% if user %}
   {% set path = request.url.path %}
   {% set office_q = request.query_params.get('office') %}
@@ -19,45 +18,54 @@
   {% set ov_ctx = (not rd_ctx) and path == '/overview' %}
   {% set dos_ctx = (not rd_ctx) and (not ov_ctx) and (path == '/' or path in dos_paths
                     or path.startswith('/item/') or path.startswith('/views')) %}
-  <nav class="nav">
-    {% if user.role == 'superadmin' %}
-    <a class="{% if ov_ctx %}nav-active{% endif %}" href="/overview">Overview</a>
+  {% endif %}
+  <div class="topbar-main">
+    <a class="brand" href="/">Drishti <span class="devanagari">दृष्टि</span></a>
+    {% if user %}
+    <nav class="nav" aria-label="Workspaces">
+      {% if user.role == 'superadmin' %}
+      <a class="{% if ov_ctx %}nav-active{% endif %}" href="/overview">Overview</a>
+      {% endif %}
+      {% if not is_rd_user %}
+      <a class="{% if dos_ctx %}nav-active{% endif %}" href="/dashboard">DoS View</a>
+      {% endif %}
+      {% if user.role == 'superadmin' or user.rbi_office %}
+      <a class="{% if rd_ctx %}nav-active{% endif %}" href="/rd">RD View</a>
+      {% endif %}
+      <a href="/factors">Factors</a>
+      <a href="/entities">Entities</a>
+      {% if user.role == 'superadmin' %}<a href="/settings">Settings</a>{% endif %}
+    </nav>
+    <div class="userbox">
+      <span class="username">{{ user.display_name }}</span>
+      <span class="role-chip role-{{ user.role }}">{% if user.rbi_office %}RD · {{ user.rbi_office }}{% else %}{{ user.role }}{% endif %}</span>
+      <a class="logout" href="/logout">Sign out</a>
+    </div>
     {% endif %}
-    {% if not is_rd_user %}
-    <a class="{% if dos_ctx %}nav-active{% endif %}" href="/dashboard">DoS View</a>
-    {% endif %}
-    {% if user.role == 'superadmin' or user.rbi_office %}
-    <a class="{% if rd_ctx %}nav-active{% endif %}" href="/rd">RD View</a>
-    {% endif %}
-    <a href="/factors">Factors</a>
-    <a href="/entities">Entities</a>
-    {% if user.role == 'superadmin' %}<a href="/settings">Settings</a>{% endif %}
-  </nav>
-  {% if user %}{% if rd_ctx %}
-  <nav class="nav subnav">
+  </div>
+</header>
+{% if user and (rd_ctx or dos_ctx) %}
+<div class="subbar">
+  {% if rd_ctx %}
+  <nav class="nav subnav" aria-label="Regional screens">
     {% set rd_office = office_q %}
     {% if selected is defined and selected and unassigned_label is defined and selected != unassigned_label %}{% set rd_office = selected %}{% endif %}
     {% set osuffix = ('?office=' ~ (rd_office | urlencode)) if (rd_office and not is_rd_user) else '' %}
-    <a href="/rd">Region overview</a>
-    <a href="/queue{{ osuffix }}">Queue</a>
-    <a href="/social{{ osuffix }}">Social media</a>
+    <a class="{% if path.startswith('/rd') %}is-here{% endif %}" href="/rd">Region overview</a>
+    <a class="{% if path == '/queue' %}is-here{% endif %}" href="/queue{{ osuffix }}">Queue</a>
+    <a class="{% if path == '/social' %}is-here{% endif %}" href="/social{{ osuffix }}">Social media</a>
   </nav>
-  {% elif dos_ctx %}
-  <nav class="nav subnav">
-    <a href="/dashboard">Dashboard</a>
-    <a href="/queue">Queue</a>
-    <a href="/social">Social media</a>
-    <a href="/insights">Insights</a>
-    <a href="/todo">To-do{% if todo_count %}<span class="nav-badge">{{ todo_count }}</span>{% endif %}</a>
+  {% else %}
+  <nav class="nav subnav" aria-label="Supervisory screens">
+    <a class="{% if path == '/dashboard' %}is-here{% endif %}" href="/dashboard">Dashboard</a>
+    <a class="{% if path == '/queue' %}is-here{% endif %}" href="/queue">Queue</a>
+    <a class="{% if path == '/social' %}is-here{% endif %}" href="/social">Social media</a>
+    <a class="{% if path == '/insights' %}is-here{% endif %}" href="/insights">Insights</a>
+    <a class="{% if path == '/todo' %}is-here{% endif %}" href="/todo">To-do{% if todo_count %}<span class="nav-badge">{{ todo_count }}</span>{% endif %}</a>
   </nav>
-  {% endif %}{% endif %}
-  <div class="userbox">
-    <span class="username">{{ user.display_name }}</span>
-    <span class="role-chip role-{{ user.role }}">{% if user.rbi_office %}RD · {{ user.rbi_office }}{% else %}{{ user.role }}{% endif %}</span>
-    <a class="logout" href="/logout">Sign out</a>
-  </div>
   {% endif %}
-</header>
+</div>
+{% endif %}
 <main class="page">
   {% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
   {% block content %}{% endblock %}

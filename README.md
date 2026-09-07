@@ -537,3 +537,35 @@ app/
   templates/     Server-rendered pages
   static/        Stylesheet
 ```
+
+## Design system
+
+The stylesheet, `app/static/style.css`, is a small design system rather than
+a pile of page-specific rules, and it is written to enterprise conventions:
+structure carries the meaning and colour only qualifies it, a hairline
+border defines a surface, every figure is a link and every column of
+figures is aligned on the digit. It is deliberately dense — this is a tool
+read for hours, not a page browsed once.
+
+Work with it rather than around it:
+
+- **Tokens first.** Colour, type, spacing, radius and shadow all come from
+  the custom properties at the top of the file. A new colour goes in the
+  palette or it does not go in.
+- **One control height, one radius family.** `--control-h` and the `--r-*`
+  radii keep buttons, inputs and dropdowns on a common line. A screen that
+  mixes them reads as unfinished however good each part is.
+- **Reuse the vocabulary.** Severity, risk, topic, entity and status all
+  have a badge class already; a table has `.data-table`, a metric has
+  `.tile`, a boxed region has `.panel`, and a filter row has `.toolbar`
+  with `.filter-form`.
+- **Colour is never the only signal.** Severity chips carry the word, an
+  overdue follow-up carries the "overdue" chip, and a serious row is
+  marked on its leading edge rather than by tinting the whole row.
+- **No external assets.** No web fonts, no icon set, no CDN — the system
+  font stack only, because this runs on a laptop behind a filtered network.
+
+The shell is two tiers: a dark masthead that never changes and says which
+application this is, and a light context bar beneath it that says which
+screen of the current workspace is open. Both live in `templates/base.html`.
+Shared filter controls live in `templates/_filters.html`.

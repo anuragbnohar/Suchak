@@ -20,7 +20,7 @@
       </select>
       <button type="submit" class="btn btn-primary">Fetch now — all entities</button>
     </form>
-    <p class="meta-dim small" style="margin:0.4rem 0 0; text-align:right">
+    <p class="meta-dim small fetch-note">
       {% if fetch_minutes %}Also fetching automatically every {{ fetch_minutes }} min
       {% else %}Manual only — nothing is fetched until you press Fetch{% endif %}<br>
       That button runs news and social together. Per entity below, news and
@@ -172,7 +172,7 @@
   </section>
 
   {% if user.role == 'superadmin' %}
-  <p><a class="btn btn-primary" href="/entities/new">Add an entity</a>
+  <p class="btn-row wide"><a class="btn btn-primary" href="/entities/new">Add an entity</a>
     <span class="meta-dim small">— name and headquarters; the RBI office fills itself.</span></p>
   {% endif %}
 </div>
