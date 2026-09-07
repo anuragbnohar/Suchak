@@ -242,8 +242,8 @@ X recent search is capped at 7 days by its API regardless.
   transactions, Charges & fees, Harassment, Account access / KYC, Other
   grievance — and this screen crosses them against the entity and against
   the place the story is about, as two heat matrices. Filters for date,
-  entity, location, source, and severity narrow every figure on the page,
-  tiles included; every cell, bar and tile is a link that narrows the page
+  type of entity, entity, location, source and severity narrow every figure
+  on the page, tiles included; every cell, bar and tile is a link that narrows the page
   further, down to the complaints themselves at the foot of it. Where a
   complaint happened is read from the classifier's own geography verdict
   first and from the districts and states the story names second, with the

@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.36"
+APP_BUILD = "2026-09-04.37"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1394,7 +1394,8 @@ def _complaint_rows(db, entities, win):
     win_sql, win_args = date_sql(win, "i")
     win_and = f" AND {win_sql}" if win_sql else ""
     rows = [prep_item(r) for r in q(
-        db, "SELECT i.*, e.name AS entity_name, e.aliases AS entity_aliases,"
+        db, "SELECT i.*, e.name AS entity_name, e.kind AS entity_kind,"
+            " e.aliases AS entity_aliases,"
             " (SELECT group_concat(COALESCE(s.title, ''), ' ') FROM item_sources s"
             "  WHERE s.item_id = i.id) AS source_titles"
             " FROM items i JOIN entities e ON e.id = i.entity_id"
@@ -1605,6 +1606,12 @@ def complaints(request: Request):
         topic_f = request.query_params.get("topic", "")
         if topic_f not in topics:
             topic_f = ""
+        # Types of entity actually on the roster, not the whole vocabulary:
+        # a supervisor with only banks should not be offered NBFC.
+        kinds = _present_kinds(entities)
+        kind_f = request.query_params.get("kind", "")
+        if kind_f not in kinds:
+            kind_f = ""
         loc_f = request.query_params.get("loc", "")
         district_f = request.query_params.get("district", "")
         src_f = request.query_params.get("src", "")
@@ -1620,9 +1627,9 @@ def complaints(request: Request):
             here is a link, and a click narrows the page rather than
             replacing it, so a supervisor can walk from a shape to the
             complaints behind it without losing the way back."""
-            parts = {"entity": ent_f, "topic": topic_f, "loc": loc_f,
-                     "district": district_f, "src": src_f, "sev": sev_f,
-                     "since": win["key"], "office": office or ""}
+            parts = {"entity": ent_f, "kind": kind_f, "topic": topic_f,
+                     "loc": loc_f, "district": district_f, "src": src_f,
+                     "sev": sev_f, "since": win["key"], "office": office or ""}
             parts.update({k: ("" if v is None else str(v))
                           for k, v in over.items()})
             tail = "&".join(f"{k}={quote(str(v))}" for k, v in parts.items() if v)
@@ -1645,6 +1652,8 @@ def complaints(request: Request):
             fully narrowed set.
             """
             out = pool
+            if kind_f and "kind" not in skip:
+                out = [r for r in out if r["entity_kind"] == kind_f]
             if ent_f and "entity" not in skip:
                 out = [r for r in out if str(r["entity_id"]) == ent_f]
             if topic_f and "topic" not in skip:
@@ -1670,6 +1679,7 @@ def complaints(request: Request):
         src_pool = narrow(rows, skip=("src",))
         topic_pool = narrow(rows, skip=("topic",))
         place_pool = narrow(rows, skip=("loc", "district"))
+        kind_pool = narrow(rows, skip=("kind",))
         matrix_pool = narrow(rows, skip=("entity", "topic"))
         state_pool = narrow(rows, skip=("loc", "district", "topic"))
 
@@ -1720,6 +1730,8 @@ def complaints(request: Request):
                 narrow(prev_rows, skip=("loc", "district")))
 
         chips = []
+        if kind_f:
+            chips.append(("Entity type", kind_f, link(kind=None)))
         if ent_f:
             chips.append(("Entity", names.get(int(ent_f), ent_f), link(entity=None)))
         if topic_f:
@@ -1741,6 +1753,12 @@ def complaints(request: Request):
         shown.sort(key=lambda r: taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3))
         listed = shown[:60]
 
+        by_kind = [{"kind": k, "href": link(kind=k, entity=None),
+                    "on": k == kind_f,
+                    "n": sum(1 for r in kind_pool if r["entity_kind"] == k)}
+                   for k in kinds]
+        by_kind.sort(key=lambda c: -c["n"])
+
         by_topic = [{"topic": t, "href": link(topic=t),
                      "on": t == topic_f,
                      "n": sum(1 for r in topic_pool if t in r["complaint_topics"])}
@@ -1751,6 +1769,10 @@ def complaints(request: Request):
                       entities=entities, office=office, link=link,
                       topics=topics, chips=chips,
                       entity_f=ent_f, topic_f=topic_f, loc_f=loc_f,
+                      kinds=kinds, kind_f=kind_f, by_kind=by_kind,
+                      kind_entities=[e for e in entities
+                                     if not kind_f or e["kind"] == kind_f
+                                     or str(e["id"]) == ent_f],
                       district_f=district_f, src_f=src_f, sev_f=sev_f,
                       total=len(sel), scope_total=len(rows),
                       prev_total=prev_total,

@@ -57,11 +57,21 @@
        Without it as a hidden field, changing the date would silently drop
        it and the page would quietly widen. #}
     {% if sev_f %}<input type="hidden" name="sev" value="{{ sev_f }}">{% endif %}
+    {% if kinds | length > 1 %}
+    <label class="small">Entity type
+      <select name="kind" onchange="this.form.submit()">
+        <option value="">All types</option>
+        {% for k in kinds %}
+        <option value="{{ k }}" {% if kind_f == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
     {% if entities | length > 1 %}
     <label class="small">Entity
       <select name="entity" onchange="this.form.submit()">
-        <option value="">All entities</option>
-        {% for e in entities %}
+        <option value="">{% if kind_f %}All {{ kind_f | lower }}s{% else %}All entities{% endif %}</option>
+        {% for e in kind_entities %}
         <option value="{{ e.id }}" {% if entity_f == e.id | string %}selected{% endif %}>{{ e.name }}</option>
         {% endfor %}
       </select>
@@ -173,6 +183,25 @@
       {% endfor %}
     </div>
   </section>
+
+  {% if by_kind | length > 1 %}
+  <section class="panel" id="bykind">
+    <h2>By type of entity</h2>
+    {% set kmax = by_kind | map(attribute='n') | max %}
+    <div class="hbar-chart">
+      {% for c in by_kind %}
+      <a class="hbar-row {% if c.on %}hbar-row-on{% endif %}"
+         href="{{ c.href if not c.on else link(kind=None) }}">
+        <span class="hbar-label">{{ c.kind }}</span>
+        <span class="hbar-track"><span class="hbar-fill" style="width: {{ (100 * c.n / kmax) | round(1) if kmax else 0 }}%"></span></span>
+        <span class="hbar-value">{{ c.n }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    <p class="panel-note">The types actually on your roster. Choosing one narrows the
+      entity box beside the filters to the entities of that type.</p>
+  </section>
+  {% endif %}
 
   <section class="panel" id="where">
     <h2>Where complaints are happening</h2>
