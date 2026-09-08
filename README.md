@@ -178,6 +178,15 @@ X recent search is capped at 7 days by its API regardless.
   changes it. Deliberately status-only: it fabricates no verdict, never
   locks the item (the full review form stays open either way), and
   unticking never erases a recorded review — corrections and history stand.
+  Because it records no ruling, a ticked item is **not** a precedent and
+  gets **no** review-history entry: only an item carrying a verdict
+  (`review_relevant IS NOT NULL`) is drawn as a few-shot example or seeded
+  into `reviews`. Without that guard an unruled item renders as *"not
+  relevant; risk areas: none"* wherever a precedent is written, so clearing
+  the queue by ticking would have taught the classifier those stories were
+  irrelevant — and the startup backfill would have put a review nobody wrote
+  into the supervisory trail. `_drop_phantom_reviews()` clears any such row
+  left by the two builds that had the defect.
 - **Review history** — every review is kept, never overwritten. Each
   submission is appended to a `reviews` table with its reviewer, role and
   timestamp; the item's own `review_*` columns mirror the latest one, so the

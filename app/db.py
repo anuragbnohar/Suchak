@@ -278,6 +278,12 @@ def _backfill_reviews(con: sqlite3.Connection) -> None:
     row, so without this an item reviewed last week would show an empty
     history. Items that already have history rows are skipped, which
     makes this safe to run on every start.
+
+    Only items carrying an actual ruling are seeded. The queue's Reviewed
+    tick marks an item reviewed without recording one, and inventing a
+    history entry for it would put a review nobody wrote into the
+    supervisory trail -- the one record in this app that must never say
+    something a person did not.
     """
     con.execute(
         "INSERT INTO reviews (item_id, user_id, created_at, relevant, severity,"
@@ -287,7 +293,26 @@ def _backfill_reviews(con: sqlite3.Connection) -> None:
         "        review_notes"
         " FROM items"
         " WHERE reviewed_at IS NOT NULL"
+        "   AND review_relevant IS NOT NULL"
         "   AND id NOT IN (SELECT item_id FROM reviews)"
+    )
+
+
+def _drop_phantom_reviews(con: sqlite3.Connection) -> None:
+    """Remove review-history entries no person ever wrote.
+
+    For two builds the queue's Reviewed tick set an item's status without
+    recording a ruling, and the backfill above then seeded a history row
+    for it -- a row in the supervisory trail saying a review happened
+    when only a box was ticked. Such a row is identifiable exactly: the
+    item carries no verdict, and the row carries no verdict either, which
+    a real review never does (the form always writes relevant as 0 or 1).
+    Runs on every start and finds nothing once the estate is clean.
+    """
+    con.execute(
+        "DELETE FROM reviews WHERE relevant IS NULL AND severity IS NULL"
+        "  AND action IS NULL AND notes IS NULL"
+        "  AND item_id IN (SELECT id FROM items WHERE review_relevant IS NULL)"
     )
 
 
@@ -326,6 +351,7 @@ def init_db() -> None:
             con.execute(stmt)
         _backfill_actions(con)
         _backfill_reviews(con)
+        _drop_phantom_reviews(con)
         _backfill_social_window(con)
         con.commit()
     finally:

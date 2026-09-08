@@ -294,6 +294,13 @@ def similar_reviewed(db, entity_id: int, text: str, top_k: int = 3) -> list:
         "SELECT id, entity_id, title, summary, review_relevant, review_risk_areas,"
         "       review_severity, review_actionable, review_action, review_notes"
         " FROM items WHERE status IN ('reviewed','dismissed') AND reviewed_at IS NOT NULL"
+        # A precedent has to carry a ruling. The queue's Reviewed tick marks
+        # an item reviewed without recording one, and an item with no verdict
+        # reads as "not relevant; risk areas: none" wherever a precedent is
+        # rendered -- so ticking a row to clear the queue would teach the
+        # classifier the story was irrelevant. A tick means "I have looked at
+        # this", never "here is my verdict".
+        "   AND review_relevant IS NOT NULL"
         " ORDER BY (entity_id = ?) DESC, reviewed_at DESC LIMIT 400",
         (entity_id,),
     )
