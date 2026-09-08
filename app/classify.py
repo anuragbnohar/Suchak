@@ -1045,6 +1045,10 @@ def rescore_grievances(db) -> dict:
              " FROM items i JOIN entities e ON e.id = i.entity_id"
              " WHERE i.gated_out = 0"
              "   AND COALESCE(i.attribution, '') != 'rejected'"
+             # the same universe the complaint screens count: a dismissed
+             # item is ruled not this entity's business, and re-scoring it
+             # would spend a model call on a row no complaint view shows
+             "   AND i.status NOT IN ('new', 'dismissed')"
              "   AND COALESCE(i.review_complaint_topics, i.complaint_topics,"
              "                '[]') != '[]'"
              " ORDER BY i.id DESC")
