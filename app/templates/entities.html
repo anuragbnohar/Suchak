@@ -1,8 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Entities · Drishti<datalist id="rbi-offices">
-  {% for o in rbi_offices %}<option value="{{ o }}">{% endfor %}
-</datalist>
-{% endblock %}
+{% block title %}Entities · Drishti{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -117,39 +114,54 @@
             <div class="edit-body">
               <form method="post" action="/entities/{{ r.entity.id }}/aliases"
                     class="stack-form entity-edit-form">
-                <label>Aliases — how the press actually writes this name,
-                  most common first, one per line
-                  <textarea name="aliases" required
-                            rows="{{ [10, [4, r.aliases | length] | max] | min }}"
-                  >{{ r.aliases | join('\n') }}</textarea>
-                </label>
-                <p class="meta-dim small">Attribution is an exact phrase match, so a
-                  headline is only kept if it contains one of these. The legal name
-                  alone rarely appears in print — add the short forms a journalist
-                  would use. One alias per line (commas work too); duplicates are
-                  dropped on save, and spelling variants (dropped "Ltd.",
-                  co-operative / cooperative / co-op) are added automatically.</p>
-                <div class="edit-pair">
-                  <label>News languages
-                    <input name="languages" value="{{ r.languages | join(', ') }}"
-                           class="lang-input"
-                           placeholder="en, mr"
-                           title="Google News edition codes: en, mr, hi ...">
-                  </label>
-                  <label>X handles (comma-separated)
-                    <input name="x_handle" value="{{ r.entity.x_handle or '' }}"
-                           class="handle-input"
-                           placeholder="HDFCBank_Cares, HDFC_Bank"
-                           title="Every handle complaints are sent to — the care handle and the bank's main handle. All are searched.">
-                  </label>
-                  <label>RBI office (headquarters region)
-                    <input name="rbi_office" value="{{ r.entity.rbi_office or '' }}"
-                           list="rbi-offices" placeholder="e.g. Mumbai">
-                  </label>
+                <div class="entity-edit-grid">
+                  <div class="edit-col">
+                    <div class="field">
+                      <label>Aliases — how the press actually writes this name
+                        <textarea name="aliases" required
+                                  rows="{{ [10, [4, r.aliases | length] | max] | min }}"
+                        >{{ r.aliases | join('\n') }}</textarea>
+                      </label>
+                      <p class="field-help">Attribution is an exact phrase match, so
+                        a headline is only kept if it contains one of these. The
+                        legal name alone rarely appears in print — add the short
+                        forms a journalist would use, most common first,
+                        one per line (commas work too). Duplicates are dropped on
+                        save, and spelling variants (dropped "Ltd.", co-operative /
+                        cooperative / co-op) are added automatically.</p>
+                    </div>
+                  </div>
+                  <div class="edit-col">
+                    <div class="field">
+                      <label>News languages
+                        <input name="languages" value="{{ r.languages | join(', ') }}"
+                               placeholder="en, mr"
+                               title="Google News edition codes: en, mr, hi ...">
+                      </label>
+                      <p class="field-help">Google News edition codes. A regional
+                        entity is covered in the local press first — add
+                        <code>mr</code> for Maharashtra, <code>hi</code> for the
+                        Hindi belt, alongside <code>en</code>.</p>
+                    </div>
+                    <div class="field">
+                      <label>X handles (comma-separated)
+                        <input name="x_handle" value="{{ r.entity.x_handle or '' }}"
+                               placeholder="HDFCBank_Cares, HDFC_Bank">
+                      </label>
+                      <p class="field-help">Every handle complaints are sent to —
+                        the care handle and the bank's main handle. All are
+                        searched.</p>
+                    </div>
+                    <div class="field">
+                      <label>RBI office (headquarters region)
+                        <input name="rbi_office" value="{{ r.entity.rbi_office or '' }}"
+                               list="rbi-offices" placeholder="e.g. Mumbai">
+                      </label>
+                      <p class="field-help">Decides which Regional Director's
+                        screens cover this entity.</p>
+                    </div>
+                  </div>
                 </div>
-                <p class="meta-dim small">A regional entity is covered in the local
-                  press first — add <code>mr</code> for Maharashtra, <code>hi</code>
-                  for the Hindi belt, alongside <code>en</code>.</p>
                 <div class="form-actions">
                   <button type="submit" class="btn btn-primary">Save changes</button>
                   <p class="meta-dim small">Aliases decide what the next fetch keeps,

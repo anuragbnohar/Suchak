@@ -451,10 +451,6 @@ label.check { display: flex; margin: 0.15rem 0; }
 .table-scroll { overflow-x: auto; border-radius: var(--r); }
 .entity-table { min-width: 56rem; }
 .entity-table th:first-child, .entity-table td:first-child { min-width: 10rem; }
-.entity-table .inline-form input[name="aliases"] { min-width: 11rem; }
-/* .inline-form sets a 14rem floor on inputs; a list of two-letter codes
-   does not need it, and the width it steals clips the row's buttons. */
-.entity-table .lang-input { min-width: 4.5rem; max-width: 6rem; }
 
 /* ══ Panels ════════════════════════════════════════════════════════════ */
 
@@ -744,21 +740,52 @@ a.trend-col:hover { text-decoration: none; }
 
 /* ══ Entities ══════════════════════════════════════════════════════════ */
 
-.lang-input { max-width: 7rem; min-width: 5rem; }
-.handle-input { max-width: 10rem; min-width: 7rem; }
-/* A labelled panel under the row, because three unlabelled inputs wedged
-   into a table cell did not read as an editor at all. It is a form, not a
-   table cell, so it keeps a form's measure rather than the table's width. */
+/* The editor under each row, because three unlabelled inputs wedged into
+   a table cell did not read as an editor at all. Aliases are the working
+   material and take the left column at a textarea's width; the three
+   settings stack beside them, each with its own line of help — the same
+   name-above-control, help-below grammar as the Settings page. */
 .entity-edit-row > td { padding: 0 1rem 1rem; border-top: 0; background: var(--surface-2); }
 .edit-body { margin-top: 0.5rem; padding-top: 0.85rem; border-top: 1px solid var(--line); }
-.entity-edit-form { max-width: 60rem; }
-.entity-edit-form textarea { width: 100%; font-family: inherit; min-height: 5.5rem; }
-.entity-edit-form p { max-width: 78ch; }
-.entity-edit-form .edit-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.7rem 1rem; }
-.entity-edit-form label { display: block; margin-bottom: 0; }
-/* the three fields share the row, so none of them keeps a private width */
-.entity-edit-form .lang-input,
-.entity-edit-form .handle-input { max-width: none; min-width: 0; width: 100%; }
+.entity-edit-form { max-width: 62rem; }
+.entity-edit-grid {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(16rem, 1fr);
+  gap: 0.9rem 2rem; align-items: start;
+}
+.edit-col { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+.entity-edit-form textarea {
+  width: 100%; font-family: inherit; min-height: 5.5rem; resize: vertical;
+}
+/* A measure, not a full-width line, exactly as .setting-help puts it. */
+.field-help { margin: 0.3rem 0 0; font-size: 0.8rem; line-height: 1.45; color: var(--muted); max-width: 62ch; }
+@media (max-width: 820px) { .entity-edit-grid { grid-template-columns: 1fr; } }
+
+/* The add screen: the form in one panel with a what-it-drives aside, the
+   same two-panel shape as removal. The panel bounds the controls to a
+   form's measure, and the office resolves into a marked box rather than
+   a line floating in white space. */
+.entity-new-grid {
+  display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(17rem, 1fr);
+  gap: 1rem; align-items: start; max-width: 68rem;
+}
+.field-pair { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(15.5rem, 1fr); gap: 0.8rem 1rem; }
+/* the finder shares the district's baseline, like any toolbar control */
+.hq-row { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; }
+.hq-row label { flex: 1 1 14rem; margin: 0; }
+.hq-row .btn { flex: none; white-space: nowrap; }
+#lookup-line { margin: -0.35rem 0 0; }
+#lookup-line:empty { display: none; }
+.office-box {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 0.6rem 0.8rem;
+}
+.office-box p { margin: 0 0 0.3rem; }
+.office-box p:last-child { margin-bottom: 0; }
+.explainer p { margin: 0 0 0.75rem; font-size: 0.85rem; line-height: 1.55; color: var(--ink-2); }
+.explainer p:last-child { margin-bottom: 0; }
+@media (max-width: 900px) {
+  .entity-new-grid, .field-pair { grid-template-columns: 1fr; }
+}
 
 /* ══ Sign in ═══════════════════════════════════════════════════════════ */
 

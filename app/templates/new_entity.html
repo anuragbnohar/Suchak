@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Add entity · Drishti{% endblock %}
 {% block content %}
+<p class="crumb"><a href="/entities">← Back to entities</a></p>
+
 <div class="page-head">
   <div>
     <h1>Add an entity</h1>
@@ -8,73 +10,92 @@
   </div>
 </div>
 
-<section class="panel">
-  <form method="post" action="/entities/new" class="stack-form">
-    <label>Name
-      <input name="name" required placeholder="e.g. State Bank of India"
-             value="{{ form.name or '' }}">
-    </label>
-    <label>Kind
-      <select name="kind">
-        {% for k in kinds %}
-        <option value="{{ k }}" {% if form.kind == k %}selected{% endif %}>{{ k }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <div class="edit-pair">
-      <label>Headquarters district
-        <input name="district" id="district" list="district-list" required
-               placeholder="start typing, or use the finder"
-               value="{{ form.district or '' }}" autocomplete="off">
-      </label>
-      <label>&nbsp;
+<div class="entity-new-grid">
+  <section class="panel">
+    <h2>The entity</h2>
+    <form method="post" action="/entities/new" class="stack-form">
+      <div class="field-pair">
+        <label>Name
+          <input name="name" required placeholder="e.g. State Bank of India"
+                 value="{{ form.name or '' }}">
+        </label>
+        <label>Type of entity
+          <select name="kind">
+            {% for k in kinds %}
+            <option value="{{ k }}" {% if form.kind == k %}selected{% endif %}>{{ k }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="hq-row">
+        <label>Headquarters district
+          <input name="district" id="district" list="district-list" required
+                 placeholder="start typing, or use the finder"
+                 value="{{ form.district or '' }}" autocomplete="off">
+        </label>
         <button type="submit" name="action" value="lookup" id="find-hq"
                 class="btn" formnovalidate>Find headquarters online</button>
-      </label>
-    </div>
-    <p class="small" id="lookup-line">
-      {%- if lookup -%}
-        {%- if lookup.found -%}
-        Found: <strong>{{ lookup.district }}</strong>{% if lookup.state %}, {{ lookup.state }}{% endif %}
-        {% if lookup.source %}· <a href="{{ lookup.source }}" rel="noreferrer">source</a>{% endif %}
-        {%- else -%}
-        <span class="meta-dim">{{ lookup.note }}</span>
+      </div>
+      <p class="small" id="lookup-line">
+        {%- if lookup -%}
+          {%- if lookup.found -%}
+          Found: <strong>{{ lookup.district }}</strong>{% if lookup.state %}, {{ lookup.state }}{% endif %}
+          {% if lookup.source %}· <a href="{{ lookup.source }}" rel="noreferrer">source</a>{% endif %}
+          {%- else -%}
+          <span class="meta-dim">{{ lookup.note }}</span>
+          {%- endif -%}
         {%- endif -%}
-      {%- endif -%}
-    </p>
+      </p>
 
-    <div id="office-box">
-      {% if need_choice %}
-      <p class="small"><strong>
-        {% if candidates | length > 1 %}
-        “{{ form.district }}” exists in more than one state — pick the right office:
-        {% else %}
-        {{ candidates[0][0] }} is served by more than one RBI office — tick one or both:
-        {% endif %}</strong></p>
-      {% for state, offs in candidates %}
-        {% for o in offs %}
-        <label class="small"><input type="checkbox" name="offices" value="{{ o }}">
-          {{ o }} <span class="meta-dim">({{ state }})</span></label><br>
+      <div id="office-box" class="office-box">
+        {% if need_choice %}
+        <p class="small"><strong>
+          {% if candidates | length > 1 %}
+          “{{ form.district }}” exists in more than one state — pick the right office:
+          {% else %}
+          {{ candidates[0][0] }} is served by more than one RBI office — tick one or both:
+          {% endif %}</strong></p>
+        {% for state, offs in candidates %}
+          {% for o in offs %}
+          <label class="small"><input type="checkbox" name="offices" value="{{ o }}">
+            {{ o }} <span class="meta-dim">({{ state }})</span></label><br>
+          {% endfor %}
         {% endfor %}
-      {% endfor %}
-      {% elif unknown_district %}
-      <p class="small"><strong>“{{ form.district }}” is not a district this app knows.</strong>
-        Check the spelling, or choose the office yourself:</p>
-      <label class="small">RBI office
-        <input name="office_manual" list="rbi-offices" placeholder="e.g. Mumbai">
-      </label>
-      {% else %}
-      <p class="small meta-dim" id="office-hint">Pick the district (or let the finder
-        fill it) and the RBI office appears here.</p>
-      {% endif %}
-    </div>
+        {% elif unknown_district %}
+        <p class="small"><strong>“{{ form.district }}” is not a district this app knows.</strong>
+          Check the spelling, or choose the office yourself:</p>
+        <label class="small">RBI office
+          <input name="office_manual" list="rbi-offices" placeholder="e.g. Mumbai">
+        </label>
+        {% else %}
+        <p class="small meta-dim" id="office-hint">Pick the district (or let the finder
+          fill it) and the RBI office appears here.</p>
+        {% endif %}
+      </div>
 
-    <button type="submit" class="btn btn-primary">Add entity</button>
-    <p class="meta-dim small">Spelling variants of the name are added automatically.
-      Aliases, news languages and the X handle can be refined afterwards via
-      <a href="/entities">Entities</a> → Edit.</p>
-  </form>
-</section>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add entity</button>
+        <p class="meta-dim small">Spelling variants of the name are added
+          automatically; everything else can be refined afterwards.</p>
+      </div>
+    </form>
+  </section>
+
+  <aside class="panel explainer">
+    <h2>What these details drive</h2>
+    <p><strong>The office scopes the regional view.</strong> The RBI office —
+      resolved from the headquarters district — decides which Regional
+      Director's screens cover this entity.</p>
+    <p><strong>The finder checks before it fills.</strong> Find headquarters
+      online searches the live web, and only fills in a district it can verify
+      against the app's own district tables.</p>
+    <p><strong>Matching is tuned later.</strong> Spelling variants of the name
+      become aliases automatically. Aliases, news languages and X handles are
+      refined afterwards from this entity's Edit panel under
+      <a href="/entities">Entities</a>.</p>
+  </aside>
+</div>
 
 <datalist id="rbi-offices">
   {% for o in rbi_offices %}<option value="{{ o }}">{% endfor %}
