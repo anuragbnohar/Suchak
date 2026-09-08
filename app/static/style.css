@@ -1139,6 +1139,10 @@ tr.is-read .sev::before { opacity: 0.45; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   border-bottom: 1px solid var(--line);
 }
+/* The entity matrix clips a long bank name to keep its many rows one
+   line tall; the type-of-entity matrix has a handful of rows whose
+   labels ARE the information, so those wrap instead. */
+.heat-wrap th.heat-row-head { white-space: normal; line-height: 1.25; }
 .heat-cell {
   text-align: center; font-variant-numeric: tabular-nums; font-weight: 600;
   padding: 0.3rem 0.2rem; vertical-align: middle;

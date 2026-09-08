@@ -58,12 +58,25 @@
     <a class="{% if path == '/social' %}is-here{% endif %}" href="/social{{ osuffix }}">Social media</a>
   </nav>
   {% else %}
+  {# The entity shown on one screen follows you to the next: every tab
+     here is scoped to an entity, and switching screens should not
+     silently switch banks. Each page names its selection differently --
+     the queue-style pages pass entity_qs (an id, or "all"), the
+     dashboard and item pages the entity row itself, To-do its entity
+     filter -- and a page with nothing chosen leaves the links bare,
+     which lands each tab on its own default. #}
+  {% set nav_entity = '' %}
+  {% if entity_qs is defined and entity_qs %}{% set nav_entity = entity_qs | string %}
+  {% elif entity is defined and entity %}{% set nav_entity = entity.id | string %}
+  {% elif extras is defined and extras.get('entity') %}{% set nav_entity = extras.get('entity') %}
+  {% endif %}
+  {% set esuffix = ('?entity=' ~ (nav_entity | urlencode)) if nav_entity else '' %}
   <nav class="nav subnav" aria-label="Supervisory screens">
-    <a class="{% if path == '/dashboard' %}is-here{% endif %}" href="/dashboard">Dashboard</a>
-    <a class="{% if path == '/queue' %}is-here{% endif %}" href="/queue">Queue</a>
-    <a class="{% if path == '/social' %}is-here{% endif %}" href="/social">Social media</a>
-    <a class="{% if path == '/insights' %}is-here{% endif %}" href="/insights">Insights</a>
-    <a class="{% if path == '/todo' %}is-here{% endif %}" href="/todo">To-do{% if todo_count %}<span class="nav-badge">{{ todo_count }}</span>{% endif %}</a>
+    <a class="{% if path == '/dashboard' %}is-here{% endif %}" href="/dashboard{{ esuffix }}">Dashboard</a>
+    <a class="{% if path == '/queue' %}is-here{% endif %}" href="/queue{{ esuffix }}">Queue</a>
+    <a class="{% if path == '/social' %}is-here{% endif %}" href="/social{{ esuffix }}">Social media</a>
+    <a class="{% if path == '/insights' %}is-here{% endif %}" href="/insights{{ esuffix }}">Insights</a>
+    <a class="{% if path == '/todo' %}is-here{% endif %}" href="/todo{{ esuffix }}">To-do{% if todo_count %}<span class="nav-badge">{{ todo_count }}</span>{% endif %}</a>
   </nav>
   {% endif %}
 </div>

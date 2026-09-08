@@ -2,9 +2,9 @@
 {% import "_filters.html" as filters %}
 {% block title %}Complaints · Drishti{% endblock %}
 
-{% macro heat_table(heat, head, note, footer=true) %}
+{% macro heat_table(heat, head, note, footer=true, wrap=false) %}
 <div class="table-scroll">
-  <table class="data-table heat-table">
+  <table class="data-table heat-table{% if wrap %} heat-wrap{% endif %}">
     <thead>
       <tr>
         <th>{{ head }}</th>
@@ -167,6 +167,19 @@
   <p class="meta-dim">Nothing matches the current filters.</p>
   {% endif %}
 </section>
+
+{% if kinds | length > 1 %}
+<section class="panel wide" id="kinds">
+  <h2>Type of entity against kind of grievance</h2>
+  {% if kind_heat.rows %}
+  {{ heat_table(kind_heat, "Type of entity",
+     "The same complaints rolled up by type of entity, so a pattern that belongs to a sector rather than to one institution shows up as a row. Shade is on the same scale as the matrix above: equally dark means equally busy.",
+     wrap=true) }}
+  {% else %}
+  <p class="meta-dim">Nothing matches the current filters.</p>
+  {% endif %}
+</section>
+{% endif %}
 
 <div class="dash-grid">
   <section class="panel" id="bytype">

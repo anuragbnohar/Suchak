@@ -240,8 +240,10 @@ X recent search is capped at 7 days by its API regardless.
   only one that opens on no individual complaint at all. The classifier tags customer-grievance items with topics —
   Mis-selling, Recovery practices, Service disruption, Unauthorized
   transactions, Charges & fees, Harassment, Account access / KYC, Other
-  grievance — and this screen crosses them against the entity and against
-  the place the story is about, as two heat matrices. Filters for date,
+  grievance — and this screen crosses them against the entity, against the
+  type of entity (so a pattern that belongs to a sector rather than to one
+  institution shows up as a row of its own), and against the place the
+  story is about, as three heat matrices shaded on one shared scale. Filters for date,
   type of entity, entity, location, source and severity narrow every figure
   on the page, tiles included; every cell, bar and tile is a link that narrows the page
   further, down to the complaints themselves at the foot of it. Where a
@@ -270,6 +272,10 @@ X recent search is capped at 7 days by its API regardless.
   sub-count) into the To-do page, daily volume trend, factor hits, and
   extracted organization linkages — every figure is a drill-down into the
   exact items it counts; a cross-entity overview for the super admin.
+  The entity chosen on any DoS View screen follows you across its tab bar:
+  Dashboard, Queue, Social media, Insights and To-do each open on the
+  entity the last screen was showing, rather than snapping back to the
+  first on the roster.
 - **Three ways to read the same week** — the super admin's overview groups by
   **Entity** ("who needs attention"), **Severity** ("how serious is this
   week") or **Risk area** ("what kind of problem is showing up"). The two

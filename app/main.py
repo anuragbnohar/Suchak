@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-04.38"
+APP_BUILD = "2026-09-08.39"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1681,6 +1681,7 @@ def complaints(request: Request):
         place_pool = narrow(rows, skip=("loc", "district"))
         kind_pool = narrow(rows, skip=("kind",))
         matrix_pool = narrow(rows, skip=("entity", "topic"))
+        kind_matrix_pool = narrow(rows, skip=("kind", "topic"))
         state_pool = narrow(rows, skip=("loc", "district", "topic"))
 
         by_sev = Counter(r["severity_shown"] for r in sev_pool)
@@ -1697,13 +1698,17 @@ def complaints(request: Request):
         topics_seen = {t for r in sel for t in r["complaint_topics"]}
 
         by_entity = lambda r: r["entity_id"]                    # noqa: E731
+        by_ekind = lambda r: (r["entity_kind"] or None)         # noqa: E731
         by_state = lambda r: (r["place"]["state"] or None)      # noqa: E731
-        scale = _heat_scale([matrix_pool, state_pool], [by_entity, by_state],
-                            topics)
+        scale = _heat_scale([matrix_pool, kind_matrix_pool, state_pool],
+                            [by_entity, by_ekind, by_state], topics)
         entity_heat = _heat_matrix(
             matrix_pool, by_entity, lambda k: names.get(k, "\u2014"),
             topics, link, "entity", on_key=int(ent_f) if ent_f else None,
             on_topic=topic_f, scale=scale)
+        kind_heat = _heat_matrix(
+            kind_matrix_pool, by_ekind, lambda k: k, topics, link, "kind",
+            on_key=kind_f or None, on_topic=topic_f, scale=scale)
         state_heat = _heat_matrix(
             state_pool, by_state, lambda k: k, topics, link, "loc", limit=12,
             on_key=loc_f or None, on_topic=topic_f, scale=scale)
@@ -1780,7 +1785,8 @@ def complaints(request: Request):
                       topics_seen=len(topics_seen), located=located,
                       social_n=social_n, news_n=news_n, by_topic=by_topic,
                       prev_label=_period_before(win),
-                      entity_heat=entity_heat, state_heat=state_heat,
+                      entity_heat=entity_heat, kind_heat=kind_heat,
+                      state_heat=state_heat,
                       places=places,
                       districts=by_district.most_common(14),
                       district_total=len(by_district),
@@ -1798,6 +1804,12 @@ def dashboard(request: Request):
     try:
         user = require_login(db, request)
         entity, entities = resolve_entity(db, user, request.query_params.get("entity"))
+        if entity is None:
+            # The dashboard reads one entity at a time. A link carrying the
+            # cross-entity "all" -- the queue's scope, say, followed here by
+            # the tab bar -- lands on the same entity a bare visit would,
+            # rather than erroring.
+            entity = entities[0]
         win = date_window(request)
         stats = _entity_stats(db, entity["id"], win)
         return render(request, "dashboard.html", user=user, entity=entity,
