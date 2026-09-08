@@ -74,6 +74,18 @@
           a call. A notice pops up when it finishes.</p>
       </div>
     </form>
+    {# the durable record: the finish pop-up dismisses itself in seconds,
+       and a walk of hundreds of items can run for an hour #}
+    {% if recheck_job %}
+    <p class="small job-line {% if recheck_job.state == 'failed' %}warn-note{% else %}meta-dim{% endif %}">
+      {% if recheck_job.state == 'running' %}Running now — {{ recheck_job.note or 'starting up' }}.
+        It keeps working if you leave this page; refresh to see this line move.
+        Closing or restarting the app cuts it short — pressing the button again
+        later is safe.
+      {% elif recheck_job.state == 'done' %}Last re-check: {{ recheck_job.note }}.
+      {% else %}The last re-check failed — {{ recheck_job.note }}.{% endif %}
+    </p>
+    {% endif %}
     {% endif %}
   </section>
 
@@ -180,6 +192,16 @@
           touched and keeps winning on every screen.</p>
       </div>
     </form>
+    {% if rescore_job %}
+    <p class="small job-line {% if rescore_job.state == 'failed' %}warn-note{% else %}meta-dim{% endif %}">
+      {% if rescore_job.state == 'running' %}Running now — {{ rescore_job.note or 'starting up' }}.
+        It keeps working if you leave this page; refresh to see this line move.
+        Closing or restarting the app cuts it short — pressing the button again
+        later is safe.
+      {% elif rescore_job.state == 'done' %}Last re-score: {{ rescore_job.note }}.
+      {% else %}The last re-score failed — {{ rescore_job.note }}.{% endif %}
+    </p>
+    {% endif %}
     {% else %}
     <p class="policy-text">{{ grievance_severity }}</p>
     <p class="meta-dim small">Editable by the super admin.</p>

@@ -230,7 +230,11 @@ X recent search is capped at 7 days by its API regardless.
   factors active now — one model call per item (the `SUCHAK_RESCORE_MAX`
   cap applies), no call where an entity has no active factors (stale
   flags are simply cleared), skipping unclassified, dismissed, filtered
-  and rejected rows.
+  and rejected rows. Both walk buttons (Re-check and Re-score) refuse a
+  second run while one is going, report live progress ("on item 137 of
+  412"), and the Factors page renders the running / last-outcome line
+  server-side — a long walk's 20-second completion toast is not the only
+  record of what happened.
 - **Tunable severity criteria** — the high/medium/low definitions the
   classifier applies are plain-language text edited by the super admin on
   the Factors page (stored in the DB, applied to new classifications). The

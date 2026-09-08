@@ -433,6 +433,8 @@ label.check { display: flex; margin: 0.15rem 0; }
 .data-table .conditions { max-width: 26rem; }
 /* the Matches cell on Factors: two short counts, never wrapped apart */
 .data-table .factor-hits { white-space: nowrap; }
+/* the walk buttons' durable status line (running / last outcome) */
+.job-line { margin: 0.5rem 0 0; }
 .data-table .factor-hits a + a { margin-left: 0.55rem; }
 .data-table .factor-hits span + a { margin-left: 0.55rem; }
 /* A link in a table is coloured, always: in a dense grid the only thing

@@ -137,7 +137,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-08.49"
+APP_BUILD = "2026-09-08.50"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -2119,7 +2119,12 @@ def factors_page(request: Request):
                       grievance_severity=grievance_severity,
                       risk_defs=risk_defs,
                       exclusion_rules=exclusion_rules,
-                      trusted_sources=trusted_sources)
+                      trusted_sources=trusted_sources,
+                      # the durable record of each walk: a 20-second pop-up
+                      # is easy to miss at the end of an hour-long run, so
+                      # the page itself says where the last one stands
+                      recheck_job=_latest_job("Checking items against factors"),
+                      rescore_job=_latest_job("Re-scoring complaints"))
     finally:
         db.close()
 
@@ -2206,13 +2211,34 @@ async def settings_grievance_severity(request: Request):
         status_code=303)
 
 
+def _job_progress(job: dict):
+    """The running note a long walk keeps up to date, so the Factors page
+    can say where it stands instead of leaving a silent hour."""
+    def step(i: int, total: int) -> None:
+        job["note"] = f"on item {i} of {total}"
+    return step
+
+
+def _running(label: str) -> bool:
+    return any(j.get("label") == label and j.get("state") == "running"
+               for j in FETCH_JOBS.values())
+
+
+def _latest_job(label: str) -> dict | None:
+    found = None
+    for j in FETCH_JOBS.values():
+        if j.get("label") == label:
+            found = j
+    return found
+
+
 def _rescore_job(job_id: str) -> None:
     job = FETCH_JOBS.get(job_id)
     if job is None:
         return
     db = connect()
     try:
-        result = rescore_grievances(db)
+        result = rescore_grievances(db, progress=_job_progress(job))
         if result["failed"] and not result["scored"]:
             job.update(state="failed",
                        note=f"none of the {result['failed']} complaints could "
@@ -2246,6 +2272,12 @@ async def factors_rescore(request: Request):
         require_role(user, "superadmin")
     finally:
         db.close()
+    # one at a time: with no guard, a second press while the first run is
+    # quietly working would double the model spend for the same answer
+    if _running("Re-scoring complaints"):
+        return RedirectResponse(
+            "/factors?msg=A+re-score+is+already+running+—+its+progress+"
+            "shows+under+the+button", status_code=303)
     job_id = secrets.token_hex(8)
     while len(FETCH_JOBS) >= FETCH_JOBS_MAX:
         FETCH_JOBS.pop(next(iter(FETCH_JOBS)))
@@ -2253,8 +2285,9 @@ async def factors_rescore(request: Request):
                           "label": "Re-scoring complaints", "note": ""}
     _spawn(asyncio.to_thread(_rescore_job, job_id))
     return RedirectResponse(
-        "/factors?msg=Re-scoring+started+—+a+notice+will+pop+up+when+it+"
-        f"finishes&job={job_id}", status_code=303)
+        "/factors?msg=Re-scoring+started+—+progress+shows+under+the+button,"
+        f"+and+a+notice+pops+up+when+it+finishes&job={job_id}",
+        status_code=303)
 
 
 def _recheck_job(job_id: str) -> None:
@@ -2263,7 +2296,7 @@ def _recheck_job(job_id: str) -> None:
         return
     db = connect()
     try:
-        result = recheck_factors(db)
+        result = recheck_factors(db, progress=_job_progress(job))
         if result["failed"] and not result["checked"]:
             job.update(state="failed",
                        note=f"none of the {result['failed']} items could be "
@@ -2297,6 +2330,11 @@ async def factors_recheck(request: Request):
         require_role(user, "superadmin")
     finally:
         db.close()
+    # one at a time, for the same reason as the re-score above
+    if _running("Checking items against factors"):
+        return RedirectResponse(
+            "/factors?msg=A+re-check+is+already+running+—+its+progress+"
+            "shows+under+the+button", status_code=303)
     job_id = secrets.token_hex(8)
     while len(FETCH_JOBS) >= FETCH_JOBS_MAX:
         FETCH_JOBS.pop(next(iter(FETCH_JOBS)))
@@ -2304,8 +2342,9 @@ async def factors_recheck(request: Request):
                           "label": "Checking items against factors", "note": ""}
     _spawn(asyncio.to_thread(_recheck_job, job_id))
     return RedirectResponse(
-        "/factors?msg=Factor+re-check+started+—+a+notice+will+pop+up+when+it+"
-        f"finishes&job={job_id}", status_code=303)
+        "/factors?msg=Factor+re-check+started+—+progress+shows+under+the+"
+        f"button,+and+a+notice+pops+up+when+it+finishes&job={job_id}",
+        status_code=303)
 
 
 @app.post("/settings/exclusions")

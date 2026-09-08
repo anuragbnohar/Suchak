@@ -1027,13 +1027,15 @@ def _score_grievance(entity_name: str, title: str, text: str,
     return _structured_json(resp, "scoring the complaint")["severity"]
 
 
-def rescore_grievances(db) -> dict:
+def rescore_grievances(db, progress=None) -> dict:
     """Re-score every stored complaint against the grievance severity
     scale now in force. Newest first, capped at RESCORE_MAX per run.
 
     Touches only the classifier's own severity column. A reviewer's
     severity correction is never overwritten and keeps winning on every
     screen; the audit line's "classifier said X" is what changes.
+    `progress(i, total)` is called as each item is taken up, so a run of
+    hundreds of model calls can say where it stands.
     """
     criteria = get_setting(db, GRIEVANCE_SEVERITY_KEY,
                            DEFAULT_GRIEVANCE_SEVERITY)
@@ -1054,7 +1056,10 @@ def rescore_grievances(db) -> dict:
              " ORDER BY i.id DESC")
     left_out = max(0, len(rows) - RESCORE_MAX)
     out = {"scored": 0, "changed": 0, "failed": 0, "left_out": left_out}
-    for r in rows[:RESCORE_MAX]:
+    todo = rows[:RESCORE_MAX]
+    for i, r in enumerate(todo, 1):
+        if progress:
+            progress(i, len(todo))
         try:
             topics = json.loads(r["topics_shown"] or "[]")
         except (TypeError, ValueError):
@@ -1113,9 +1118,11 @@ def _check_factors(entity_name: str, title: str, text: str,
                             )["factor_matches"]
 
 
-def recheck_factors(db) -> dict:
+def recheck_factors(db, progress=None) -> dict:
     """Re-check every live stored item against the factors now in force.
-    Newest first, capped at RESCORE_MAX per run.
+    Newest first, capped at RESCORE_MAX per run. `progress(i, total)` is
+    called as each item is taken up, so a long run can say where it
+    stands.
 
     Factors are normally judged once, when an item is first classified, so
     a factor defined later never reaches older items; this walk closes that
@@ -1137,7 +1144,10 @@ def recheck_factors(db) -> dict:
     left_out = max(0, len(rows) - RESCORE_MAX)
     out = {"checked": 0, "changed": 0, "failed": 0, "left_out": left_out}
     factors_of = {}
-    for r in rows[:RESCORE_MAX]:
+    todo = rows[:RESCORE_MAX]
+    for i, r in enumerate(todo, 1):
+        if progress:
+            progress(i, len(todo))
         if r["entity_id"] not in factors_of:
             factors_of[r["entity_id"]] = active_factors(db, r["entity_id"])
         factors = factors_of[r["entity_id"]]
