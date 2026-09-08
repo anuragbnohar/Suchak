@@ -136,7 +136,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-08.45"
+APP_BUILD = "2026-09-08.46"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1165,8 +1165,12 @@ async def insights_generate(request: Request):
         except Exception as exc:
             log.warning("Insight generation failed for %s: %s: %s",
                         row["name"], type(exc).__name__, exc)
-            msg = (f"Could not generate insights: {type(exc).__name__}: "
-                   f"{str(exc)[:120]}")
+            # A RuntimeError here is one of our own plain-language messages
+            # ("the model ran out of room while..."); anything else keeps
+            # its class name so an unexpected failure stays diagnosable.
+            what = (str(exc) if isinstance(exc, RuntimeError)
+                    else f"{type(exc).__name__}: {exc}")
+            msg = f"Could not generate insights: {what[:160]}"
             return RedirectResponse(
                 f"/insights?entity={row['id']}&msg={quote(msg)}", status_code=303)
     finally:

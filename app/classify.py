@@ -250,6 +250,33 @@ def _get_client():
     return _client
 
 
+def _structured_json(resp, doing: str) -> dict:
+    """The JSON a structured-output call produced, or a plain-language
+    error saying why there is none.
+
+    The schema constrains the shape but cannot finish a document the
+    model ran out of room for: on these models thinking is on by default
+    and shares max_tokens with the answer, so a hard task can spend most
+    of the budget thinking and leave the JSON cut off mid-list. That
+    surfaced to a supervisor as "JSONDecodeError: Expecting ','
+    delimiter" -- a message that tells them nothing. Name the cause
+    instead, and keep the output budgets roomy at the call sites.
+    """
+    if resp.stop_reason == "max_tokens":
+        raise RuntimeError(f"the model ran out of room while {doing} — "
+                           "try again")
+    if resp.stop_reason == "refusal":
+        raise RuntimeError(f"the model declined while {doing}")
+    text = next((b.text for b in resp.content if b.type == "text"), None)
+    if text is None:
+        raise RuntimeError(f"the model returned no answer while {doing}")
+    try:
+        return json.loads(text)
+    except ValueError as exc:
+        raise RuntimeError(f"the model's answer while {doing} could not be "
+                           f"read ({exc})") from exc
+
+
 def _gate(entity, title: str, source: str | None,
           exclusion_rules: str = DEFAULT_EXCLUSION_RULES) -> tuple[bool, bool, str]:
     """Cheap screen with two jobs in one call: is the item actually about
@@ -538,7 +565,7 @@ def group_same_events(entity, rows: list[dict]) -> list[dict]:
     listing = "\n".join(_event_line(r) for r in rows)
     resp = client.messages.create(
         model=MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
         system=(
             "You help a banking supervision team tidy its review queue. You "
             "are given stored news items about one regulated entity -- "
@@ -554,9 +581,7 @@ def group_same_events(entity, rows: list[dict]) -> list[dict]:
         messages=[{"role": "user", "content": f"Items:\n{listing}"}],
         output_config={"format": {"type": "json_schema", "schema": GROUP_SCHEMA}},
     )
-    if resp.stop_reason == "refusal":
-        raise RuntimeError("model refused to group the items")
-    data = json.loads(next(b.text for b in resp.content if b.type == "text"))
+    data = _structured_json(resp, "grouping the stored items")
     offered = {r["id"] for r in rows}
     seen: set[int] = set()
     groups = []
@@ -589,17 +614,14 @@ def _llm_classify(entity, factors, examples, title, snippet, source, published,
     )
     resp = client.messages.create(
         model=MODEL,
-        max_tokens=2048,
+        max_tokens=8192,
         system=_build_system(entity, factors, examples, severity_defs,
                              exclusion_rules, risk_defs, set_aside, events,
                              grievance_severity),
         messages=[{"role": "user", "content": user_msg}],
         output_config={"format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
     )
-    if resp.stop_reason == "refusal":
-        raise RuntimeError("model refused classification")
-    text = next(b.text for b in resp.content if b.type == "text")
-    verdict = json.loads(text)
+    verdict = _structured_json(resp, "classifying the item")
     return verdict, "llm", MODEL
 
 
@@ -982,8 +1004,10 @@ def _score_grievance(entity_name: str, title: str, text: str,
                      topics: list[str], criteria: str) -> str:
     client = _get_client()
     resp = client.messages.create(
+        # Roomy on purpose: the answer is one word, but thinking is on by
+        # default on this model family and shares this budget.
         model=MODEL,
-        max_tokens=64,
+        max_tokens=4096,
         system=(
             "You score the severity of one customer grievance about a "
             "regulated Indian financial institution, for its supervisor. "
@@ -1000,10 +1024,7 @@ def _score_grievance(entity_name: str, title: str, text: str,
         output_config={"format": {"type": "json_schema",
                                   "schema": SEVERITY_ONLY_SCHEMA}},
     )
-    if resp.stop_reason == "refusal":
-        raise RuntimeError("model refused to score")
-    return json.loads(next(b.text for b in resp.content
-                           if b.type == "text"))["severity"]
+    return _structured_json(resp, "scoring the complaint")["severity"]
 
 
 def rescore_grievances(db) -> dict:

@@ -17,7 +17,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from .classify import MODEL, _get_client
+from .classify import MODEL, _get_client, _structured_json
 from .db import q, x
 from .ingest import SOCIAL_LOOKBACK_DAYS
 
@@ -132,7 +132,11 @@ def _llm_insights(entity_name: str, rows: list[dict]) -> list[dict]:
     client = _get_client()
     resp = client.messages.create(
         model=MODEL,
-        max_tokens=4096,
+        # Roomy on purpose: thinking is on by default on this model family
+        # and shares this budget with the answer. At 4096 a hard run spent
+        # most of the budget thinking and the JSON came back cut off
+        # mid-list, which reached the supervisor as a JSONDecodeError.
+        max_tokens=16000,
         system=SYSTEM,
         messages=[{"role": "user", "content":
                    f"Entity: {entity_name}\n"
@@ -141,10 +145,8 @@ def _llm_insights(entity_name: str, rows: list[dict]) -> list[dict]:
         output_config={"format": {"type": "json_schema",
                                   "schema": INSIGHTS_SCHEMA}},
     )
-    if resp.stop_reason == "refusal":
-        raise RuntimeError("model refused insight generation")
-    text = next(b.text for b in resp.content if b.type == "text")
-    return json.loads(text).get("insights") or []
+    return (_structured_json(resp, "finding patterns in the grievances")
+            .get("insights") or [])
 
 
 def generate(db, entity, user_id: int | None = None) -> dict:
