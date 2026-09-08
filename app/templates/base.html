@@ -4,7 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Drishti{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css">
+{# The build number rides on the stylesheet URL so an update can never be
+   half-applied: the app is updated by unzipping over the folder, and a
+   browser that cached yesterday's stylesheet would otherwise render
+   today's markup with yesterday's layout — new controls land in the
+   wrong place until someone thinks to force-refresh. A new build is a
+   new URL, so the fresh styling is fetched with the first page. #}
+<link rel="stylesheet" href="/static/style.css?v={{ app_build }}">
 </head>
 <body>
 <header class="topbar">
