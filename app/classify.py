@@ -117,6 +117,26 @@ DEFAULT_SEVERITY_DEFS = (
     "medium = notable negative development worth review; "
     "low = routine or positive coverage"
 )
+
+# A second severity scale, for customer grievances only. The scale above
+# is written around institution-level events -- a default, a run, a
+# regulatory breach -- and one customer's mis-selling complaint is none of
+# those, so judged by it every grievance reads low. Two scales because a
+# supervisor asks two different questions: how serious is this event for
+# the institution, and how serious is what this complaint alleges about
+# its conduct. Which one applies is decided by the item itself: an item
+# carrying complaint topics is judged by this one.
+GRIEVANCE_SEVERITY_KEY = "grievance_severity_definitions"
+DEFAULT_GRIEVANCE_SEVERITY = (
+    "For customer grievances, judge by what the complaint alleges about the "
+    "institution, not by how loudly it is written.\n"
+    "High - Fraud, Digital Fraud, Aggressive Recovery Practices, "
+    "Mis-selling, KYC, Complaint Handling Process\n"
+    "Medium - Service Disruption (Mobile/Internet Banking), Lending Conduct, "
+    "Loans, Credit Card, Unauthorized Transactions\n"
+    "Low - Charges and Fees, Delay in documentation / return of documents, "
+    "Credit Score, Credit Information Bureau"
+)
 # A small, cheap model screens each item for relevance before the full
 # classification runs, so noise costs a fraction of a full verdict.
 # Set SUCHAK_GATE_MODEL="" to disable the screen.
@@ -331,7 +351,8 @@ def _build_system(entity, factors, examples,
                   severity_defs: str = DEFAULT_SEVERITY_DEFS,
                   exclusion_rules: str = DEFAULT_EXCLUSION_RULES,
                   risk_defs: str = DEFAULT_RISK_DEFS,
-                  set_aside: str = "", events: str = "") -> str:
+                  set_aside: str = "", events: str = "",
+                  grievance_severity: str = DEFAULT_GRIEVANCE_SEVERITY) -> str:
     lines = [
         "You are a supervisory triage assistant for the Banking Supervisor of India.",
         "You classify public news items about a regulated entity so a small "
@@ -354,6 +375,17 @@ def _build_system(entity, factors, examples,
         "these definitions, which follow the RBI guidance notes the "
         "supervisory team works to: " + risk_defs,
         f"Severity: {severity_defs}.",
+        # Two scales, and the item decides which applies. Stated after the
+        # institutional one and before the topics so the model meets the
+        # rule before it is asked to list the topics that trigger it.
+        "Severity when the item is a customer grievance -- that is, whenever "
+        "you assign one or more complaint topics below -- is judged by THIS "
+        "scale instead of the one above, which is written for events at the "
+        "institution rather than for what a customer alleges: "
+        + grievance_severity + " "
+        "Where a complaint fits more than one line, take the most serious "
+        "that its allegation genuinely supports. An item carrying no "
+        "complaint topics keeps the institutional scale.",
         "Actionability: action_recommended = the team likely must act; "
         "review_recommended = a person should read this soon; monitor = ambient awareness only.",
         "Relevance: the item must actually concern this entity (not merely a "
@@ -545,7 +577,8 @@ def _llm_classify(entity, factors, examples, title, snippet, source, published,
                   severity_defs: str = DEFAULT_SEVERITY_DEFS,
                   exclusion_rules: str = DEFAULT_EXCLUSION_RULES,
                   risk_defs: str = DEFAULT_RISK_DEFS,
-                  set_aside: str = "", events: str = ""):
+                  set_aside: str = "", events: str = "",
+                  grievance_severity: str = DEFAULT_GRIEVANCE_SEVERITY):
     client = _get_client()
     user_msg = (
         f"Classify this item.\n"
@@ -558,7 +591,8 @@ def _llm_classify(entity, factors, examples, title, snippet, source, published,
         model=MODEL,
         max_tokens=2048,
         system=_build_system(entity, factors, examples, severity_defs,
-                             exclusion_rules, risk_defs, set_aside, events),
+                             exclusion_rules, risk_defs, set_aside, events,
+                             grievance_severity),
         messages=[{"role": "user", "content": user_msg}],
         output_config={"format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
     )
@@ -794,6 +828,8 @@ def classify_item(db, item) -> str:
     factors = active_factors(db, item["entity_id"])
     examples = similar_reviewed(db, item["entity_id"], f"{item['title']} {item['snippet'] or ''}")
     severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
+    grievance_severity = get_setting(db, GRIEVANCE_SEVERITY_KEY,
+                                     DEFAULT_GRIEVANCE_SEVERITY)
     risk_defs = get_setting(db, RISK_DEFS_KEY, DEFAULT_RISK_DEFS)
     # The stories this item might continue. None for social posts and
     # filings (see NO_FOLD_TYPES), and none for an item a team member has
@@ -814,6 +850,7 @@ def classify_item(db, item) -> str:
             _render_set_aside(set_aside_examples(db, item["entity_id"]))
             if item["source_type"] == "social" else "",
             events=_render_events(events),
+            grievance_severity=grievance_severity,
         )
     except Exception as exc:  # missing key, network, rate limit, refusal, bad JSON
         log.warning("LLM classification failed (%s: %s); using heuristic", type(exc).__name__, exc)
@@ -920,3 +957,94 @@ def classify_pending(db, limit: int = 100) -> dict:
 def classify_new_items(db, limit: int = 100) -> int:
     done = classify_pending(db, limit)
     return done["classified"] + done["folded"]
+
+
+# --- re-scoring stored grievances -------------------------------------------
+# When the team changes the grievance severity scale, the complaints
+# already on file were scored under the old one. This walks them and asks
+# the model the one question that changed -- severity, against the scale
+# now in force -- rather than re-running the whole verdict, so the topics,
+# summary and geography a reviewer may already have relied on stay put.
+
+RESCORE_MAX = max(1, int(os.environ.get("SUCHAK_RESCORE_MAX", "1000")))
+
+SEVERITY_ONLY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+    },
+    "required": ["severity"],
+    "additionalProperties": False,
+}
+
+
+def _score_grievance(entity_name: str, title: str, text: str,
+                     topics: list[str], criteria: str) -> str:
+    client = _get_client()
+    resp = client.messages.create(
+        model=MODEL,
+        max_tokens=64,
+        system=(
+            "You score the severity of one customer grievance about a "
+            "regulated Indian financial institution, for its supervisor. "
+            "Judge only against this scale:\n" + criteria + "\n"
+            "Where a complaint fits more than one line, take the most "
+            "serious that its allegation genuinely supports."
+        ),
+        messages=[{"role": "user", "content":
+                   f"Entity: {entity_name}\n"
+                   f"Complaint categories already assigned: "
+                   f"{', '.join(topics) or 'none'}\n"
+                   f"Title: {title}\n"
+                   f"Text: {text or '(none)'}"}],
+        output_config={"format": {"type": "json_schema",
+                                  "schema": SEVERITY_ONLY_SCHEMA}},
+    )
+    if resp.stop_reason == "refusal":
+        raise RuntimeError("model refused to score")
+    return json.loads(next(b.text for b in resp.content
+                           if b.type == "text"))["severity"]
+
+
+def rescore_grievances(db) -> dict:
+    """Re-score every stored complaint against the grievance severity
+    scale now in force. Newest first, capped at RESCORE_MAX per run.
+
+    Touches only the classifier's own severity column. A reviewer's
+    severity correction is never overwritten and keeps winning on every
+    screen; the audit line's "classifier said X" is what changes.
+    """
+    criteria = get_setting(db, GRIEVANCE_SEVERITY_KEY,
+                           DEFAULT_GRIEVANCE_SEVERITY)
+    rows = q(db,
+             "SELECT i.id, i.title, i.snippet, i.summary, i.severity,"
+             "       COALESCE(i.review_complaint_topics, i.complaint_topics,"
+             "                '[]') AS topics_shown,"
+             "       e.name AS entity_name"
+             " FROM items i JOIN entities e ON e.id = i.entity_id"
+             " WHERE i.gated_out = 0"
+             "   AND COALESCE(i.attribution, '') != 'rejected'"
+             "   AND COALESCE(i.review_complaint_topics, i.complaint_topics,"
+             "                '[]') != '[]'"
+             " ORDER BY i.id DESC")
+    left_out = max(0, len(rows) - RESCORE_MAX)
+    out = {"scored": 0, "changed": 0, "failed": 0, "left_out": left_out}
+    for r in rows[:RESCORE_MAX]:
+        try:
+            topics = json.loads(r["topics_shown"] or "[]")
+        except (TypeError, ValueError):
+            topics = []
+        try:
+            sev = _score_grievance(r["entity_name"], r["title"],
+                                   r["summary"] or r["snippet"] or "",
+                                   topics, criteria)
+        except Exception as exc:
+            out["failed"] += 1
+            log.warning("Re-score failed for item %s (%s: %s)",
+                        r["id"], type(exc).__name__, exc)
+            continue
+        out["scored"] += 1
+        if sev != (r["severity"] or ""):
+            out["changed"] += 1
+            x(db, "UPDATE items SET severity = ? WHERE id = ?", (sev, r["id"]))
+    return out

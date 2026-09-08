@@ -222,6 +222,20 @@ X recent search is capped at 7 days by its API regardless.
   classifier applies are plain-language text edited by the super admin on
   the Factors page (stored in the DB, applied to new classifications). The
   no-API-key keyword fallback keeps its own fixed trigger words.
+  **Two scales, and the item decides which applies**: the institutional one
+  above is written for events at the entity (a default, a run, a breach),
+  and judged by it every customer grievance reads low — so grievances have
+  a scale of their own (`grievance_severity_definitions`, its default the
+  supervisor's own bands: fraud / aggressive recovery / mis-selling / KYC /
+  complaint-handling high; service disruption / lending conduct /
+  unauthorized transactions medium; charges / documentation delays / credit
+  bureau low). An item carrying complaint topics is scored by the grievance
+  scale; everything else by the institutional one. **Re-score stored
+  complaints** on the Factors page walks the complaints already collected
+  and re-scores each against the scale now in force — one model call per
+  complaint (`SUCHAK_RESCORE_MAX` caps a run, default 1000), touching only
+  the classifier's severity column: a reviewer's correction is never
+  overwritten and keeps winning everywhere.
 - **Negative list** — plain-language descriptions of item types the team
   does *not* analyse (default: stock recommendations and share-price
   commentary), edited by the super admin on the Factors page. The cheap

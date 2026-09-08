@@ -126,6 +126,37 @@
   </section>
 
   <section class="panel policy-card">
+    <h2>Severity criteria — customer grievances</h2>
+    <p class="setting-help">A complaint is judged by this scale instead of the one
+      beside it, which is written for events at the institution rather than for
+      what a customer alleges. Applied whenever an item carries complaint topics.</p>
+    {% if user.role == 'superadmin' %}
+    <form method="post" action="/settings/grievance-severity" class="policy-form">
+      <label class="sr-label" for="grv-defs">Grievance severity scale</label>
+      <textarea id="grv-defs" name="grievance_severity" rows="8" required>{{ grievance_severity }}</textarea>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save scale</button>
+        <p class="meta-dim small">Applies from the next classification. The
+          no-API-key keyword fallback ignores this text, as it does the scale
+          beside it.</p>
+      </div>
+    </form>
+    <form method="post" action="/factors/rescore">
+      <div class="form-actions form-actions-plain">
+        <button type="submit" class="btn">Re-score stored complaints</button>
+        <p class="meta-dim small">Walks every complaint already collected and scores
+          it against this scale — one model call each, in the background; a notice
+          pops up when it finishes. A reviewer's own severity correction is never
+          touched and keeps winning on every screen.</p>
+      </div>
+    </form>
+    {% else %}
+    <p class="policy-text">{{ grievance_severity }}</p>
+    <p class="meta-dim small">Editable by the super admin.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel policy-card">
     <h2>Negative list — not analysed</h2>
     <p class="setting-help">Item types the system should filter out before analysis,
       described in plain language.</p>

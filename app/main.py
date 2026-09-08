@@ -27,10 +27,11 @@ from .matching import derive_aliases, place_mentions
 from .auth import (get_user, hash_password, require_login, require_role,
                    verify_password)
 from .classify import (classify_item,
-                       DEFAULT_EXCLUSION_RULES, DEFAULT_RISK_DEFS,
-                       DEFAULT_SEVERITY_DEFS,
-                       EXCLUSION_RULES_KEY, RISK_DEFS_KEY, SEVERITY_DEFS_KEY,
-                       similar_reviewed, suggest_action)
+                       DEFAULT_EXCLUSION_RULES, DEFAULT_GRIEVANCE_SEVERITY,
+                       DEFAULT_RISK_DEFS, DEFAULT_SEVERITY_DEFS,
+                       EXCLUSION_RULES_KEY, GRIEVANCE_SEVERITY_KEY,
+                       RISK_DEFS_KEY, SEVERITY_DEFS_KEY,
+                       rescore_grievances, similar_reviewed, suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
 from .ingest import (CHANNELS, LOOKBACK_CHOICES, X_LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, SOCIAL_LOOKBACK_DAYS,
@@ -135,7 +136,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-08.44"
+APP_BUILD = "2026-09-08.45"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -2038,11 +2039,15 @@ def factors_page(request: Request):
                          " WHERE f.entity_id IS NULL OR f.entity_id = ?"
                          " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
         severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
+        grievance_severity = get_setting(db, GRIEVANCE_SEVERITY_KEY,
+                                         DEFAULT_GRIEVANCE_SEVERITY)
         risk_defs = get_setting(db, RISK_DEFS_KEY, DEFAULT_RISK_DEFS)
         exclusion_rules = get_setting(db, EXCLUSION_RULES_KEY, DEFAULT_EXCLUSION_RULES)
         trusted_sources = get_setting(db, TRUSTED_SOURCES_KEY, DEFAULT_TRUSTED_SOURCES)
         return render(request, "factors.html", user=user, factors=rows,
-                      severity_defs=severity_defs, risk_defs=risk_defs,
+                      severity_defs=severity_defs,
+                      grievance_severity=grievance_severity,
+                      risk_defs=risk_defs,
                       exclusion_rules=exclusion_rules,
                       trusted_sources=trusted_sources)
     finally:
@@ -2106,6 +2111,80 @@ async def settings_severity(request: Request):
     return RedirectResponse(
         "/factors?msg=Severity+criteria+updated+—+applies+to+new+classifications",
         status_code=303)
+
+
+@app.post("/settings/grievance-severity")
+async def settings_grievance_severity(request: Request):
+    """The second severity scale: customer grievances only. Line breaks
+    are kept -- the scale reads as three bands, and flattening them to one
+    line would make the one text a supervisor edits most often the one
+    hardest to read."""
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        text = (form.get("grievance_severity") or "").strip()
+        if not text:
+            raise HTTPException(400, "The grievance severity scale cannot be empty")
+        set_setting(db, GRIEVANCE_SEVERITY_KEY, text, user["id"])
+    finally:
+        db.close()
+    return RedirectResponse(
+        "/factors?msg=Grievance+severity+scale+updated+—+applies+to+new+"
+        "classifications.+Use+Re-score+to+apply+it+to+stored+complaints",
+        status_code=303)
+
+
+def _rescore_job(job_id: str) -> None:
+    job = FETCH_JOBS.get(job_id)
+    if job is None:
+        return
+    db = connect()
+    try:
+        result = rescore_grievances(db)
+        if result["failed"] and not result["scored"]:
+            job.update(state="failed",
+                       note=f"none of the {result['failed']} complaints could "
+                            "be scored — is the Anthropic API key set?")
+            return
+        bits = [f"{result['scored']} complaint(s) re-scored",
+                f"{result['changed']} changed severity"]
+        if result["failed"]:
+            bits.append(f"{result['failed']} could not be scored")
+        if result["left_out"]:
+            bits.append(f"{result['left_out']} not attempted (per-run cap; "
+                        "run again for the rest)")
+        job.update(state="done", note=", ".join(bits))
+    except Exception as exc:
+        log.exception("Re-score job %s failed", job_id)
+        job.update(state="failed", note=f"{type(exc).__name__}: {exc}")
+    finally:
+        db.close()
+
+
+@app.post("/factors/rescore")
+async def factors_rescore(request: Request):
+    """Walk the stored complaints and re-score each against the grievance
+    severity scale now in force. One model call per complaint, so it runs
+    in the background like a fetch and reports through the same toast.
+    Touches only the classifier's severity; reviewers' corrections stand.
+    """
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+    finally:
+        db.close()
+    job_id = secrets.token_hex(8)
+    while len(FETCH_JOBS) >= FETCH_JOBS_MAX:
+        FETCH_JOBS.pop(next(iter(FETCH_JOBS)))
+    FETCH_JOBS[job_id] = {"state": "running",
+                          "label": "Re-scoring complaints", "note": ""}
+    _spawn(asyncio.to_thread(_rescore_job, job_id))
+    return RedirectResponse(
+        "/factors?msg=Re-scoring+started+—+a+notice+will+pop+up+when+it+"
+        f"finishes&job={job_id}", status_code=303)
 
 
 @app.post("/settings/exclusions")
