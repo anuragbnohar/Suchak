@@ -267,6 +267,15 @@ X recent search is capped at 7 days by its API regardless.
   already ticked, so a dismissal would otherwise reach this screen as the
   reviewer's own ruling that the item *is* a grievance. The per-entity dashboard's Complaints tile
   still opens the queue grouped by topic, for one bank at a time.
+- **Help** — the user guide, in the app rather than in this file: what each
+  screen answers, how to read it, the vocabulary, and a role table. It is
+  written for the officer signed in, and scoped to what that officer can
+  actually open — a member is not told about Settings, a Regional Director is
+  not sent to a DoS View they do not have — so it never sends anyone looking
+  for a tab their role does not carry. The scoping comes from
+  `_visible_screens()`, which mirrors the masthead's rules and the route
+  guards; add a screen and its section belongs there too. Prints cleanly.
+  This README stays the document for whoever installs and runs the thing.
 - **Dashboards** — per-entity risk-area breakdown, severity tiles, complaints
   tile with by-topic breakdown, an **Open actions** tile (with an overdue
   sub-count) into the To-do page, daily volume trend, factor hits, and

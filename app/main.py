@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-08.40"
+APP_BUILD = "2026-09-08.41"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -2858,6 +2858,44 @@ def _settings_groups() -> list[dict]:
     if rest:
         out.append({"title": "Other", "blurb": "", "rows": rest})
     return out
+
+
+# ══ Help ═════════════════════════════════════════════════════════════
+
+def _visible_screens(user) -> dict:
+    """Which screens and powers this reader actually has.
+
+    The guide describes only these. Sending someone to look for a tab
+    their role does not carry, or a button their role cannot press, is
+    worse than saying nothing: they conclude the app is broken. The rules
+    here are the same ones the masthead and the route guards apply.
+    """
+    boss = user["role"] == "superadmin"
+    rd_only = bool(user["rbi_office"]) and not boss
+    return {
+        "overview": boss,
+        "dos": not rd_only,
+        "rd": boss or bool(user["rbi_office"]),
+        "settings": boss,
+        "roster": boss,                                    # add / remove entities
+        "policy": boss,                                    # the four policy texts
+        "factors": user["role"] in ("lead", "superadmin"),
+        "fetch": user["role"] in ("lead", "superadmin"),
+        "insights_generate": user["role"] in ("lead", "superadmin"),
+    }
+
+
+@app.get("/help")
+def help_page(request: Request):
+    """How to use each screen, written for the officer signed in rather
+    than for whoever installs the app."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        return render(request, "help.html", user=user,
+                      sees=_visible_screens(user))
+    finally:
+        db.close()
 
 
 @app.get("/settings")

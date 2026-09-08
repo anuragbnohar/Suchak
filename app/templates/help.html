@@ -1,0 +1,498 @@
+{% extends "base.html" %}
+{% block title %}How to use Drishti · Drishti{% endblock %}
+{% block content %}
+{# Written for the officer signed in, not for whoever installs the app.
+   Every section is scoped to what this reader can actually open, so the
+   guide never sends anyone looking for a tab their role does not have.
+   The page prints: the app's print stylesheet drops the chrome. #}
+<div class="help-page">
+<div class="page-head">
+  <div>
+    <h1>How to use Drishti</h1>
+    <p class="page-sub">Every screen you can open, what it answers, and what to do on it
+      · written for {{ user.display_name }}{% if user.rbi_office %} · RD, {{ user.rbi_office }}{% endif %}</p>
+  </div>
+</div>
+
+<nav class="panel wide help-toc" aria-label="Contents">
+  <h2>On this page</h2>
+  <div class="chip-cloud">
+    <a class="mini-tile" href="#what">What Drishti does</a>
+    <a class="mini-tile" href="#day">A working day</a>
+    <a class="mini-tile" href="#everywhere">Controls on every screen</a>
+    {% if sees.overview %}<a class="mini-tile" href="#overview">Overview</a>{% endif %}
+    {% if sees.dos %}
+    <a class="mini-tile" href="#dashboard">Dashboard</a>
+    <a class="mini-tile" href="#queue">Queue</a>
+    {% endif %}
+    <a class="mini-tile" href="#review">Reviewing an item</a>
+    {% if sees.dos %}
+    <a class="mini-tile" href="#social">Social media</a>
+    <a class="mini-tile" href="#insights">Insights</a>
+    <a class="mini-tile" href="#todo">To-do</a>
+    {% endif %}
+    {% if sees.rd %}<a class="mini-tile" href="#rd">RD View</a>{% endif %}
+    <a class="mini-tile" href="#complaints">Complaints</a>
+    <a class="mini-tile" href="#factors">Factors</a>
+    <a class="mini-tile" href="#entities">Entities</a>
+    {% if sees.settings %}<a class="mini-tile" href="#settings">Settings</a>{% endif %}
+    <a class="mini-tile" href="#words">The words the app uses</a>
+    <a class="mini-tile" href="#roles">Who can do what</a>
+  </div>
+</nav>
+
+<h2 class="mt section-head">Getting started</h2>
+<p class="meta-dim small section-sub">What the app is for, and the shape of an ordinary day on it.</p>
+
+<section class="panel wide" id="what">
+  <h2>What Drishti does</h2>
+  <p class="help-lead">It collects what is being said publicly about the entities you
+    supervise, and puts it in front of you worst first.</p>
+  <p>News coverage, social media and consumer forums are gathered per entity and
+    assessed one item at a time: which risk areas it touches, how serious it is,
+    whether it reports a customer grievance, and whether it needs an action.
+    Nothing is judged against rules hard-coded by a programmer — every item is
+    judged against your team's own written definitions of risk area and severity,
+    which live on the <a href="#factors">Factors</a> screen and which your team
+    can edit.</p>
+  <p>Your rulings are the point of the system, not a formality. Every review is
+    kept, and the next time something comparable arrives it is shown back to you
+    as precedent, with the action you took last time already suggested.</p>
+  <p class="panel-note">Nothing is collected until someone presses <strong>Fetch</strong>
+    on the Entities screen, unless an automatic sweep has been switched on. So an
+    empty screen on a fresh install means nothing has been fetched yet — not that
+    nothing is happening.</p>
+</section>
+
+<section class="panel wide" id="day">
+  <h2>A working day</h2>
+  <p class="help-lead">If you do nothing else, do this.</p>
+  <ol class="help-steps">
+    <li><strong>{% if sees.dos %}Queue → To review{% else %}RD View → Queue{% endif %}.</strong>
+      Work down the list. It is already sorted worst first, so the top of the page
+      is where your attention is worth most.</li>
+    <li><strong>Open each item and record a review.</strong> Read the story, correct
+      the classifier where it is wrong, and say whether anything needs doing. This
+      is the one action the whole app is built around.</li>
+    <li><strong>Tick <em>Actionable</em> where a follow-up is owed</strong>, assign it
+      to someone and give it a date. It appears on the To-do page until it is closed.</li>
+    {% if sees.dos %}
+    <li><strong>Check To-do</strong> for what you and your team owe. The badge beside
+      the tab counts what is still open.</li>
+    {% endif %}
+    <li><strong>Use {% if sees.dos %}<a href="#dashboard">Dashboard</a>{% if sees.rd %},
+      <a href="#rd">RD View</a>{% endif %}{% elif sees.rd %}<a href="#rd">RD View</a>{% endif %}
+      or <a href="#complaints">Complaints</a>
+      when the question is the shape of the week</strong> rather than any one story
+      — what is rising, where, and against whom.</li>
+  </ol>
+</section>
+
+<section class="panel wide" id="everywhere">
+  <h2>Controls on every screen</h2>
+  <p class="help-lead">Learn these once and they behave the same everywhere.</p>
+  <ul class="help-list">
+    <li><strong>Every number is a link.</strong> If a figure is on the screen, clicking
+      it opens exactly the items it counts — no more and no fewer. That is a rule the
+      app holds itself to, so you can always ask a total to show its working.</li>
+    <li><strong>Date.</strong> The period a screen covers. The default is
+      <em>All dates</em>, deliberately: a fraud case four months old is still what
+      belongs in front of a supervisor. Narrow it when the question is "what came in
+      this week". Two figures ignore it on purpose — <em>Awaiting review</em> and
+      <em>Open actions</em> are all-time, because an item unread for five weeks is
+      exactly what you must not lose.</li>
+    <li><strong>Entity.</strong> Which entity the screen is about. Your choice
+      follows you across the tabs, so moving from Dashboard to Queue keeps the same
+      bank rather than snapping back to the first on the roster.</li>
+    <li><strong>Filter chips.</strong> When filters are in force, a row above the
+      content spells them out. Each has an ✕ to drop just that one, and there is a
+      <em>clear filters</em> link to drop them all. You are never stuck in a filter
+      you cannot see.</li>
+    <li><strong>The build number</strong> in the footer says which version you are
+      running. It is the way to check an update actually landed.</li>
+  </ul>
+</section>
+
+<h2 class="mt section-head">The screens</h2>
+<p class="meta-dim small section-sub">In the order they appear in the bar at the top of the window.</p>
+
+{% if sees.overview %}
+<section class="panel wide" id="overview">
+  <h2>Overview</h2>
+  <p class="help-lead">Three ways to read the same period, across every entity at once.</p>
+  <p>The tabs change the question, not the data:</p>
+  <ul class="help-list">
+    <li><strong>All regulated entities</strong> — <em>who needs attention</em>. One row
+      per entity, sorted by high-severity volume.</li>
+    <li><strong>By severity</strong> — <em>how serious the record is</em>.</li>
+    <li><strong>By risk area</strong> — <em>what kind of problem is showing up</em>.</li>
+  </ul>
+  <p>The two category views span every entity, and each row keeps its per-entity
+    split as clickable chips beside it — because the Queue is per entity, and a
+    cross-entity total nobody could open would break the rule that every figure
+    leads somewhere. Totals open a cross-entity queue that labels each row with the
+    entity it belongs to.</p>
+  <p class="panel-note">Items still awaiting classification are excluded here and
+    counted in a footnote. They carry no verdict yet, and counting them would file
+    every one of them under <em>low</em>.</p>
+</section>
+{% endif %}
+
+{% if sees.dos %}
+<section class="panel wide" id="dashboard">
+  <h2>DoS View → Dashboard</h2>
+  <p class="help-lead">One entity at a time: what its record looks like right now.</p>
+  <ul class="help-list">
+    <li><strong>The tiles</strong> — total items, the three severities, complaints,
+      awaiting review, and open actions with an overdue sub-count. Each opens the
+      items behind it.</li>
+    <li><strong>Items by risk area</strong> — where this entity's exposure sits.</li>
+    <li><strong>Daily volume</strong> — the shape of the last few weeks. Click a bar
+      to open that single day.</li>
+    <li><strong>Recent high-severity items</strong> — the short list you would read
+      first if you read nothing else.</li>
+    <li><strong>Factor matches</strong> — which of your named factors this entity's
+      coverage tripped.</li>
+    <li><strong>Complaints by topic</strong> — grievances for this entity, by kind.</li>
+    <li><strong>Linked organizations</strong> — other bodies the coverage named
+      alongside this entity.</li>
+  </ul>
+</section>
+
+<section class="panel wide" id="queue">
+  <h2>DoS View → Queue</h2>
+  <p class="help-lead">The working list: everything collected, waiting for your ruling.</p>
+  <p>Items are sorted worst first — severity, then how actionable, then how recent
+    — so working from the top down is the right order. Official and trusted sources
+    rank ahead of the rest within the same severity. Coverage of one event by five
+    outlets is grouped into a single row, so a resignation reported everywhere does
+    not fill the page five times.</p>
+  <p>The tabs are the item's state:</p>
+  <ul class="help-list">
+    <li><strong>To review</strong> — not yet ruled on. This is your list.</li>
+    <li><strong>Reviewed</strong> / <strong>Dismissed</strong> — what you have ruled
+      on, kept so the trail survives.</li>
+    <li><strong>Filtered out</strong> — screened out before reaching you as not
+      supervisory-relevant. Worth a glance now and then to check the screen is not
+      dropping things it should keep.</li>
+    <li><strong>Rejected</strong> — the story was not about this entity at all
+      (a different bank with a similar name, usually).</li>
+  </ul>
+  <p>The filters narrow the list by risk area, severity, trusted sources only,
+    a named factor, a linked organization, or complaints only. Clicking a figure on
+    the Dashboard or Overview brings you here with the matching filter already set.</p>
+  <p class="panel-note">Social-media grievances are not listed here. They are a
+    workstream of their own with their own screen — fifty forum complaints would
+    otherwise bury the day's news.</p>
+</section>
+{% endif %}
+
+<section class="panel wide" id="review">
+  <h2>Reviewing an item</h2>
+  <p class="help-lead">The one action the app is built around. Open any item from any
+    list to get here.</p>
+  <p>The page shows the story, every source that carried it, what the classifier
+    concluded and why, and — where there are any — similar items you have already
+    ruled on, with the action you took then. Then you record your own view:</p>
+  <ul class="help-list">
+    <li><strong>Is this relevant?</strong> <em>No — dismiss</em> takes it off the
+      queue. Use it when the item is not about this entity or not supervisory at all.</li>
+    <li><strong>Risk areas</strong> — tick every area the item touches. Your ticks
+      override the classifier's everywhere the app counts risk areas.</li>
+    <li><strong>Complaint topics</strong> — what the customer is aggrieved about.
+      Leave all unticked if it is not a grievance; that is itself a ruling, and it
+      removes the item from the Complaints screen.</li>
+    <li><strong>Severity</strong> — high, medium or low, against your team's written
+      criteria on the Factors screen.</li>
+    <li><strong>Actionable?</strong> <em>Yes</em> puts it on the To-do page until
+      somebody closes it. Assign an owner and, if it matters, a due date.</li>
+    <li><strong>Action taken / proposed</strong> — from sought clarification through
+      to referred for enforcement review. Where you have handled something
+      comparable before, the same action arrives already selected.</li>
+    <li><strong>Notes</strong> — anything the next person needs to know.</li>
+  </ul>
+  <p class="panel-note">Wherever you correct the classifier, your correction wins —
+    on every screen, not just this one. Reviews are never overwritten by a later
+    fetch, and the history of who changed what is kept on the item.</p>
+</section>
+
+{% if sees.dos %}
+<section class="panel wide" id="social">
+  <h2>DoS View → Social media</h2>
+  <p class="help-lead">What customers are complaining about, in their own words.</p>
+  <p>Posts from Reddit, consumercomplaints.in and, where it is switched on, X —
+    grouped by what the complaint is about. Deliberately narrower than the Queue: a
+    post is listed only where a grievance was found in it. Praise, questions and
+    noise are counted in the footer but not shown, because the question this screen
+    answers is <em>what are customers complaining about</em>, not <em>what was
+    said</em>.</p>
+  <ul class="help-list">
+    <li><strong>The topic tabs</strong> narrow to one kind of grievance;
+      <strong>the source tabs</strong> to one platform.</li>
+    <li><strong>Set aside</strong> — posts a reviewer marked as no use for
+      pattern-finding: pure venting, nothing specific named, already resolved. They
+      stay readable here but are kept out of Insights and Complaints.</li>
+    <li><strong>Auto-excluded</strong> — posts the app learned to skip from what
+      reviewers set aside before. Check it occasionally to confirm it is not
+      learning the wrong lesson.</li>
+  </ul>
+</section>
+
+<section class="panel wide" id="insights">
+  <h2>DoS View → Insights</h2>
+  <p class="help-lead">The pattern across many complaints, rather than any one of them.</p>
+  <p>Which product or process keeps drawing grievances, each finding backed by the
+    complaints it was drawn from and carrying a proposed line of enquiry. Anyone on
+    the team may read them.
+    {% if sees.insights_generate %}Generating a fresh set costs a model call, so the
+    <strong>Generate</strong> button is limited to team leads and the super admin —
+    you have it.{% else %}Generating a fresh set costs a model call, so that stays
+    with team leads and the super admin.{% endif %}</p>
+  <p class="panel-note">A finding needs a minimum number of complaints behind it
+    before it will be drawn at all. Three angry posts are not a pattern, and the
+    screen says so rather than inventing one.</p>
+</section>
+
+<section class="panel wide" id="todo">
+  <h2>DoS View → To-do</h2>
+  <p class="help-lead">Everything a review said somebody would do.</p>
+  <p>An item lands here when a reviewer ticked <em>Actionable</em>. The tabs are
+    Open, Done and All; the filters narrow to what is yours, what is overdue, or a
+    severity or risk area. The count beside the tab in the bar above is the number
+    still open.</p>
+  <ul class="help-list">
+    <li><strong>Closing.</strong> You may close a follow-up that is yours; a team
+      lead may close any on their entity.</li>
+    <li><strong>Reassigning.</strong> A lead may hand work to anyone on the entity.
+      A member may move a task sideways — to a fellow member, or one sitting with
+      nobody — but not take one off a lead's or the super admin's desk.</li>
+    <li><strong>Reopening.</strong> A closed follow-up can be reopened; nothing here
+      is destroyed.</li>
+  </ul>
+</section>
+{% endif %}
+
+{% if sees.rd %}
+<section class="panel wide" id="rd">
+  <h2>RD View</h2>
+  <p class="help-lead">A region rather than an entity: what is happening in one RBI
+    office's territory.</p>
+  <p>The regional overview has two tabs, and the difference between them matters:</p>
+  <ul class="help-list">
+    <li><strong>Headquartered here</strong> — the entities whose head office falls in
+      this region. This is the beat proper.</li>
+    <li><strong>In-region news · other entities</strong> — coverage that names a
+      district or state in this region but concerns an entity headquartered
+      elsewhere. A national bank's branch trouble in your state shows up here, and
+      nowhere else.</li>
+  </ul>
+  <p>The <strong>Queue</strong> and <strong>Social media</strong> tabs beneath are the
+    same screens described above, scoped to the office rather than to one entity.</p>
+</section>
+{% endif %}
+
+<section class="panel wide" id="complaints">
+  <h2>Complaints</h2>
+  <p class="help-lead">Every customer grievance you can see, counted together — news
+    coverage and social media in one place.</p>
+  <p>A workspace of its own rather than a screen inside another, because it spans
+    every entity you can see and both kinds of source. It opens on no individual
+    complaint at all: the question is the shape.</p>
+  <ul class="help-list">
+    <li><strong>Three heat matrices</strong> — grievance type against the entity,
+      against the type of entity, and against the state. All three are shaded on one
+      scale, so equally dark means equally busy wherever you look. Every cell opens
+      the complaints it counts.</li>
+    <li><strong>The filters</strong> — date, type of entity, entity, location, source
+      and severity — narrow every figure on the page.</li>
+    <li><strong>Reading the numbers.</strong> A row total counts complaints; a cell
+      counts complaints carrying that category. Most grievances carry more than one,
+      so a row of cells legitimately adds up to more than its total. The page says so
+      under every matrix rather than quietly reconciling them.</li>
+    <li><strong>Why a figure never reads zero wrongly.</strong> Each control counts
+      as though its own choice were not made. With <em>Medium</em> selected, the
+      High severity tile still shows how many high-severity complaints there are to
+      switch to. The tiles for the total, the entities and the categories — and the
+      list at the foot — show the selection itself.</li>
+    <li><strong>Where a complaint happened</strong> is read from the story: the
+      classifier's own reading first, then the districts and states the text names,
+      with the entity's own name excluded so <em>Bank of Maharashtra</em> is never
+      filed under Maharashtra for that reason alone. A national story and one that
+      names no place each get an honest row of their own rather than being dropped.</li>
+  </ul>
+  <p class="panel-note">Two things are left out on purpose: social posts a reviewer
+    set aside as no use for pattern-finding, and anything a reviewer dismissed.</p>
+</section>
+
+<h2 class="mt section-head">Setting the app up</h2>
+<p class="meta-dim small section-sub">The screens that decide what is collected and how it is judged.</p>
+
+<section class="panel wide" id="factors">
+  <h2>Factors</h2>
+  <p class="help-lead">The written rules the classifier follows. Change these and the
+    next classification changes with them.</p>
+  <ul class="help-list">
+    <li><strong>Factors in force</strong> — named things to watch for, each with the
+      terms that trip it. A match is flagged on the item and countable on the
+      dashboards.
+      {% if sees.factors %}You can add one and switch any on or off.{% else %}Team
+      leads and the super admin add and toggle them.{% endif %}</li>
+    <li><strong>Risk area definitions</strong> — what your team means by each of the
+      seven areas.</li>
+    <li><strong>Severity criteria</strong> — what makes something high rather than
+      medium. This is the text every severity on every screen is judged against.</li>
+    <li><strong>Negative list</strong> — subjects not to analyse at all.</li>
+    <li><strong>Trusted sources</strong> — the outlets whose reporting ranks ahead of
+      the rest within the same severity, and which the Queue's source filter shows.
+      Editing the list re-tiers every stored item immediately.</li>
+  </ul>
+  {% if not sees.policy %}
+  <p class="panel-note">The four policy texts are editable by the super admin. You can
+    read them here — worth doing, because they are the standard your own reviews are
+    measured against.</p>
+  {% endif %}
+</section>
+
+<section class="panel wide" id="entities">
+  <h2>Entities</h2>
+  <p class="help-lead">The roster, and where collection is turned on.</p>
+  <ul class="help-list">
+    {% if sees.fetch %}
+    <li><strong>Fetch.</strong> <em>Fetch now — all entities</em> runs news and social
+      together. Per entity, the buttons run separately: news, social (Reddit, forums,
+      YouTube comments — free) and X (paid, billed per post read, which is why it
+      never runs with the others). The picker beside each sets how far back that
+      fetch looks. Re-fetching is incremental — it only classifies what it has not
+      seen before.</li>
+    {% else %}
+    <li><strong>Fetch.</strong> Collection is run by team leads and the super admin
+      from this screen. The <em>Last fetch</em> column tells you when each entity was
+      last collected, and whether anything failed.</li>
+    {% endif %}
+    <li><strong>Aliases matter more than anything else here.</strong> Attribution is
+      an exact phrase match, so a headline is kept only if it contains one of an
+      entity's aliases. The legal name alone rarely appears in print — add the short
+      forms a journalist would actually write. A missing alias is the usual reason an
+      entity looks quiet when it is not.</li>
+    <li><strong>News languages</strong> — a regional entity is covered in the local
+      press first. A language only helps if the entity also has an alias written in
+      that script.</li>
+    <li><strong>X handles</strong> — every handle complaints are sent to, the care
+      handle and the main one alike.</li>
+    <li><strong>RBI office</strong> — decides which Regional Director's screens cover
+      this entity.</li>
+    {% if sees.roster %}
+    <li><strong>Add an entity</strong> — name and headquarters district; the RBI
+      office resolves itself, and asks you to choose when a district is served by
+      more than one. <em>Find headquarters online</em> searches the web and fills in
+      only a district it can verify.</li>
+    <li><strong>Remove</strong> shows exactly what will be deleted before it does
+      anything — including how many recorded reviews would go with it. Nothing else
+      in the app deletes a review.</li>
+    {% endif %}
+  </ul>
+</section>
+
+{% if sees.settings %}
+<section class="panel wide" id="settings">
+  <h2>Settings</h2>
+  <p class="help-lead">Collection windows, budgets and caps. Super admin only.</p>
+  <p>How far back a fetch looks by default, how many items a source may return, how
+    often the automatic sweep runs (off unless you switch it on), and the spend
+    limits on the paid sources. A value that no longer sits at its default is marked,
+    so a knob turned six weeks ago is visible rather than forgotten.</p>
+</section>
+{% endif %}
+
+<h2 class="mt section-head">Reference</h2>
+<p class="meta-dim small section-sub">The vocabulary, and the limits of your own sign-in.</p>
+
+<section class="panel wide" id="words">
+  <h2>The words the app uses</h2>
+  <dl class="help-dl">
+    <dt>Risk area</dt>
+    <dd>One of seven supervisory areas — Credit, Market, Liquidity, Operational,
+      Governance, Cybersecurity, and Conduct &amp; Consumer Protection. An item may
+      touch several.</dd>
+    <dt>Severity</dt>
+    <dd>High, medium or low, judged against your team's written criteria rather than
+      anything fixed in the software.</dd>
+    <dt>Complaint topic</dt>
+    <dd>What a customer is aggrieved about — mis-selling, recovery practices, service
+      disruption, unauthorized transactions, charges &amp; fees, harassment, account
+      access / KYC, or other. No topics means the item is not a grievance.</dd>
+    <dt>Actionable</dt>
+    <dd>A reviewer decided somebody must do something. It creates the follow-up on the
+      To-do page.</dd>
+    <dt>Dismissed</dt>
+    <dd>A reviewer ruled the item not relevant. It leaves the queue but is kept.</dd>
+    <dt>Filtered out</dt>
+    <dd>Screened out before reaching a reviewer as not supervisory-relevant. It has
+      its own tab so the screening can itself be checked.</dd>
+    <dt>Rejected</dt>
+    <dd>The story turned out not to be about this entity — usually a different
+      organisation with a similar name.</dd>
+    <dt>Set aside</dt>
+    <dd>A social post that is a real grievance but no use for pattern-finding.
+      Readable, but kept out of Insights and Complaints.</dd>
+    <dt>Factor</dt>
+    <dd>A named thing your team wants flagged, with the terms that trip it.</dd>
+    <dt>Trusted source</dt>
+    <dd>An outlet on your team's own list. Its reporting ranks ahead of the rest
+      within the same severity and carries a ✓.</dd>
+    <dt>Alias</dt>
+    <dd>A way the press writes an entity's name. Aliases decide what a fetch keeps.</dd>
+    <dt>Precedent</dt>
+    <dd>A review you recorded earlier on a comparable item, shown back to you while
+      you review this one.</dd>
+  </dl>
+</section>
+
+<section class="panel wide" id="roles">
+  <h2>Who can do what</h2>
+  <p class="help-lead">You are signed in as
+    <strong>{% if user.rbi_office and user.role != 'superadmin' %}a Regional Director,
+      {{ user.rbi_office }}{% elif user.role == 'superadmin' %}the super admin{% elif
+      user.role == 'lead' %}a team lead{% else %}a team member{% endif %}</strong>.</p>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Role</th>
+          <th scope="col">Sees</th>
+          <th scope="col">Can also</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">Team member</th>
+          <td>Their own entity</td>
+          <td>Review items; close and reassign their own follow-ups</td>
+        </tr>
+        <tr>
+          <th scope="row">Team lead</th>
+          <td>Their own entity</td>
+          <td>Everything a member can, plus run fetches, generate Insights, edit their
+            entity's aliases, add factors, and close any follow-up on their entity</td>
+        </tr>
+        <tr>
+          <th scope="row">Regional Director</th>
+          <td>Every entity headquartered in their RBI office, plus in-region news
+            about others</td>
+          <td>Review across the region from the regional Queue and Social media
+            screens</td>
+        </tr>
+        <tr>
+          <th scope="row">Super admin</th>
+          <td>Every entity, every region</td>
+          <td>Everything, plus the policy texts, the roster, RD logins and Settings</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">Screens your role cannot open are not described in this guide,
+    so nothing here sends you looking for a tab that is not on your screen. If a
+    colleague's Drishti shows something yours does not, this table is why.</p>
+</section>
+</div>
+{% endblock %}
