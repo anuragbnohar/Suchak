@@ -31,7 +31,8 @@ from .classify import (classify_item,
                        DEFAULT_RISK_DEFS, DEFAULT_SEVERITY_DEFS,
                        EXCLUSION_RULES_KEY, GRIEVANCE_SEVERITY_KEY,
                        RISK_DEFS_KEY, SEVERITY_DEFS_KEY,
-                       rescore_grievances, similar_reviewed, suggest_action)
+                       recheck_factors, rescore_grievances, similar_reviewed,
+                      suggest_action)
 from .db import (connect, get_setting, init_db, one, q, remove_entity,
                  set_setting, x)
 from .ingest import (CHANNELS, LOOKBACK_CHOICES, X_LOOKBACK_CHOICES, LOOKBACK_DAYS, NEWS_EDITIONS, SOCIAL_LOOKBACK_DAYS,
@@ -136,7 +137,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-08.48"
+APP_BUILD = "2026-09-08.49"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1206,6 +1207,9 @@ def social_page(request: Request):
         topic = request.query_params.get("topic", "")
         if topic not in taxonomy.COMPLAINT_TOPICS:
             topic = ""
+        # a landing filter from the Dashboard's factor panel and the
+        # Factors page's match counts, cleared by its own note below
+        factor_f = (request.query_params.get("factor") or "")[:80]
 
         if entity is None:
             ids = [e["id"] for e in entities]
@@ -1266,7 +1270,8 @@ def social_page(request: Request):
                 set_aside_rows if view_aside else grievances)
         shown = [r for r in pool
                  if (not topic or topic in r["complaint_topics"])
-                 and (not src or r["platform"] == src)]
+                 and (not src or r["platform"] == src)
+                 and (not factor_f or factor_f in r["factor_matches"])]
         shown.sort(key=lambda r: (taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3),
                                   r["published_at"] or ""), reverse=False)
         shown.reverse()
@@ -1277,7 +1282,7 @@ def social_page(request: Request):
                       entity_qs="all" if entity is None else entity["id"],
                       office=request.query_params.get("office") or None,
                       entities=entities, rows=shown, topic=topic, src=src,
-                      win=win,
+                      factor=factor_f, win=win,
                       view_aside=view_aside, view_learned=view_learned,
                       learned_count=len(learned),
                       set_aside_count=len(set_aside_rows),
@@ -1333,6 +1338,24 @@ def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
         if day:
             by_day[day] += 1
 
+    # Factors watch both workstreams, so their panel counts news and social
+    # side by side — the one figure here that looks at social, which
+    # otherwise has its own tab and Insights. Social counts follow that
+    # tab's default view (a grievance, not set aside), so the number
+    # matches the screen it links to.
+    soc_factor = Counter()
+    for r in q(db, "SELECT factor_matches FROM items WHERE entity_id = ?"
+                   " AND gated_out = 0 AND source_type = 'social'"
+                   " AND factor_matches != '[]' AND set_aside IS NULL"
+                   " AND COALESCE(review_complaint_topics, complaint_topics,"
+                   "              '[]') != '[]'"
+                   f"{win_and}", (entity_id, *win_args)):
+        try:
+            for f in json.loads(r["factor_matches"] or "[]"):
+                soc_factor[f] += 1
+        except (TypeError, ValueError):
+            pass
+
     today = datetime.now(timezone.utc).date()
     trend = []
     for offset in range(TREND_DAYS - 1, -1, -1):
@@ -1369,7 +1392,8 @@ def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
         "by_risk": [(a, by_risk.get(a, 0)) for a in taxonomy.RISK_AREAS],
         "max_risk": max(by_risk.values(), default=0),
         "by_sev": {s: by_sev.get(s, 0) for s in taxonomy.SEVERITIES},
-        "by_factor": by_factor.most_common(8),
+        "by_factor": [(n, by_factor.get(n, 0), soc_factor.get(n, 0))
+                      for n, _ in (by_factor + soc_factor).most_common(8)],
         "complaints_total": complaints_total,
         "by_topic": by_topic.most_common(12),
         "trend": trend, "max_trend": max_trend,
@@ -2042,6 +2066,48 @@ def factors_page(request: Request):
                          " LEFT JOIN users u ON u.id = f.created_by"
                          " WHERE f.entity_id IS NULL OR f.entity_id = ?"
                          " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
+        # What each factor has actually caught, split by workstream, so the
+        # list reads as a watch list rather than a rulebook. Counts are
+        # scoped to what this viewer's links can open: the super admin sees
+        # the whole record, everyone else their own entity's slice.
+        rows = [dict(r) for r in rows]
+        scope_sql, scope_args = "", ()
+        if user["role"] != "superadmin" and user["entity_id"]:
+            scope_sql, scope_args = " AND entity_id = ?", (user["entity_id"],)
+        news_n, social_n = Counter(), Counter()
+        # gated_out is the only cut, so each count equals what its link
+        # opens: the queue's "All" tab for news, the social tab's default
+        # view for posts
+        for it in q(db, "SELECT entity_id, source_type, factor_matches,"
+                        "       set_aside,"
+                        "       COALESCE(review_complaint_topics,"
+                        "                complaint_topics, '[]') AS topics_shown"
+                        " FROM items WHERE gated_out = 0"
+                        f"   AND factor_matches != '[]'{scope_sql}", scope_args):
+            try:
+                names = json.loads(it["factor_matches"] or "[]")
+            except (TypeError, ValueError):
+                continue
+            if it["source_type"] == "social":
+                # count what the Social media tab's default view lists: a
+                # grievance, not set aside — so the linked count matches
+                # the screen it opens
+                if it["set_aside"] or it["topics_shown"] == "[]":
+                    continue
+                tally = social_n
+            else:
+                tally = news_n
+            for n in names:
+                tally[(it["entity_id"], n)] += 1
+        for f in rows:
+            if f["entity_id"]:
+                f["news_matches"] = news_n.get((f["entity_id"], f["name"]), 0)
+                f["social_matches"] = social_n.get((f["entity_id"], f["name"]), 0)
+            else:
+                f["news_matches"] = sum(v for (_, n), v in news_n.items()
+                                        if n == f["name"])
+                f["social_matches"] = sum(v for (_, n), v in social_n.items()
+                                          if n == f["name"])
         severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
         grievance_severity = get_setting(db, GRIEVANCE_SEVERITY_KEY,
                                          DEFAULT_GRIEVANCE_SEVERITY)
@@ -2188,6 +2254,57 @@ async def factors_rescore(request: Request):
     _spawn(asyncio.to_thread(_rescore_job, job_id))
     return RedirectResponse(
         "/factors?msg=Re-scoring+started+—+a+notice+will+pop+up+when+it+"
+        f"finishes&job={job_id}", status_code=303)
+
+
+def _recheck_job(job_id: str) -> None:
+    job = FETCH_JOBS.get(job_id)
+    if job is None:
+        return
+    db = connect()
+    try:
+        result = recheck_factors(db)
+        if result["failed"] and not result["checked"]:
+            job.update(state="failed",
+                       note=f"none of the {result['failed']} items could be "
+                            "checked — is the Anthropic API key set?")
+            return
+        bits = [f"{result['checked']} item(s) checked against the factors",
+                f"{result['changed']} changed flags"]
+        if result["failed"]:
+            bits.append(f"{result['failed']} could not be checked")
+        if result["left_out"]:
+            bits.append(f"{result['left_out']} not attempted (per-run cap; "
+                        "run again for the rest)")
+        job.update(state="done", note=", ".join(bits))
+    except Exception as exc:
+        log.exception("Factor re-check job %s failed", job_id)
+        job.update(state="failed", note=f"{type(exc).__name__}: {exc}")
+    finally:
+        db.close()
+
+
+@app.post("/factors/recheck")
+async def factors_recheck(request: Request):
+    """Walk the stored items and flag each against the factors active now.
+    One model call per item (none where an entity has no active factors),
+    so it runs in the background like a fetch and reports through the same
+    toast. Touches only the classifier's factor_matches column.
+    """
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+    finally:
+        db.close()
+    job_id = secrets.token_hex(8)
+    while len(FETCH_JOBS) >= FETCH_JOBS_MAX:
+        FETCH_JOBS.pop(next(iter(FETCH_JOBS)))
+    FETCH_JOBS[job_id] = {"state": "running",
+                          "label": "Checking items against factors", "note": ""}
+    _spawn(asyncio.to_thread(_recheck_job, job_id))
+    return RedirectResponse(
+        "/factors?msg=Factor+re-check+started+—+a+notice+will+pop+up+when+it+"
         f"finishes&job={job_id}", status_code=303)
 
 

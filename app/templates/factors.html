@@ -20,6 +20,7 @@
         <th scope="col">Factor</th>
         <th scope="col">Conditions</th>
         <th scope="col">Scope</th>
+        <th scope="col">Matches</th>
         <th scope="col">Status</th>
         {% if user.role in ('lead','superadmin') %}<th scope="col"></th>{% endif %}
       </tr>
@@ -28,6 +29,21 @@
         <td><strong>⚑ {{ f.name }}</strong><br><span class="meta-dim small">by {{ f.author or '—' }}</span></td>
         <td class="conditions">{{ f.conditions }}</td>
         <td>{{ f.entity_name or 'All entities' }}</td>
+        {# what the factor has caught so far, each figure opening the list
+           behind it — the watch list saying whether the watch pays off #}
+        <td class="factor-hits">
+          {%- set link_e = f.entity_id or ('all' if user.role == 'superadmin' else user.entity_id) %}
+          {%- if not f.news_matches and not f.social_matches %}
+          <span class="meta-dim">none yet</span>
+          {%- else %}
+          {%- if f.news_matches and link_e %}
+          <a href="/queue?entity={{ link_e }}&amp;status=all&amp;factor={{ f.name | urlencode }}">{{ f.news_matches }} news</a>
+          {%- elif f.news_matches %}<span>{{ f.news_matches }} news</span>{% endif %}
+          {%- if f.social_matches and link_e %}
+          <a href="/social?entity={{ link_e }}&amp;factor={{ f.name | urlencode }}">{{ f.social_matches }} social</a>
+          {%- elif f.social_matches %}<span>{{ f.social_matches }} social</span>{% endif %}
+          {%- endif %}
+        </td>
         <td>{% if f.active %}<span class="ok-chip">active</span>{% else %}<span class="meta-dim">inactive</span>{% endif %}</td>
         {% if user.role in ('lead','superadmin') %}
         <td class="row-actions">
@@ -45,6 +61,19 @@
       <p class="meta-dim">A factor is a named rule in plain language. Every new item
         is checked against the active ones, and a match is flagged on the item.</p>
     </div>
+    {% endif %}
+    {% if user.role == 'superadmin' and factors %}
+    <form method="post" action="/factors/recheck">
+      <div class="form-actions form-actions-plain">
+        <button type="submit" class="btn">Re-check stored items against factors</button>
+        <p class="meta-dim small">Factors are normally judged only when an item
+          first arrives, so one added today shows nothing on older items. This
+          walks the stored news and posts in the background — one model call per
+          item — and re-flags each against the factors active right now; where an
+          entity has no active factors, stale flags are cleared without spending
+          a call. A notice pops up when it finishes.</p>
+      </div>
+    </form>
     {% endif %}
   </section>
 
@@ -67,7 +96,8 @@
       </label>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Add factor</button>
-        <p class="meta-dim small">Evaluated at classification time, on new items.</p>
+        <p class="meta-dim small">Evaluated on new items as they arrive; the super
+          admin's Re-check button applies the list to items already stored.</p>
       </div>
     </form>
   </section>

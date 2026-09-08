@@ -151,8 +151,9 @@
       to open that single day.</li>
     <li><strong>Recent high-severity items</strong> — the short list you would read
       first if you read nothing else.</li>
-    <li><strong>Factor matches</strong> — which of your named factors this entity's
-      coverage tripped.</li>
+    <li><strong>Factor matches</strong> — which of your named factors this entity
+      tripped, counted for news and for social posts side by side. Each figure
+      opens the list of items behind it.</li>
     <li><strong>Complaints by topic</strong> — grievances for this entity, by kind.</li>
     <li><strong>Linked organizations</strong> — other bodies the coverage named
       alongside this entity.</li>
@@ -233,7 +234,9 @@
     said</em>.</p>
   <ul class="help-list">
     <li><strong>The topic tabs</strong> narrow to one kind of grievance;
-      <strong>the source tabs</strong> to one platform.</li>
+      <strong>the source tabs</strong> to one platform. A post that trips one of
+      your named factors carries a ⚑ chip, and the Dashboard's factor panel
+      counts social matches beside the news ones.</li>
     <li><strong>Set aside</strong> — posts a reviewer marked as no use for
       pattern-finding: pure venting, nothing specific named, already resolved. They
       stay readable here but are kept out of Insights and Complaints.</li>
@@ -343,10 +346,16 @@
     next classification changes with them.</p>
   <ul class="help-list">
     <li><strong>Factors in force</strong> — named things to watch for, each with the
-      terms that trip it. A match is flagged on the item and countable on the
-      dashboards.
+      terms that trip it. A match is flagged with a ⚑ on the item, on queue rows
+      and social cards, and the <em>Matches</em> column here counts what each
+      factor has caught — news and social separately, each figure opening the
+      list behind it.
       {% if sees.factors %}You can add one and switch any on or off.{% else %}Team
-      leads and the super admin add and toggle them.{% endif %}</li>
+      leads and the super admin add and toggle them.{% endif %}
+      Factors are judged when an item first arrives, so a factor added today
+      shows nothing on older items until the super admin presses
+      <em>Re-check stored items against factors</em>, which walks everything
+      already collected — one model call per item, in the background.</li>
     <li><strong>Risk area definitions</strong> — what your team means by each of the
       seven areas.</li>
     <li><strong>Severity criteria</strong> — two scales, side by side. One for

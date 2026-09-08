@@ -431,6 +431,10 @@ label.check { display: flex; margin: 0.15rem 0; }
 .data-table tr:hover td { background: var(--surface-2); }
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .data-table .conditions { max-width: 26rem; }
+/* the Matches cell on Factors: two short counts, never wrapped apart */
+.data-table .factor-hits { white-space: nowrap; }
+.data-table .factor-hits a + a { margin-left: 0.55rem; }
+.data-table .factor-hits span + a { margin-left: 0.55rem; }
 /* A link in a table is coloured, always: in a dense grid the only thing
    that says a cell can be opened is that it is not the colour of text. */
 .data-table a { color: var(--accent); }

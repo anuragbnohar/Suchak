@@ -219,6 +219,18 @@ X recent search is capped at 7 days by its API regardless.
   No fine-tuning needed.
 - **Factors** — team leads define named plain-language rules ("Sales
   malpractice: flag if…") that the classifier evaluates on every item.
+  A match shows as a ⚑ chip on queue rows, social cards, and the item
+  page; the Dashboard's factor panel counts news and social matches side
+  by side, and the Factors page's **Matches** column makes the factor
+  list a watch list — each count opens the filtered Queue or Social view
+  behind it (the social view gained a `factor=` filter for this).
+  Factors are judged when an item is first classified, so **Re-check
+  stored items against factors** (super admin, Factors page) walks the
+  live stored items in the background and re-flags each against the
+  factors active now — one model call per item (the `SUCHAK_RESCORE_MAX`
+  cap applies), no call where an entity has no active factors (stale
+  flags are simply cleared), skipping unclassified, dismissed, filtered
+  and rejected rows.
 - **Tunable severity criteria** — the high/medium/low definitions the
   classifier applies are plain-language text edited by the super admin on
   the Factors page (stored in the DB, applied to new classifications). The

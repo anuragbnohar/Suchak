@@ -78,6 +78,14 @@
   </form>
 </div>
 
+{% if factor %}
+<div class="filter-note">
+  <span>Showing:</span>
+  <span class="filter-chip">factor: ⚑ {{ factor }}</span>
+  <a href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{{ since_qs }}">✕ clear filter</a>
+</div>
+{% endif %}
+
 {% if view_learned %}
 <p class="meta-dim small">The classifier dropped these on its own, judging them
   the same kind of post your team has set aside before. Check them now and then:
@@ -92,7 +100,7 @@
 {% if not rows %}
 <p class="empty">
   {% if collected %}{{ collected }} post{{ 's' if collected != 1 }} collected, none of them a
-  grievance{% if topic %} under this topic{% endif %}{% if src %} from {{ src }}{% endif %}.
+  grievance{% if topic %} under this topic{% endif %}{% if src %} from {{ src }}{% endif %}{% if factor %} matching the factor “{{ factor }}”{% endif %}.
   {% else %}No posts collected yet. Press Fetch on the <a href="/entities">Entities</a> page.{% endif %}
 </p>
 {% else %}
@@ -109,8 +117,9 @@
     <div class="item-meta">
       {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
       {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
+      {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
       <a class="btn btn-small item-review-btn" href="/item/{{ it.id }}">Review post</a>
-      {% set back = '/social?' ~ (('office=' ~ (office | urlencode) ~ '&') if office else '') ~ 'entity=' ~ entity_qs ~ (('&topic=' ~ (topic | urlencode)) if topic else '') ~ (('&src=' ~ (src | urlencode)) if src else '') ~ ('&view=aside' if view_aside else '') ~ ('&view=learned' if view_learned else '') ~ since_qs %}
+      {% set back = '/social?' ~ (('office=' ~ (office | urlencode) ~ '&') if office else '') ~ 'entity=' ~ entity_qs ~ (('&topic=' ~ (topic | urlencode)) if topic else '') ~ (('&src=' ~ (src | urlencode)) if src else '') ~ (('&factor=' ~ (factor | urlencode)) if factor else '') ~ ('&view=aside' if view_aside else '') ~ ('&view=learned' if view_learned else '') ~ since_qs %}
       {% if it.set_aside %}
       <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form">
         <input type="hidden" name="back" value="{{ back }}">

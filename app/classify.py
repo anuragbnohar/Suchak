@@ -1073,3 +1073,95 @@ def rescore_grievances(db) -> dict:
             out["changed"] += 1
             x(db, "UPDATE items SET severity = ? WHERE id = ?", (sev, r["id"]))
     return out
+
+
+FACTORS_ONLY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "factor_matches": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["factor_matches"],
+    "additionalProperties": False,
+}
+
+
+def _check_factors(entity_name: str, title: str, text: str,
+                   factors: list) -> list:
+    client = _get_client()
+    named = "\n".join(f"- {f['name']}: {f['conditions']}" for f in factors)
+    resp = client.messages.create(
+        # Roomy on purpose: the answer is a short list of names, but
+        # thinking is on by default on this model family and shares this
+        # budget.
+        model=MODEL,
+        max_tokens=4096,
+        system=(
+            "You check one item about a regulated Indian financial "
+            "institution against its supervisor's named watch factors. In "
+            "factor_matches, list the name — exactly as written — of every "
+            "factor whose conditions the item meets. An item can meet "
+            "several factors, or none.\nFactors:\n" + named
+        ),
+        messages=[{"role": "user", "content":
+                   f"Entity: {entity_name}\n"
+                   f"Title: {title}\n"
+                   f"Text: {text or '(none)'}"}],
+        output_config={"format": {"type": "json_schema",
+                                  "schema": FACTORS_ONLY_SCHEMA}},
+    )
+    return _structured_json(resp, "checking the item against the factors"
+                            )["factor_matches"]
+
+
+def recheck_factors(db) -> dict:
+    """Re-check every live stored item against the factors now in force.
+    Newest first, capped at RESCORE_MAX per run.
+
+    Factors are normally judged once, when an item is first classified, so
+    a factor defined later never reaches older items; this walk closes that
+    gap. It touches only the classifier's factor_matches column. Where an
+    entity has no active factors, stale flags are cleared with no model
+    call spent — the point of the walk is that stored flags agree with the
+    factor list as it stands today.
+    """
+    rows = q(db,
+             "SELECT i.id, i.entity_id, i.title, i.snippet, i.summary,"
+             "       i.factor_matches, e.name AS entity_name"
+             " FROM items i JOIN entities e ON e.id = i.entity_id"
+             " WHERE i.gated_out = 0"
+             "   AND COALESCE(i.attribution, '') != 'rejected'"
+             # a new item meets the factors when it is first classified,
+             # and a dismissed one was ruled not this entity's business
+             "   AND i.status NOT IN ('new', 'dismissed')"
+             " ORDER BY i.id DESC")
+    left_out = max(0, len(rows) - RESCORE_MAX)
+    out = {"checked": 0, "changed": 0, "failed": 0, "left_out": left_out}
+    factors_of = {}
+    for r in rows[:RESCORE_MAX]:
+        if r["entity_id"] not in factors_of:
+            factors_of[r["entity_id"]] = active_factors(db, r["entity_id"])
+        factors = factors_of[r["entity_id"]]
+        try:
+            old = set(json.loads(r["factor_matches"] or "[]"))
+        except (TypeError, ValueError):
+            old = set()
+        if factors:
+            try:
+                answered = set(_check_factors(
+                    r["entity_name"], r["title"],
+                    r["summary"] or r["snippet"] or "", factors))
+            except Exception as exc:
+                out["failed"] += 1
+                log.warning("Factor re-check failed for item %s (%s: %s)",
+                            r["id"], type(exc).__name__, exc)
+                continue
+            # only names on the list count, in the list's own order
+            new = [f["name"] for f in factors if f["name"] in answered]
+        else:
+            new = []
+        out["checked"] += 1
+        if set(new) != old:
+            out["changed"] += 1
+            x(db, "UPDATE items SET factor_matches = ? WHERE id = ?",
+              (json.dumps(new), r["id"]))
+    return out
