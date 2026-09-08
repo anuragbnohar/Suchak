@@ -548,6 +548,22 @@ a.trend-col:hover { text-decoration: none; }
 .item-link { display: block; padding: 0.65rem 0.9rem; color: inherit; }
 .item-link:hover { text-decoration: none; background: var(--surface-2); }
 .item-row:hover { border-color: var(--line-strong); }
+/* The queue's Reviewed tick: a ledger column at the row's right edge, in
+   its own form so ticking never navigates. Rows everywhere else carry a
+   single link, which flex tells to keep filling the row. */
+.item-row { display: flex; align-items: stretch; }
+.item-row > .item-link { flex: 1 1 auto; min-width: 0; }
+.row-reviewed {
+  display: flex; align-items: center; flex: none;
+  padding: 0 0.9rem 0 0.7rem; border-left: 1px solid var(--line);
+}
+.row-reviewed label {
+  display: inline-flex; align-items: center; gap: 0.4rem; margin: 0;
+  font-weight: 500; color: var(--muted); cursor: pointer; white-space: nowrap;
+  letter-spacing: 0;
+}
+.row-reviewed label:hover { color: var(--accent-ink); }
+.row-reviewed input[type="checkbox"] { cursor: pointer; }
 .item-top { display: flex; align-items: baseline; gap: 0.55rem; flex-wrap: wrap; }
 .item-title { font-weight: 600; color: var(--ink); }
 .item-link:hover .item-title { color: var(--accent); }

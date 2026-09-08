@@ -135,7 +135,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-08.41"
+APP_BUILD = "2026-09-08.42"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -772,6 +772,48 @@ async def item_review(request: Request, item_id: int):
         db.close()
     msg = "Review+saved+—+follow-up+added+to+To-do" if actionable else "Review+saved"
     return RedirectResponse(f"/queue?msg={msg}", status_code=303)
+
+
+@app.post("/item/{item_id}/reviewed")
+async def item_mark_reviewed(request: Request, item_id: int):
+    """The queue's Reviewed tick: mark an item reviewed — or send it back
+    for another look — without opening it.
+
+    Deliberately status-only. It records who ticked it and when, but
+    fabricates no verdict: the classifier's severity and categories stand
+    until a reviewer actually corrects them on the item page, which stays
+    open to corrections whatever the box says. Unticking never erases a
+    recorded review — the corrections and the history all stand — it only
+    puts the item back on the To review tab.
+    """
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        row = one(db, "SELECT * FROM items WHERE id = ?", (item_id,))
+        if not row:
+            raise HTTPException(404, "Item not found")
+        # exactly who may open the item page may tick the box
+        if user["role"] != "superadmin" and row["entity_id"] != user["entity_id"]:
+            raise HTTPException(403, "Item belongs to another entity's team")
+        if form.get("reviewed"):
+            if row["status"] in ("new", "classified"):
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                x(db, "UPDATE items SET status='reviewed', reviewed_by=?,"
+                      " reviewed_at=? WHERE id=?", (user["id"], now, item_id))
+        elif row["status"] == "reviewed":
+            # back to where it stood before anyone ruled on it; an item the
+            # classifier never reached goes back to awaiting classification
+            x(db, "UPDATE items SET status=? WHERE id=?",
+              ("classified" if row["classified_at"] else "new", item_id))
+        # dismissed / filtered / rejected rows carry no box, and a stray
+        # POST against one must not quietly resurrect or bury it
+    finally:
+        db.close()
+    back = form.get("back") or "/queue"
+    if not back.startswith("/") or back.startswith("//"):
+        back = "/queue"
+    return RedirectResponse(back, status_code=303)
 
 
 # --- follow-up actions (the To-do page) -------------------------------------

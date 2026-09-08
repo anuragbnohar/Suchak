@@ -172,6 +172,12 @@ X recent search is capped at 7 days by its API regardless.
   correction wins everywhere — queue order, chips, dashboards — and the
   classifier's original verdict stays on the audit line. Reviews accumulate
   rather than replace one another; see **Review history** below.
+  Each queue row also carries a **Reviewed** tick box: mark an item reviewed
+  — or send it back for another look — without opening it. The tick is the
+  item's stored status, so it survives restarts and sessions until somebody
+  changes it. Deliberately status-only: it fabricates no verdict, never
+  locks the item (the full review form stays open either way), and
+  unticking never erases a recorded review — corrections and history stand.
 - **Review history** — every review is kept, never overwritten. Each
   submission is appended to a `reviews` table with its reviewer, role and
   timestamp; the item's own `review_*` columns mirror the latest one, so the

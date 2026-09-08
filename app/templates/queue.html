@@ -32,6 +32,25 @@
         </span>
       </div>
     </a>
+    {# The tick lives outside the link, so ticking never navigates. Only
+       states the box can honestly describe carry it: a dismissed,
+       filtered or rejected item is not "unreviewed", it is somewhere
+       else, and a box there would bury or resurrect it by accident. #}
+    {% if it.status in ('new', 'classified', 'reviewed') and not it.gated_out
+          and (it.attribution or '') != 'rejected' %}
+    <form method="post" action="/item/{{ it.id }}/reviewed" class="row-reviewed">
+      <input type="hidden" name="back"
+             value="/queue?{% if office %}office={{ office }}&amp;{% endif %}entity={{ entity_qs }}&amp;status={{ status }}{{ filter_qs }}{{ since_qs }}">
+      <label class="small"
+             title="Mark reviewed without opening it — or untick to send it back for another look. The item stays open to a full review (severity, categories, notes) whatever this box says.">
+        <input type="checkbox" name="reviewed" value="1"
+               {% if it.status == 'reviewed' %}checked{% endif %}
+               onchange="this.form.submit()">
+        Reviewed
+      </label>
+      <noscript><button type="submit" class="btn btn-small">Save</button></noscript>
+    </form>
+    {% endif %}
   </li>
 {% endmacro %}
 
