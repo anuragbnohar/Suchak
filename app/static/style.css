@@ -564,6 +564,9 @@ a.trend-col:hover { text-decoration: none; }
 }
 .row-reviewed label:hover { color: var(--accent-ink); }
 .row-reviewed input[type="checkbox"] { cursor: pointer; }
+/* the same tick seated in a social card's chip row rather than the
+   queue's ledger column: keep the divider, drop the column padding */
+.item-meta .row-reviewed { padding: 0 0 0 0.7rem; }
 .item-top { display: flex; align-items: baseline; gap: 0.55rem; flex-wrap: wrap; }
 .item-title { font-weight: 600; color: var(--ink); }
 .item-link:hover .item-title { color: var(--accent); }

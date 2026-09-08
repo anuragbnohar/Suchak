@@ -136,7 +136,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-08.47"
+APP_BUILD = "2026-09-08.48"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -777,8 +777,8 @@ async def item_review(request: Request, item_id: int):
 
 @app.post("/item/{item_id}/reviewed")
 async def item_mark_reviewed(request: Request, item_id: int):
-    """The queue's Reviewed tick: mark an item reviewed — or send it back
-    for another look — without opening it.
+    """The Reviewed tick on the queue and the Social media tab: mark an
+    item reviewed — or send it back for another look — without opening it.
 
     Deliberately status-only. It records who ticked it and when, but
     fabricates no verdict: the classifier's severity and categories stand

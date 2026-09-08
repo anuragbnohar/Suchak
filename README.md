@@ -172,7 +172,8 @@ X recent search is capped at 7 days by its API regardless.
   correction wins everywhere — queue order, chips, dashboards — and the
   classifier's original verdict stays on the audit line. Reviews accumulate
   rather than replace one another; see **Review history** below.
-  Each queue row also carries a **Reviewed** tick box: mark an item reviewed
+  Each queue row — and each card on the Social media tab, whose posts never
+  reach the queue — carries a **Reviewed** tick box: mark an item reviewed
   — or send it back for another look — without opening it. The tick is the
   item's stored status, so it survives restarts and sessions until somebody
   changes it. Deliberately status-only: it fabricates no verdict, never

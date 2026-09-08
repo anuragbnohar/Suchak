@@ -240,6 +240,11 @@
     <li><strong>Auto-excluded</strong> — posts the app learned to skip from what
       reviewers set aside before. Check it occasionally to confirm it is not
       learning the wrong lesson.</li>
+    <li><strong>The Reviewed box</strong> on each post works exactly as it does on
+      the Queue: tick to mark the post looked-at, untick to send it back — it
+      keeps its state across sessions, never locks the post's full review form,
+      and teaches the classifier nothing. Only inputs given on the review form
+      itself (severity, categories, action, comments) count as a ruling.</li>
   </ul>
 </section>
 
@@ -454,9 +459,9 @@
     <dt>Precedent</dt>
     <dd>A review you recorded earlier on a comparable item, shown back to you while
       you review this one — and shown to the classifier as it judges it. Only a
-      review recorded on the form counts: ticking the queue's Reviewed box says
-      you have looked at an item, not what you concluded, so it teaches the
-      classifier nothing either way.</dd>
+      review recorded on the form counts: ticking the Reviewed box, on the Queue
+      or the Social media tab alike, says you have looked at an item, not what
+      you concluded, so it teaches the classifier nothing either way.</dd>
   </dl>
 </section>
 
