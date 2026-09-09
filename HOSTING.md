@@ -1,65 +1,142 @@
 # Putting Drishti on rdrishti.in
 
-This is the whole job, in order, for a Windows laptop. Nothing in the
-application changes — Drishti has no hostname written into it anywhere, so it
-serves `rdrishti.in` exactly as it serves `localhost`.
+Drishti has no hostname written into it anywhere, so hosting it needs no
+change to the application. What it needs is a machine that stays on.
 
-Read **[README.md → Putting it on an address other people can reach](README.md)**
-first and finish the hardening it describes. If `SUCHAK_PUBLIC=1` is not set
-and every demo password has not been changed, stop here and do that. The rest
-of this file assumes `python run.py` already starts cleanly with public mode on.
+There are two ways to do this, and only one of them survives the lid closing.
+
+| | Laptop | Small server |
+|---|---|---|
+| Up when the laptop sleeps | no | **yes** |
+| Cost | nothing | about ₹530/month |
+| Setup | 20 minutes | 40 minutes, once |
+| Good for | showing someone this week | anything people rely on |
+
+**If you want the site up regardless of your laptop, use the server.** That is
+the main path below. The laptop route is kept at the end for a quick demo.
+
+Before either: finish the hardening in
+**[README.md → Putting it on an address other people can reach](README.md)**.
+If `python run.py` does not already start cleanly with `SUCHAK_PUBLIC=1`, stop
+and do that first.
+
+---
 
 ## What you are building
 
-Your laptop keeps Drishti running on `localhost:8000`, exactly as it does now.
-A small Cloudflare program runs alongside it and makes an outbound connection
-to Cloudflare. When somebody visits `rdrishti.in`, Cloudflare hands the request
-down that connection.
+A small Linux server runs Drishti and nothing else. Cloudflare's tunnel program
+runs beside it and dials *out* to Cloudflare. When somebody visits
+`rdrishti.in`, Cloudflare passes the request down that connection.
 
-Nothing is opened on your router, no port is forwarded, and your home or office
-IP address is never published. HTTPS is terminated by Cloudflare and the
-certificate is issued and renewed for you.
+No port is opened on the server, its address is never published, and the HTTPS
+certificate is issued and renewed for you. Your laptop is not involved at all
+once this is done.
 
-**The catch, stated plainly:** the site is up only while your laptop is on and
-`python run.py` is running. Close the window or shut the lid and the address
-stops answering. That is fine for showing colleagues a prototype. It is not
-fine for something people are told to rely on — see *When the laptop is not
-enough* at the end.
+---
 
-## Step 1 — Point the domain at Cloudflare
+## Step 1 — Rent the server
 
-1. Sign up at **dash.cloudflare.com** (free).
-2. **Add a site** → type `rdrishti.in` → choose the **Free** plan.
-3. Cloudflare shows you **two nameservers**, something like
-   `xxx.ns.cloudflare.com`. Copy both.
-4. Sign in wherever you bought the domain. Find **Nameservers** (sometimes
-   under *DNS*, *Manage domain*, or *Custom nameservers*). Replace what is
-   there with Cloudflare's two.
-5. Wait. Cloudflare emails you when the domain says **Active** — usually a few
-   minutes for a `.in`, occasionally up to a day.
+Any small Linux server will do; Drishti is not demanding. Take the smallest
+size — 1 GB of memory is ample.
 
-Do not go on until the domain shows **Active** in Cloudflare.
+**DigitalOcean** is the easiest to start with. At digitalocean.com:
 
-## Step 2 — Create the tunnel
+1. **Create → Droplet**
+2. Region: **Bangalore (BLR1)** — keeps the data in India, which is the
+   better answer if anyone ever asks where a supervisory tool lives.
+3. Image: **Ubuntu 24.04 (LTS)**
+4. Size: **Basic → Regular → $6/month** (1 GB / 1 CPU / 25 GB)
+5. Authentication: **SSH Key** if you can (below), otherwise a password.
+6. Hostname: `drishti`. Create.
 
-1. Go to **one.dash.cloudflare.com** (Cloudflare Zero Trust). On first visit it
-   asks you to pick a team name — any name — and a plan. Choose **Free**.
-2. **Networks → Tunnels → Create a tunnel → Cloudflared**.
-3. Name it `drishti`. Save.
-4. It now shows install commands. Choose the **Windows** tab and copy the
-   command. It is one long line containing a very long token.
-5. Open **PowerShell as Administrator** (right-click Start → *Terminal
-   (Admin)*) and paste it. This installs the Cloudflare program and registers
-   it as a Windows service, so it starts by itself whenever the laptop boots.
-6. Back in the browser the tunnel should turn **HEALTHY** within a few seconds.
+You get an IP address like `164.52.x.x`. That is your server.
 
-The token in that command is a password for your tunnel. Do not paste it into
-email, chat, or any file you commit.
+Alternatives, if you prefer: **AWS Lightsail** (Mumbai, $5), **Linode**
+(Mumbai), or **E2E Networks** — an Indian company with Indian data centres,
+if that matters for how this is described internally.
 
-## Step 3 — Send the domain to the application
+### Making an SSH key (worth the two minutes)
 
-Still in the tunnel's setup page, open the **Public Hostname** tab and
-**Add a public hostname**:
+In PowerShell on your laptop:
+
+```powershell
+ssh-keygen -t ed25519
+```
+
+Press Enter at every prompt. Then show the public half and copy it:
+
+```powershell
+Get-Content ~\.ssh\id_ed25519.pub
+```
+
+Paste that into DigitalOcean's **New SSH Key** box. You will then sign in to
+the server with no password at all, and nobody can guess their way in.
+
+---
+
+## Step 2 — Set Drishti up, in one command
+
+Connect to the server from PowerShell:
+
+```powershell
+ssh root@YOUR-SERVER-IP
+```
+
+Say `yes` to the fingerprint question the first time. Then paste this:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/anuragbnohar/Suchak/claude/file-review-suggestions-9nqs4a/deploy/server-setup.sh -o setup.sh
+sudo bash setup.sh
+```
+
+It installs Python, fetches the code, creates an account for Drishti to run
+under, generates a session secret, asks once for your Anthropic API key, and
+registers Drishti as a service that starts itself after a reboot or a crash.
+
+The key is typed straight into the server and stored in a file only root can
+read. It never passes through this chat, a browser, or the repository.
+
+It is safe to run again later; it updates rather than replaces, and never
+touches the database or the key you typed.
+
+When it finishes, check:
+
+```bash
+sudo systemctl status drishti
+```
+
+`active (running)` in green is what you want.
+
+---
+
+## Step 3 — The tunnel
+
+At **one.dash.cloudflare.com** (Cloudflare Zero Trust; pick any team name and
+the Free plan on first visit):
+
+1. **Networks → Tunnels → Create a tunnel → Cloudflared**. Name it `drishti`.
+2. Choose the **Debian** tab. Copy the command it shows — one long line with a
+   long token in it.
+3. Paste it into your server's SSH window.
+
+The tunnel should go **HEALTHY** within seconds.
+
+> Already installed the tunnel on your laptop? Run
+> `cloudflared service uninstall` there first, then use the same token on the
+> server. Running it in both places splits traffic between them.
+
+The token is a password for your tunnel. Do not put it in email or chat.
+
+---
+
+## Step 4 — Point the domain at it
+
+Your domain must be on Cloudflare first: at **dash.cloudflare.com**, *Add a
+site* → `rdrishti.in` → **Free** plan. It gives you two nameservers; put those
+into the nameserver setting wherever you bought the domain. Wait for Cloudflare
+to say **Active** — usually minutes for a `.in`.
+
+Then, on the tunnel's **Public Hostname** tab, **Add a public hostname**:
 
 | Field | Value |
 |---|---|
@@ -69,96 +146,161 @@ Still in the tunnel's setup page, open the **Public Hostname** tab and
 | Type | `HTTP` |
 | URL | `localhost:8000` |
 
-Save.
-
-`HTTP` is correct and is not a downgrade. That setting describes only the hop
-inside your own laptop, from Cloudflare's program to Python. The public half of
-the journey is HTTPS, which is why `SUCHAK_PUBLIC=1` marks the sign-in cookie
+`HTTP` there is correct and is not a downgrade. It describes only the hop
+inside the server, from the tunnel program to Python. The public half of the
+journey is HTTPS, which is why `SUCHAK_PUBLIC=1` marks the sign-in cookie
 HTTPS-only.
-
-Now start the application in an ordinary PowerShell window:
-
-```powershell
-cd C:\path\to\Suchak
-python run.py
-```
 
 Visit **https://rdrishti.in**. You should get the Drishti sign-in page.
 
-If you want `drishti.rdrishti.in` rather than the bare domain, put `drishti` in
-the Subdomain field instead of leaving it empty. You can add both.
+---
 
-## Step 4 — Decide who is allowed in (do not skip)
+## Step 5 — Decide who is allowed in (do not skip)
 
-Right now anyone in the world can reach your sign-in page. Drishti's own
-passwords are the only thing between them and the data. Cloudflare **Access**
-puts a second door in front, and refuses anyone whose email you have not
-listed — before they see Drishti at all. It is free for up to 50 people.
+As it stands, anyone in the world reaches your sign-in page, with Drishti's own
+passwords the only thing behind it. Cloudflare **Access** puts a second door in
+front and turns away anyone whose email you have not listed — before they see
+Drishti at all. Free for up to 50 people.
 
-1. **Zero Trust → Access → Applications → Add an application → Self-hosted**.
-2. Name: `Drishti`. Domain: `rdrishti.in` (leave subdomain empty to match
-   what you set in Step 3).
-3. **Add a policy**: name it `Team`, action **Allow**, and under *Include*
-   choose **Emails** — then type each colleague's email address, one per line.
+1. **Zero Trust → Access → Applications → Add an application → Self-hosted**
+2. Name `Drishti`, domain `rdrishti.in` (subdomain empty, matching Step 4).
+3. **Add a policy**: name `Team`, action **Allow**, and under *Include* choose
+   **Emails** — then list each colleague's address.
 4. Save.
 
-From then on, visiting `rdrishti.in` asks for an email address, sends a
-one-time code to it, and only then shows Drishti's own sign-in page. Somebody
-who guesses a Drishti password still cannot get in without an email you
-listed. Removing a colleague is deleting a line here.
+Visitors now get a one-time code emailed to them before Drishti's own sign-in
+appears. Somebody who guesses a Drishti password still cannot get in.
 
-For a tool that carries grievance data about regulated entities, this is worth
-the ten minutes.
+For a tool carrying grievance data about regulated entities, this is ten
+minutes well spent.
 
-## Step 5 — Make it survive a reboot
+---
 
-The Cloudflare half already does; the Windows service handles it. Python does
-not — closing the PowerShell window stops the site.
+## Step 6 — Your account
 
-The simple answer is to leave the window open and minimised. If you would
-rather it started on its own:
+**If you are bringing your laptop's database across** (next section), your
+existing accounts come with it and there is nothing to do here.
 
-1. Open **Task Scheduler** → **Create Task**.
-2. *General*: name `Drishti`, tick **Run whether user is logged on or not**.
-3. *Triggers* → New → **At startup**.
-4. *Actions* → New → Program: `python`, Arguments: `run.py`, Start in:
-   `C:\path\to\Suchak`.
-5. Save.
+**If you are starting fresh**, a hosted copy deliberately begins with an empty
+roster — the demo logins in the README would otherwise be three published
+passwords on the open internet. Make the first account on the server:
 
-Task Scheduler runs under a different account, so it sees the machine-wide
-environment variables `setx` writes but not anything you typed into one
-PowerShell window. If Drishti refuses to start from the task, that is almost
-always a missing `SUCHAK_SECRET` — the refusal message names what it wants.
+```bash
+cd /opt/drishti
+sudo -u drishti .venv/bin/python -m app.newuser
+```
+
+It asks for a username, your name, and a password twice, and makes a super
+admin. Everyone else is added afterwards from **Settings → People** in the
+browser.
+
+---
+
+## Bringing your existing data across
+
+Your reviews, entities and alerts live in one file, `suchak.db`. To move them:
+
+**On your laptop**, stop Drishti (Ctrl+C in its window), then make a clean copy
+and send it up:
+
+```powershell
+cd C:\path\to\Suchak
+python -c "import sqlite3; s=sqlite3.connect('suchak.db'); d=sqlite3.connect('drishti-copy.db'); s.backup(d); d.close(); s.close()"
+scp drishti-copy.db root@YOUR-SERVER-IP:/tmp/
+```
+
+**On the server**, put it in place:
+
+```bash
+sudo systemctl stop drishti
+sudo mv /tmp/drishti-copy.db /var/lib/drishti/suchak.db
+sudo chown drishti:drishti /var/lib/drishti/suchak.db
+sudo systemctl start drishti
+```
+
+Sign in with the password you already use. Your laptop copy is untouched, so
+nothing is lost if this goes wrong — you can simply try again.
+
+---
+
+## Living with it
+
+```bash
+sudo systemctl status drishti     # is it running?
+sudo journalctl -u drishti -f     # what is it saying? (Ctrl+C to stop watching)
+sudo systemctl restart drishti    # restart it
+sudo drishti-update               # fetch and run the newest version
+sudoedit /etc/drishti/drishti.env # add a key, then restart
+```
+
+**Updating replaces the ZIP ritual.** `sudo drishti-update` fetches the newest
+version, backs the database up first (a new version can bring database changes,
+which run the moment it starts), restarts, and tells you if it failed to come
+back — with the command to return to the version that worked. Confirm it landed
+by checking the build number in the page footer, exactly as you do now.
+
+**Backups.** `drishti-update` keeps the last ten copies in
+`/var/lib/drishti/backups/`. That protects you from a bad update, not from
+losing the server. For that, turn on your provider's backups (DigitalOcean:
+about $1.20/month), or pull a copy down to your laptop now and then:
+
+```powershell
+scp root@YOUR-SERVER-IP:/var/lib/drishti/backups/*.db .
+```
+
+**Adding a source key later** — YouTube, X — means editing
+`/etc/drishti/drishti.env` and restarting. The optional lines are already in
+the file, commented out with a `#`; delete the `#`, add the key, save,
+`sudo systemctl restart drishti`.
+
+**Automatic fetching.** Drishti fetches only when somebody presses Fetch. Now
+that it is always on, `SUCHAK_FETCH_MINUTES` in that file would make it sweep
+every entity on a timer instead. Think before switching it on: it bills your
+Anthropic account with nobody watching.
+
+---
+
+## What it costs
+
+| | |
+|---|---|
+| Server | about ₹530/month ($6) |
+| Server backups | about ₹110/month, optional |
+| Cloudflare tunnel and Access | free (Access is free to 50 people) |
+| Domain | already bought, roughly ₹800/year |
+| Anthropic | only what classification actually uses |
+
+---
+
+## The laptop route, if you only need a demo
+
+Everything above except the server: install `cloudflared` on Windows with the
+command from Cloudflare's **Windows** tab, point the public hostname at
+`localhost:8000`, and leave `python run.py` running. Cloudflare's half restarts
+with the laptop; Python does not, so the window must stay open. The site is up
+only while the laptop is.
+
+---
 
 ## Checking it worked
 
-- **https://rdrishti.in** shows the sign-in page, with a padlock in the
-  address bar.
-- The **build number in the page footer** matches the build you are running.
-- Signing in works, and stays signed in as you move between pages. (If it
-  signs you straight back out, the cookie is being dropped — confirm the
-  address really is `https://` and not `http://`.)
+- **https://rdrishti.in** shows the sign-in page, with a padlock in the bar.
+- The **build number in the page footer** matches the version you expect.
+- Signing in works and stays signed in as you move between pages. (If it signs
+  you straight back out, confirm the address is `https://`, not `http://`.)
+- Close your laptop entirely and load the site from your phone. That is the
+  test that this page exists for.
 - Try it **from a colleague's machine in the office**, early. Office web
-  filters, not Cloudflare, are the usual reason a link does not open.
+  filters, not Cloudflare, are the usual reason a link does not open — and you
+  want to find that out now, not during a meeting.
 
-## When the laptop is not enough
-
-Move Drishti onto a small always-on server — any ₹400–800/month Linux VPS is
-ample — the day either of these becomes true:
-
-- People start relying on it being there, rather than looking at it when you
-  show them.
-- It holds review decisions you would be sorry to lose.
-
-The database is a single file, `suchak.db`. Moving to a server is: copy the
-folder and that file across, set the same environment variables, run the same
-`python run.py`, and point the same tunnel at it. Nothing about Cloudflare or
-the domain changes.
+---
 
 ## A word about the name
 
-`rdrishti.in` is yours personally. Keep it presented as a prototype you built,
-and avoid wording that implies it is an official RBI system or an official
-publication. If Drishti is ever adopted properly, the address should be issued
-by RBI's own IT rather than carried on a domain in your name — that is a
-question of institutional record, not of technology.
+`rdrishti.in` is registered to you personally. Keep it presented as a prototype
+you built, and avoid wording that implies an official RBI system or an official
+publication. If Drishti is ever adopted properly, the address and the server
+should be issued by RBI's own IT rather than carried on a domain and a rented
+machine in your name — that is a question of institutional record, not of
+technology.

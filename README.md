@@ -93,10 +93,23 @@ behind a reverse proxy without trusting those headers on a laptop.
 The database is a single SQLite file, so a host without persistent storage
 loses it on every restart — attach a disk and point `SUCHAK_DB` at it.
 
-Once that is done, **[HOSTING.md](HOSTING.md)** walks a Windows laptop the rest
-of the way onto a real domain over a Cloudflare tunnel: no port forwarding, no
-published IP address, HTTPS issued and renewed for you, and an email-gated
-front door in front of Drishti's own sign-in.
+Because the demo roster is not seeded into a public copy, a freshly hosted
+database has nobody who can sign in and no screen to fix that from. Make the
+first account from the command line:
+
+```
+python -m app.newuser
+```
+
+It creates a super admin, refusing a password the Account screen would refuse.
+Everyone else is added from **Settings → People** afterwards.
+
+**[HOSTING.md](HOSTING.md)** takes it from there onto a real domain: a Cloudflare
+tunnel, so no port is opened and no address is published, with HTTPS issued and
+renewed for you and an email-gated front door ahead of Drishti's own sign-in.
+`deploy/server-setup.sh` does the server end in one command — service account,
+systemd unit, read-only code folder — and `drishti-update` replaces downloading
+a ZIP, taking a database backup first because a new version can migrate it.
 
 ## What it does
 
