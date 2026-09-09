@@ -104,13 +104,43 @@ async def _periodic_fetch() -> None:
             log.exception("periodic fetch cycle failed")
 
 
+# The demo roster, as published in the README of a public repository. A
+# copy on the open internet where any of these still opens the door is
+# not a copy with weak passwords -- it is a copy with no passwords.
+DEMO_LOGINS = {"admin": "admin123", "priya": "priya123", "rahul": "rahul123"}
+
+
+def _demo_passwords_that_still_work(db) -> list[str]:
+    open_doors = []
+    for username, password in DEMO_LOGINS.items():
+        row = one(db, "SELECT password_hash FROM users WHERE username = ?"
+                      " AND COALESCE(disabled, 0) = 0", (username,))
+        if row and verify_password(password, row["password_hash"]):
+            open_doors.append(username)
+    return open_doors
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     db = connect()
     try:
-        if seed_if_empty(db):
+        # The demo roster exists so a fresh install has something to show.
+        # On a public address it would be three documented passwords, so a
+        # public copy starts empty and its first account is made by hand.
+        if not PUBLIC_MODE and seed_if_empty(db):
             log.info("Seeded demo entities, users, alerts and items")
+        if PUBLIC_MODE:
+            still = _demo_passwords_that_still_work(db)
+            if still:
+                raise RuntimeError(
+                    "This copy is public, but "
+                    + ", ".join(sorted(still))
+                    + " can still be signed in to with the password printed "
+                      "in the README. Start it without SUCHAK_PUBLIC, sign "
+                      "in, change those passwords under Account, and remove "
+                      "the accounts you do not need under Settings. Then "
+                      "start it public again.")
         changed = recompute_source_tiers(db)
         if changed:
             log.info("Source trust tiers set on %d item(s)", changed)
@@ -125,11 +155,28 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# A copy reachable from the internet rather than only from one laptop.
+# Not a cosmetic flag: it refuses the conveniences that are harmless at a
+# desk and dangerous on a public address -- a throwaway session secret, a
+# demo roster, cookies that would travel unencrypted.
+PUBLIC_MODE = os.environ.get("SUCHAK_PUBLIC", "").strip().lower() in (
+    "1", "true", "yes")
+_SECRET = os.environ.get("SUCHAK_SECRET", "").strip()
+if PUBLIC_MODE and len(_SECRET) < 32:
+    raise RuntimeError(
+        "SUCHAK_PUBLIC is on, so SUCHAK_SECRET must be set to at least 32 "
+        "characters of your own. Without it the app invents a new secret "
+        "each time it starts, which signs everybody out on every restart "
+        "and cannot be shared between processes. Generate one with:\n"
+        "    python -c \"import secrets; print(secrets.token_hex(32))\"")
+
 app = FastAPI(title="Drishti", lifespan=lifespan)
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.environ.get("SUCHAK_SECRET", secrets.token_hex(32)),
+    secret_key=_SECRET or secrets.token_hex(32),
     same_site="lax",
+    # on a real address the sign-in cookie must never travel unencrypted
+    https_only=PUBLIC_MODE,
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
@@ -137,7 +184,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-09.55"
+APP_BUILD = "2026-09-09.56"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -385,7 +432,8 @@ async def login_submit(request: Request):
     password = form.get("password") or ""
     db = connect()
     try:
-        user = one(db, "SELECT * FROM users WHERE username = ?", (username,))
+        user = one(db, "SELECT * FROM users WHERE username = ?"
+                       " AND COALESCE(disabled, 0) = 0", (username,))
         if not user or not verify_password(password, user["password_hash"]):
             return render(request, "login.html", error="Invalid username or password.")
         request.session["uid"] = user["id"]
@@ -3273,6 +3321,10 @@ def settings_page(request: Request):
         require_role(user, "superadmin")
         return render(request, "settings.html",
                       user=user, groups=_settings_groups(),
+                      people=_people(db),
+                      entities=visible_entities(db, user),
+                      demo_open=_demo_passwords_that_still_work(db),
+                      public_mode=PUBLIC_MODE,
                       effective=tuning.load(db), overrides=tuning.overrides(db))
     finally:
         db.close()
@@ -3292,6 +3344,170 @@ async def settings_save(request: Request):
     finally:
         db.close()
     return RedirectResponse("/settings?msg=Settings+saved", status_code=303)
+
+
+# --- accounts ---------------------------------------------------------------
+# The prototype shipped with three documented logins and no way to change
+# or retire any of them, which is survivable on one laptop and fatal on a
+# public address. These screens are the minimum that makes it hostable:
+# change your own password, add a colleague, retire someone who has left.
+
+MIN_PASSWORD = 8
+
+
+def _password_fault(new: str, again: str) -> str | None:
+    if len(new) < MIN_PASSWORD:
+        return f"A password needs at least {MIN_PASSWORD} characters."
+    if new != again:
+        return "The two new passwords do not match."
+    if new.lower() in {p.lower() for p in DEMO_LOGINS.values()}:
+        return "That is one of the demo passwords. Choose another."
+    return None
+
+
+@app.get("/account")
+def account_page(request: Request):
+    db = connect()
+    try:
+        user = require_login(db, request)
+        return render(request, "account.html", user=user,
+                      demo_password=verify_password(
+                          DEMO_LOGINS.get(user["username"], "\0"),
+                          user["password_hash"]))
+    finally:
+        db.close()
+
+
+@app.post("/account/password")
+async def account_password(request: Request):
+    """Change your own password. The current one is required: a session
+    left open on a shared desk must not be enough to lock its owner out."""
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        current = form.get("current") or ""
+        if not verify_password(current, user["password_hash"]):
+            return render(request, "account.html", user=user,
+                          demo_password=False,
+                          error="That is not your current password.")
+        fault = _password_fault(form.get("new") or "", form.get("again") or "")
+        if fault:
+            return render(request, "account.html", user=user,
+                          demo_password=False, error=fault)
+        x(db, "UPDATE users SET password_hash = ? WHERE id = ?",
+          (hash_password(form.get("new")), user["id"]))
+    finally:
+        db.close()
+    return RedirectResponse("/account?msg=Password+changed", status_code=303)
+
+
+def _people(db) -> list:
+    return q(db, "SELECT u.*, e.name AS entity_name FROM users u"
+                 " LEFT JOIN entities e ON e.id = u.entity_id"
+                 " ORDER BY COALESCE(u.disabled, 0), u.role != 'superadmin',"
+                 "          u.display_name")
+
+
+def _live_superadmins(db) -> int:
+    return one(db, "SELECT COUNT(*) n FROM users WHERE role = 'superadmin'"
+                   " AND COALESCE(disabled, 0) = 0")["n"]
+
+
+@app.post("/people")
+async def people_add(request: Request):
+    """Add a colleague. A second super admin is deliberately allowed: one
+    administrator who forgets a password is one locked-out application."""
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        username = (form.get("username") or "").strip().lower()
+        display = (form.get("display_name") or "").strip()
+        role = form.get("role") or "member"
+        entity_id = form.get("entity_id") or ""
+        if not re.fullmatch(r"[a-z0-9_.-]{3,30}", username):
+            raise HTTPException(
+                400, "Username: 3-30 lower-case letters, digits, . _ -")
+        if not display:
+            raise HTTPException(400, "A display name is required")
+        if role not in ("member", "lead", "superadmin"):
+            raise HTTPException(400, "Unknown role")
+        fault = _password_fault(form.get("password") or "",
+                                form.get("password") or "")
+        if fault:
+            raise HTTPException(400, fault)
+        if one(db, "SELECT 1 FROM users WHERE username = ?", (username,)):
+            raise HTTPException(400, "That username is taken")
+        x(db, "INSERT INTO users (username, password_hash, display_name, role,"
+              " entity_id) VALUES (?,?,?,?,?)",
+          (username, hash_password(form.get("password")), display, role,
+           int(entity_id) if entity_id.isdigit() else None))
+    finally:
+        db.close()
+    return RedirectResponse("/settings?msg=Account+added#people", status_code=303)
+
+
+@app.post("/people/{uid}/password")
+async def people_reset(request: Request, uid: int):
+    """Set someone else's password — the way a forgotten one is recovered,
+    since the prototype has no email to send a reset link to."""
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        target = one(db, "SELECT * FROM users WHERE id = ?", (uid,))
+        if not target:
+            raise HTTPException(404, "No such account")
+        fault = _password_fault(form.get("password") or "",
+                                form.get("password") or "")
+        if fault:
+            raise HTTPException(400, fault)
+        x(db, "UPDATE users SET password_hash = ? WHERE id = ?",
+          (hash_password(form.get("password")), uid))
+    finally:
+        db.close()
+    return RedirectResponse("/settings?msg=Password+set#people", status_code=303)
+
+
+@app.post("/people/{uid}/remove")
+async def people_remove(request: Request, uid: int):
+    """Retire an account: it can no longer sign in, and the session it
+    already holds ends at the next click. Deliberately not a deletion --
+    the reviews this person recorded are supervisory record, and their
+    name belongs on their own rulings."""
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        target = one(db, "SELECT * FROM users WHERE id = ?", (uid,))
+        if not target:
+            raise HTTPException(404, "No such account")
+        if target["id"] == user["id"]:
+            raise HTTPException(400, "You cannot remove your own account")
+        if (target["role"] == "superadmin" and not target["disabled"]
+                and _live_superadmins(db) <= 1):
+            raise HTTPException(
+                400, "That is the only super admin left. Add another first, "
+                     "or nobody can administer this application.")
+        x(db, "UPDATE users SET disabled = 1 WHERE id = ?", (uid,))
+    finally:
+        db.close()
+    return RedirectResponse("/settings?msg=Account+removed#people", status_code=303)
+
+
+@app.post("/people/{uid}/restore")
+def people_restore(request: Request, uid: int):
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        x(db, "UPDATE users SET disabled = 0 WHERE id = ?", (uid,))
+    finally:
+        db.close()
+    return RedirectResponse("/settings?msg=Account+restored#people", status_code=303)
 
 
 @app.get("/fetch/status")

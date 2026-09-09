@@ -67,6 +67,32 @@ Broadcast feeds (RBI, exchanges) keep their own window: one fetch serves
 every entity, so widening them on one entity's behalf would re-scan the lot.
 X recent search is capped at 7 days by its API regardless.
 
+## Putting it on an address other people can reach
+
+The prototype ships with three documented logins and, until build .56, no
+way to change or retire any of them — survivable on one laptop, fatal on a
+public address. Before hosting:
+
+1. Start it locally as usual, sign in, and change the password of every
+   demo account under **Account** (top right).
+2. On **Settings → People**, add a second super admin, then remove the
+   accounts you do not need. Removal disables the login and ends the
+   session it holds; the person's name stays on the reviews they recorded,
+   because those are supervisory record.
+3. Set `SUCHAK_PUBLIC=1` and a `SUCHAK_SECRET` of at least 32 characters of
+   your own (`python -c "import secrets; print(secrets.token_hex(32))"`).
+
+`SUCHAK_PUBLIC=1` is not a cosmetic flag. It makes the app **refuse to
+start** without a real session secret, or while any demo password still
+opens the door — naming the accounts that do. It also stops the demo
+roster being seeded into an empty hosted database, and marks the sign-in
+cookie HTTPS-only. `run.py` reads `PORT` (hosting providers assign one)
+and trusts forwarded headers only in public mode, so links say `https`
+behind a reverse proxy without trusting those headers on a laptop.
+
+The database is a single SQLite file, so a host without persistent storage
+loses it on every restart — attach a disk and point `SUCHAK_DB` at it.
+
 ## What it does
 
 - **Ingest** — pluggable sources, one normalized item shape. Every fetch is

@@ -37,6 +37,7 @@
     <a class="mini-tile" href="#policy">Policy</a>
     <a class="mini-tile" href="#entities">Entities</a>
     {% if sees.settings %}<a class="mini-tile" href="#settings">Settings</a>{% endif %}
+    <a class="mini-tile" href="#account">Your account</a>
     <a class="mini-tile" href="#words">The words the app uses</a>
     <a class="mini-tile" href="#roles">Who can do what</a>
   </div>
@@ -464,11 +465,32 @@
     often the automatic sweep runs (off unless you switch it on), and the spend
     limits on the paid sources. A value that no longer sits at its default is marked,
     so a knob turned six weeks ago is visible rather than forgotten.</p>
+  <p>The <strong>People</strong> section below the knobs is the roster: who may
+    sign in and what they may do. You can add a colleague, set a password for
+    somebody who has forgotten theirs, and remove an account that should no
+    longer have access — which ends the session it is holding at that moment,
+    while keeping the person's name on the reviews they recorded. Those rulings
+    are supervisory record and are never rewritten. You cannot remove your own
+    account, nor the last super admin.</p>
+  <p class="panel-note">Add a second super admin before relying on this
+    application. There is no reset link: one administrator who forgets a
+    password is a locked-out system.</p>
 </section>
 {% endif %}
 
 <h2 class="mt section-head">Reference</h2>
 <p class="meta-dim small section-sub">The vocabulary, and the limits of your own sign-in.</p>
+
+<section class="panel wide" id="account">
+  <h2>Your account</h2>
+  <p class="help-lead">Reached from <strong>Account</strong> beside your name, top right.</p>
+  <p>Change your own password here. Your current one is asked for, so a session
+    left open on a shared desk cannot be used to lock you out of your own
+    account. A password needs at least eight characters.</p>
+  <p class="panel-note">Forgotten it? This prototype sends no email, so there is
+    no reset link. A super admin sets a new one for you from the Settings screen
+    — which is also why there should always be <em>two</em> super admins.</p>
+</section>
 
 <section class="panel wide" id="words">
   <h2>The words the app uses</h2>

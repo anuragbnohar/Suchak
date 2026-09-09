@@ -27,10 +27,16 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def get_user(db, request: Request):
+    """The signed-in user, or None.
+
+    A disabled account reads as signed out, so removing someone ends the
+    session they already hold rather than waiting for them to sign out.
+    """
     uid = request.session.get("uid")
     if not uid:
         return None
-    return one(db, "SELECT * FROM users WHERE id = ?", (uid,))
+    return one(db, "SELECT * FROM users WHERE id = ? AND COALESCE(disabled, 0) = 0",
+               (uid,))
 
 
 def require_login(db, request: Request):

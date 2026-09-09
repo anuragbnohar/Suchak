@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Your account · Drishti{% endblock %}
+{% block content %}
+<div class="help-page">
+<div class="page-head">
+  <div>
+    <h1>Your account</h1>
+    <p class="page-sub">{{ user.display_name }} · signed in as {{ user.username }}</p>
+  </div>
+</div>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+{% if demo_password %}
+<p class="warn-note"><strong>This account still uses the password it was
+  created with</strong>, and that password is printed in the project's public
+  README. Change it now — and before this application is put on any address
+  other people can reach.</p>
+{% endif %}
+
+<section class="panel">
+  <h2>Change your password</h2>
+  <form method="post" action="/account/password" class="stack-form">
+    <label>Current password
+      <input type="password" name="current" autocomplete="current-password" required>
+    </label>
+    <label>New password
+      <input type="password" name="new" autocomplete="new-password"
+             minlength="8" required>
+    </label>
+    <label>New password again
+      <input type="password" name="again" autocomplete="new-password"
+             minlength="8" required>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Change password</button>
+      <p class="meta-dim small">At least 8 characters. Your current password is
+        asked for so that a session left open on a shared desk cannot be used to
+        lock you out of your own account.</p>
+    </div>
+  </form>
+</section>
+
+<p class="meta-dim small view-note">Forgotten a password? A super admin can set
+  a new one for you on the Settings screen — this prototype sends no email, so
+  there is no reset link.</p>
+</div>
+{% endblock %}

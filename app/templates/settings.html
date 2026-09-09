@@ -54,7 +54,107 @@
   </div>
 </form>
 
+<h2 class="mt section-head" id="people">People</h2>
+<p class="meta-dim small section-sub">Who may sign in, and what they may do.</p>
+
+{% if demo_open %}
+<p class="warn-note"><strong>{{ demo_open | join(', ') }}</strong>
+  {{ 'still uses' if demo_open | length == 1 else 'still use' }} the demo
+  password{{ 's' if demo_open | length != 1 }} printed in the project's public
+  README. Set {{ 'a new one' if demo_open | length == 1 else 'new ones' }} below,
+  or remove the account{{ 's' if demo_open | length != 1 }} you do not need.
+  This application will refuse to start on a public address until none of them
+  is left open.</p>
+{% endif %}
+
+<div class="factors-grid">
+  <section class="panel">
+    <h2>Accounts</h2>
+    <table class="data-table">
+      <tr>
+        <th scope="col">Person</th>
+        <th scope="col">Role</th>
+        <th scope="col">Covers</th>
+        <th scope="col">New password</th>
+        <th scope="col"></th>
+      </tr>
+      {% for p in people %}
+      <tr {% if p.disabled %}class="row-quiet"{% endif %}>
+        <td><strong>{{ p.display_name }}</strong><br>
+          <span class="meta-dim small">{{ p.username }}{% if p.id == user.id %} · you{% endif %}
+          {%- if p.disabled %} · removed{% endif %}</span></td>
+        <td>{{ 'super admin' if p.role == 'superadmin' else p.role }}</td>
+        <td>{% if p.rbi_office %}{{ p.rbi_office }} office
+            {%- elif p.entity_name %}{{ p.entity_name }}
+            {%- else %}every entity{% endif %}</td>
+        <td>
+          {% if not p.disabled %}
+          <form method="post" action="/people/{{ p.id }}/password" class="inline-form">
+            <input type="password" name="password" placeholder="at least 8 characters"
+                   minlength="8" required aria-label="New password for {{ p.display_name }}">
+            <button type="submit" class="btn btn-small">Set</button>
+          </form>
+          {% else %}<span class="meta-dim">—</span>{% endif %}
+        </td>
+        <td class="row-actions">
+          {% if p.disabled %}
+          <form method="post" action="/people/{{ p.id }}/restore">
+            <button type="submit" class="btn btn-small">Restore</button>
+          </form>
+          {% elif p.id != user.id %}
+          <form method="post" action="/people/{{ p.id }}/remove">
+            <button type="submit" class="btn btn-small btn-quiet">Remove</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="meta-dim small">Removing an account stops it signing in — including
+      the session it is holding right now — but keeps the person's name on the
+      reviews they recorded. Those rulings are supervisory record and are not
+      rewritten. You cannot remove your own account, nor the last super admin.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Add an account</h2>
+    <form method="post" action="/people" class="stack-form">
+      <label>Username
+        <input name="username" placeholder="e.g. s.mehta" required
+               pattern="[a-z0-9_.\-]{3,30}">
+      </label>
+      <label>Display name
+        <input name="display_name" placeholder="e.g. Sunita Mehta" required>
+      </label>
+      <label>Password
+        <input type="password" name="password" minlength="8" required
+               placeholder="at least 8 characters">
+      </label>
+      <label>Role
+        <select name="role">
+          <option value="member">Team member — reviews items</option>
+          <option value="lead">Team lead — also fetches and adds alerts</option>
+          <option value="superadmin">Super admin — everything</option>
+        </select>
+      </label>
+      <label>Entity <span class="meta-dim small">(team members and leads)</span>
+        <select name="entity_id">
+          <option value="">Every entity</option>
+          {% for e in entities %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add account</button>
+        <p class="meta-dim small">Add a second super admin before you rely on
+          this application: one administrator who forgets a password is a
+          locked-out system, and there is no reset link to fall back on.</p>
+      </div>
+    </form>
+  </section>
+</div>
+
 <p class="meta-dim small view-note">Risk and severity definitions (the RBI
   guidance-note text the classifier follows) are edited on the
-  <a href="/policy">Policy</a> page.</p>
+  <a href="/policy">Policy</a> page. Your own password is changed on
+  <a href="/account">your account</a> screen.</p>
 {% endblock %}

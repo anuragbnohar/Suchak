@@ -53,6 +53,7 @@
     <div class="userbox">
       <span class="username">{{ user.display_name }}</span>
       <span class="role-chip role-{{ user.role }}">{% if user.rbi_office %}RD · {{ user.rbi_office }}{% else %}{{ user.role }}{% endif %}</span>
+      <a class="logout" href="/account" title="Change your password">Account</a>
       <a class="logout" href="/logout">Sign out</a>
     </div>
     {% endif %}

@@ -438,6 +438,9 @@ label.check { display: flex; margin: 0.15rem 0; }
 .data-table .factor-hits { white-space: nowrap; }
 /* the walk buttons' durable status line (running / last outcome) */
 .job-line { margin: 0.5rem 0 0; }
+/* a retired account: still listed, plainly no longer in use */
+.data-table tr.row-quiet td { color: var(--muted); }
+.data-table tr.row-quiet strong { font-weight: 500; }
 .data-table .factor-hits a + a { margin-left: 0.55rem; }
 .data-table .factor-hits span + a { margin-left: 0.55rem; }
 /* A link in a table is coloured, always: in a dense grid the only thing

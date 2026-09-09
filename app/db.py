@@ -321,6 +321,10 @@ MIGRATIONS = [
     # the attached outlets are checked against a new link too, so they
     # need the same reduced form
     ("item_sources", "url_key", "TEXT"),
+    # An account that may no longer sign in. Removal is a disabling, not a
+    # deletion: the reviews this person recorded are supervisory record,
+    # and erasing the row would take their name off their own rulings.
+    ("users", "disabled", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
