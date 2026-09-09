@@ -75,7 +75,7 @@ DEMO_ITEMS = [
      [], {"user": "rahul", "days_ago": 1.8, "relevant": 1, "severity": "high",
           "risk_areas": ["Conduct & Consumer Protection"], "actionable": 1,
           "action": "Flagged for next inspection",
-          "notes": "Matches Sales malpractice factor; recurring pattern. "
+          "notes": "Matches the Sales malpractice alert; recurring pattern. "
                    "Raised severity: forced bundling is systemic, not incidental."}),
     (1, 3.0,
      "Bharat National Bank posts steady quarterly results, deposits grow 11%",

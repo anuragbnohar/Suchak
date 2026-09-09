@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Alerts · Drishti{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Alerts</h1>
+    <p class="page-sub">Named things your team wants flagged the moment they appear.
+      Every item collected is judged against the active ones, and a match shows as a
+      red flag on the item — in the queue, on social posts, and on the item's own
+      page.</p>
+  </div>
+</div>
+
+<div class="factors-grid">
+  <section class="panel">
+    <h2>Alerts in force</h2>
+    {% if factors %}
+    <table class="data-table">
+      <tr>
+        <th scope="col">Alert</th>
+        <th scope="col">Conditions</th>
+        <th scope="col">Scope</th>
+        <th scope="col">Matches</th>
+        <th scope="col">Status</th>
+        {% if user.role in ('lead','superadmin') %}<th scope="col"></th>{% endif %}
+      </tr>
+      {% for f in factors %}
+      <tr>
+        <td><strong>⚑ {{ f.name }}</strong><br><span class="meta-dim small">by {{ f.author or '—' }}</span></td>
+        <td class="conditions">{{ f.conditions }}</td>
+        <td>{{ f.entity_name or 'All entities' }}</td>
+        {# what the alert has caught so far, each figure opening the list
+           behind it — the watch list saying whether the watch pays off #}
+        <td class="factor-hits">
+          {%- set link_e = f.entity_id or ('all' if user.role == 'superadmin' else user.entity_id) %}
+          {%- if not f.news_matches and not f.social_matches %}
+          <span class="meta-dim">none yet</span>
+          {%- else %}
+          {%- if f.news_matches and link_e %}
+          <a href="/queue?entity={{ link_e }}&amp;status=all&amp;factor={{ f.name | urlencode }}">{{ f.news_matches }} news</a>
+          {%- elif f.news_matches %}<span>{{ f.news_matches }} news</span>{% endif %}
+          {%- if f.social_matches and link_e %}
+          <a href="/social?entity={{ link_e }}&amp;factor={{ f.name | urlencode }}">{{ f.social_matches }} social</a>
+          {%- elif f.social_matches %}<span>{{ f.social_matches }} social</span>{% endif %}
+          {%- endif %}
+        </td>
+        <td>{% if f.active %}<span class="ok-chip">active</span>{% else %}<span class="meta-dim">inactive</span>{% endif %}</td>
+        {% if user.role in ('lead','superadmin') %}
+        <td class="row-actions">
+          <form method="post" action="/alerts/{{ f.id }}/toggle">
+            <button type="submit" class="btn btn-small">{{ 'Deactivate' if f.active else 'Activate' }}</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">
+      <p>No alerts defined yet.</p>
+      <p class="meta-dim">An alert is a named rule in plain language. Every new item
+        is judged against the active ones, and a match is flagged in red on the item.</p>
+    </div>
+    {% endif %}
+    {% if user.role == 'superadmin' and factors %}
+    <form method="post" action="/alerts/recheck">
+      <div class="form-actions form-actions-plain">
+        <button type="submit" class="btn">Re-check stored items against alerts</button>
+        <p class="meta-dim small">Alerts are normally judged only when an item
+          first arrives, so one added today shows nothing on older items. This
+          walks the stored news and posts in the background — one model call per
+          item — and re-flags each against the alerts active right now; where an
+          entity has no active alerts, stale flags are cleared without spending
+          a call. A notice pops up when it finishes.</p>
+      </div>
+    </form>
+    {# the durable record: the finish pop-up dismisses itself in seconds,
+       and a walk of hundreds of items can run for an hour #}
+    {% if recheck_job %}
+    <p class="small job-line {% if recheck_job.state == 'failed' %}warn-note{% else %}meta-dim{% endif %}">
+      {% if recheck_job.state == 'running' %}Running now — {{ recheck_job.note or 'starting up' }}.
+        It keeps working if you leave this page; refresh to see this line move.
+        Closing or restarting the app cuts it short — pressing the button again
+        later is safe.
+      {% elif recheck_job.state == 'done' %}Last re-check: {{ recheck_job.note }}.
+      {% else %}The last re-check failed — {{ recheck_job.note }}.{% endif %}
+    </p>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  {% if user.role in ('lead','superadmin') %}
+  <section class="panel">
+    <h2>Add an alert</h2>
+    <form method="post" action="/alerts" class="stack-form">
+      <label>Name
+        <input name="name" placeholder="e.g. Sales malpractice" required>
+      </label>
+      <label>Conditions (plain language)
+        <textarea name="conditions" rows="4" required
+          placeholder="Raise this alert if the item alleges mis-selling of insurance or investment products…"></textarea>
+      </label>
+      <label>Scope
+        <select name="scope">
+          {% if user.entity_id %}<option value="entity">My entity only</option>{% endif %}
+          {% if user.role == 'superadmin' %}<option value="global">All entities</option>{% endif %}
+        </select>
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add alert</button>
+        <p class="meta-dim small">Judged on new items as they arrive; the super
+          admin's Re-check button applies the list to items already stored.</p>
+      </div>
+    </form>
+  </section>
+  {% endif %}
+</div>
+
+<p class="meta-dim small view-note">The words the classifier judges every item
+  against — risk areas, severity, what is not analysed — live on the
+  <a href="/policy">Policy</a> screen.</p>
+{% endblock %}

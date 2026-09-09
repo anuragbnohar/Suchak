@@ -110,7 +110,7 @@ async def lifespan(app: FastAPI):
     db = connect()
     try:
         if seed_if_empty(db):
-            log.info("Seeded demo entities, users, factors and items")
+            log.info("Seeded demo entities, users, alerts and items")
         changed = recompute_source_tiers(db)
         if changed:
             log.info("Source trust tiers set on %d item(s)", changed)
@@ -137,7 +137,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-09.51"
+APP_BUILD = "2026-09-09.52"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1208,7 +1208,7 @@ def social_page(request: Request):
         if topic not in taxonomy.COMPLAINT_TOPICS:
             topic = ""
         # a landing filter from the Dashboard's factor panel and the
-        # Factors page's match counts, cleared by its own note below
+        # Alerts screen's match counts, cleared by its own note below
         factor_f = (request.query_params.get("factor") or "")[:80]
 
         if entity is None:
@@ -2049,88 +2049,115 @@ def overview(request: Request):
         db.close()
 
 
-# --- factors ----------------------------------------------------------------
+# --- alerts and classification policy ---------------------------------------
+# Two screens, one subject: what the classifier is told to look for. Alerts
+# are the named things this team wants flagged; the policy texts are the
+# standing definitions every item is judged against. They were one page
+# until the alerts outgrew it. The stored table is still `factors` -- the
+# word changed on screen, not in anyone's database.
 
-@app.get("/factors")
-def factors_page(request: Request):
+
+def _alert_rows(db, user) -> list:
+    """The alerts this reader may see, each carrying what it has caught."""
+    if user["role"] == "superadmin":
+        rows = q(db, "SELECT f.*, e.name AS entity_name, u.display_name AS author"
+                     " FROM factors f LEFT JOIN entities e ON e.id = f.entity_id"
+                     " LEFT JOIN users u ON u.id = f.created_by ORDER BY f.entity_id IS NULL DESC, f.name")
+    else:
+        rows = q(db, "SELECT f.*, e.name AS entity_name, u.display_name AS author"
+                     " FROM factors f LEFT JOIN entities e ON e.id = f.entity_id"
+                     " LEFT JOIN users u ON u.id = f.created_by"
+                     " WHERE f.entity_id IS NULL OR f.entity_id = ?"
+                     " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
+    # What each alert has actually caught, split by workstream, so the
+    # list reads as a watch list rather than a rulebook. Counts are
+    # scoped to what this viewer's links can open: the super admin sees
+    # the whole record, everyone else their own entity's slice.
+    rows = [dict(r) for r in rows]
+    scope_sql, scope_args = "", ()
+    if user["role"] != "superadmin" and user["entity_id"]:
+        scope_sql, scope_args = " AND entity_id = ?", (user["entity_id"],)
+    news_n, social_n = Counter(), Counter()
+    # gated_out is the only cut, so each count equals what its link
+    # opens: the queue's "All" tab for news, the social tab's default
+    # view for posts
+    for it in q(db, "SELECT entity_id, source_type, factor_matches,"
+                    "       set_aside,"
+                    "       COALESCE(review_complaint_topics,"
+                    "                complaint_topics, '[]') AS topics_shown"
+                    " FROM items WHERE gated_out = 0"
+                    f"   AND factor_matches != '[]'{scope_sql}", scope_args):
+        try:
+            names = json.loads(it["factor_matches"] or "[]")
+        except (TypeError, ValueError):
+            continue
+        if it["source_type"] == "social":
+            # count what the Social media tab's default view lists: a
+            # grievance, not set aside -- so the linked count matches
+            # the screen it opens
+            if it["set_aside"] or it["topics_shown"] == "[]":
+                continue
+            tally = social_n
+        else:
+            tally = news_n
+        for n in names:
+            tally[(it["entity_id"], n)] += 1
+    for f in rows:
+        if f["entity_id"]:
+            f["news_matches"] = news_n.get((f["entity_id"], f["name"]), 0)
+            f["social_matches"] = social_n.get((f["entity_id"], f["name"]), 0)
+        else:
+            f["news_matches"] = sum(v for (_, n), v in news_n.items()
+                                    if n == f["name"])
+            f["social_matches"] = sum(v for (_, n), v in social_n.items()
+                                      if n == f["name"])
+    return rows
+
+
+@app.get("/alerts")
+def alerts_page(request: Request):
     db = connect()
     try:
         user = require_login(db, request)
-        if user["role"] == "superadmin":
-            rows = q(db, "SELECT f.*, e.name AS entity_name, u.display_name AS author"
-                         " FROM factors f LEFT JOIN entities e ON e.id = f.entity_id"
-                         " LEFT JOIN users u ON u.id = f.created_by ORDER BY f.entity_id IS NULL DESC, f.name")
-        else:
-            rows = q(db, "SELECT f.*, e.name AS entity_name, u.display_name AS author"
-                         " FROM factors f LEFT JOIN entities e ON e.id = f.entity_id"
-                         " LEFT JOIN users u ON u.id = f.created_by"
-                         " WHERE f.entity_id IS NULL OR f.entity_id = ?"
-                         " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
-        # What each factor has actually caught, split by workstream, so the
-        # list reads as a watch list rather than a rulebook. Counts are
-        # scoped to what this viewer's links can open: the super admin sees
-        # the whole record, everyone else their own entity's slice.
-        rows = [dict(r) for r in rows]
-        scope_sql, scope_args = "", ()
-        if user["role"] != "superadmin" and user["entity_id"]:
-            scope_sql, scope_args = " AND entity_id = ?", (user["entity_id"],)
-        news_n, social_n = Counter(), Counter()
-        # gated_out is the only cut, so each count equals what its link
-        # opens: the queue's "All" tab for news, the social tab's default
-        # view for posts
-        for it in q(db, "SELECT entity_id, source_type, factor_matches,"
-                        "       set_aside,"
-                        "       COALESCE(review_complaint_topics,"
-                        "                complaint_topics, '[]') AS topics_shown"
-                        " FROM items WHERE gated_out = 0"
-                        f"   AND factor_matches != '[]'{scope_sql}", scope_args):
-            try:
-                names = json.loads(it["factor_matches"] or "[]")
-            except (TypeError, ValueError):
-                continue
-            if it["source_type"] == "social":
-                # count what the Social media tab's default view lists: a
-                # grievance, not set aside — so the linked count matches
-                # the screen it opens
-                if it["set_aside"] or it["topics_shown"] == "[]":
-                    continue
-                tally = social_n
-            else:
-                tally = news_n
-            for n in names:
-                tally[(it["entity_id"], n)] += 1
-        for f in rows:
-            if f["entity_id"]:
-                f["news_matches"] = news_n.get((f["entity_id"], f["name"]), 0)
-                f["social_matches"] = social_n.get((f["entity_id"], f["name"]), 0)
-            else:
-                f["news_matches"] = sum(v for (_, n), v in news_n.items()
-                                        if n == f["name"])
-                f["social_matches"] = sum(v for (_, n), v in social_n.items()
-                                          if n == f["name"])
-        severity_defs = get_setting(db, SEVERITY_DEFS_KEY, DEFAULT_SEVERITY_DEFS)
-        grievance_severity = get_setting(db, GRIEVANCE_SEVERITY_KEY,
-                                         DEFAULT_GRIEVANCE_SEVERITY)
-        risk_defs = get_setting(db, RISK_DEFS_KEY, DEFAULT_RISK_DEFS)
-        exclusion_rules = get_setting(db, EXCLUSION_RULES_KEY, DEFAULT_EXCLUSION_RULES)
-        trusted_sources = get_setting(db, TRUSTED_SOURCES_KEY, DEFAULT_TRUSTED_SOURCES)
-        return render(request, "factors.html", user=user, factors=rows,
-                      severity_defs=severity_defs,
-                      grievance_severity=grievance_severity,
-                      risk_defs=risk_defs,
-                      exclusion_rules=exclusion_rules,
-                      trusted_sources=trusted_sources,
-                      # the durable record of each walk: a 20-second pop-up
+        return render(request, "alerts.html", user=user,
+                      factors=_alert_rows(db, user),
+                      # the durable record of a walk: a 20-second pop-up
                       # is easy to miss at the end of an hour-long run, so
                       # the page itself says where the last one stands
-                      recheck_job=_latest_job("Checking items against factors"),
+                      recheck_job=_latest_job(RECHECK_LABEL))
+    finally:
+        db.close()
+
+
+@app.get("/policy")
+def policy_page(request: Request):
+    db = connect()
+    try:
+        user = require_login(db, request)
+        return render(request, "policy.html", user=user,
+                      severity_defs=get_setting(db, SEVERITY_DEFS_KEY,
+                                                DEFAULT_SEVERITY_DEFS),
+                      grievance_severity=get_setting(db, GRIEVANCE_SEVERITY_KEY,
+                                                     DEFAULT_GRIEVANCE_SEVERITY),
+                      risk_defs=get_setting(db, RISK_DEFS_KEY, DEFAULT_RISK_DEFS),
+                      exclusion_rules=get_setting(db, EXCLUSION_RULES_KEY,
+                                                  DEFAULT_EXCLUSION_RULES),
+                      trusted_sources=get_setting(db, TRUSTED_SOURCES_KEY,
+                                                  DEFAULT_TRUSTED_SOURCES),
                       rescore_job=_latest_job("Re-scoring complaints"))
     finally:
         db.close()
 
 
-@app.post("/factors")
-async def factors_add(request: Request):
+@app.get("/factors")
+def factors_moved(request: Request):
+    """Where this screen used to live. A bookmark from before the split
+    lands on the policy texts, which link on to the alerts."""
+    return RedirectResponse("/policy", status_code=302)
+
+
+@app.post("/alerts")
+async def alerts_add(request: Request):
     form = await request.form()
     db = connect()
     try:
@@ -2140,16 +2167,16 @@ async def factors_add(request: Request):
         conditions = (form.get("conditions") or "").strip()
         scope = form.get("scope", "entity")
         if not name or not conditions:
-            raise HTTPException(400, "Factor name and conditions are required")
+            raise HTTPException(400, "Alert name and conditions are required")
         entity_id = None if (scope == "global" and user["role"] == "superadmin") \
             else user["entity_id"]
         if entity_id is None and user["role"] != "superadmin":
-            raise HTTPException(403, "Only the super admin creates global factors")
+            raise HTTPException(403, "Only the super admin creates global alerts")
         x(db, "INSERT INTO factors (entity_id, name, conditions, created_by) VALUES (?,?,?,?)",
           (entity_id, name, conditions, user["id"]))
     finally:
         db.close()
-    return RedirectResponse("/factors?msg=Factor+added", status_code=303)
+    return RedirectResponse("/alerts?msg=Alert+added", status_code=303)
 
 
 @app.post("/settings/risk")
@@ -2166,7 +2193,7 @@ async def settings_risk(request: Request):
     finally:
         db.close()
     return RedirectResponse(
-        "/factors?msg=Risk+definitions+updated+—+applies+to+new+classifications",
+        "/policy?msg=Risk+definitions+updated+—+applies+to+new+classifications",
         status_code=303)
 
 
@@ -2184,7 +2211,7 @@ async def settings_severity(request: Request):
     finally:
         db.close()
     return RedirectResponse(
-        "/factors?msg=Severity+criteria+updated+—+applies+to+new+classifications",
+        "/policy?msg=Severity+criteria+updated+—+applies+to+new+classifications",
         status_code=303)
 
 
@@ -2206,13 +2233,16 @@ async def settings_grievance_severity(request: Request):
     finally:
         db.close()
     return RedirectResponse(
-        "/factors?msg=Grievance+severity+scale+updated+—+applies+to+new+"
+        "/policy?msg=Grievance+severity+scale+updated+—+applies+to+new+"
         "classifications.+Use+Re-score+to+apply+it+to+stored+complaints",
         status_code=303)
 
 
+RECHECK_LABEL = "Checking items against alerts"
+
+
 def _job_progress(job: dict):
-    """The running note a long walk keeps up to date, so the Factors page
+    """The running note a long walk keeps up to date, so its own screen
     can say where it stands instead of leaving a silent hour."""
     def step(i: int, total: int) -> None:
         job["note"] = f"on item {i} of {total}"
@@ -2259,8 +2289,8 @@ def _rescore_job(job_id: str) -> None:
         db.close()
 
 
-@app.post("/factors/rescore")
-async def factors_rescore(request: Request):
+@app.post("/policy/rescore")
+async def policy_rescore(request: Request):
     """Walk the stored complaints and re-score each against the grievance
     severity scale now in force. One model call per complaint, so it runs
     in the background like a fetch and reports through the same toast.
@@ -2276,7 +2306,7 @@ async def factors_rescore(request: Request):
     # quietly working would double the model spend for the same answer
     if _running("Re-scoring complaints"):
         return RedirectResponse(
-            "/factors?msg=A+re-score+is+already+running+—+its+progress+"
+            "/policy?msg=A+re-score+is+already+running+—+its+progress+"
             "shows+under+the+button", status_code=303)
     job_id = secrets.token_hex(8)
     while len(FETCH_JOBS) >= FETCH_JOBS_MAX:
@@ -2285,7 +2315,7 @@ async def factors_rescore(request: Request):
                           "label": "Re-scoring complaints", "note": ""}
     _spawn(asyncio.to_thread(_rescore_job, job_id))
     return RedirectResponse(
-        "/factors?msg=Re-scoring+started+—+progress+shows+under+the+button,"
+        "/policy?msg=Re-scoring+started+—+progress+shows+under+the+button,"
         f"+and+a+notice+pops+up+when+it+finishes&job={job_id}",
         status_code=303)
 
@@ -2302,7 +2332,7 @@ def _recheck_job(job_id: str) -> None:
                        note=f"none of the {result['failed']} items could be "
                             "checked — is the Anthropic API key set?")
             return
-        bits = [f"{result['checked']} item(s) checked against the factors",
+        bits = [f"{result['checked']} item(s) checked against the alerts",
                 f"{result['changed']} changed flags"]
         if result["failed"]:
             bits.append(f"{result['failed']} could not be checked")
@@ -2311,16 +2341,16 @@ def _recheck_job(job_id: str) -> None:
                         "run again for the rest)")
         job.update(state="done", note=", ".join(bits))
     except Exception as exc:
-        log.exception("Factor re-check job %s failed", job_id)
+        log.exception("Alert re-check job %s failed", job_id)
         job.update(state="failed", note=f"{type(exc).__name__}: {exc}")
     finally:
         db.close()
 
 
-@app.post("/factors/recheck")
-async def factors_recheck(request: Request):
-    """Walk the stored items and flag each against the factors active now.
-    One model call per item (none where an entity has no active factors),
+@app.post("/alerts/recheck")
+async def alerts_recheck(request: Request):
+    """Walk the stored items and flag each against the alerts active now.
+    One model call per item (none where an entity has no active alerts),
     so it runs in the background like a fetch and reports through the same
     toast. Touches only the classifier's factor_matches column.
     """
@@ -2331,18 +2361,18 @@ async def factors_recheck(request: Request):
     finally:
         db.close()
     # one at a time, for the same reason as the re-score above
-    if _running("Checking items against factors"):
+    if _running(RECHECK_LABEL):
         return RedirectResponse(
-            "/factors?msg=A+re-check+is+already+running+—+its+progress+"
+            "/alerts?msg=A+re-check+is+already+running+—+its+progress+"
             "shows+under+the+button", status_code=303)
     job_id = secrets.token_hex(8)
     while len(FETCH_JOBS) >= FETCH_JOBS_MAX:
         FETCH_JOBS.pop(next(iter(FETCH_JOBS)))
     FETCH_JOBS[job_id] = {"state": "running",
-                          "label": "Checking items against factors", "note": ""}
+                          "label": RECHECK_LABEL, "note": ""}
     _spawn(asyncio.to_thread(_recheck_job, job_id))
     return RedirectResponse(
-        "/factors?msg=Factor+re-check+started+—+progress+shows+under+the+"
+        "/alerts?msg=Alert+re-check+started+—+progress+shows+under+the+"
         f"button,+and+a+notice+pops+up+when+it+finishes&job={job_id}",
         status_code=303)
 
@@ -2362,7 +2392,7 @@ async def settings_exclusions(request: Request):
     finally:
         db.close()
     return RedirectResponse(
-        "/factors?msg=Negative+list+updated+—+applies+to+items+fetched+from+now+on",
+        "/policy?msg=Negative+list+updated+—+applies+to+items+fetched+from+now+on",
         status_code=303)
 
 
@@ -2381,25 +2411,25 @@ async def settings_trusted(request: Request):
     finally:
         db.close()
     return RedirectResponse(
-        f"/factors?msg=Trusted+sources+saved+—+{changed}+item(s)+re-tiered",
+        f"/policy?msg=Trusted+sources+saved+—+{changed}+item(s)+re-tiered",
         status_code=303)
 
 
-@app.post("/factors/{factor_id}/toggle")
-def factors_toggle(request: Request, factor_id: int):
+@app.post("/alerts/{factor_id}/toggle")
+def alerts_toggle(request: Request, factor_id: int):
     db = connect()
     try:
         user = require_login(db, request)
         require_role(user, "lead", "superadmin")
         f = one(db, "SELECT * FROM factors WHERE id = ?", (factor_id,))
         if not f:
-            raise HTTPException(404, "Factor not found")
+            raise HTTPException(404, "Alert not found")
         if user["role"] != "superadmin" and f["entity_id"] != user["entity_id"]:
-            raise HTTPException(403, "Not your team's factor")
+            raise HTTPException(403, "Not your team's alert")
         x(db, "UPDATE factors SET active = 1 - active WHERE id = ?", (factor_id,))
     finally:
         db.close()
-    return RedirectResponse("/factors?msg=Factor+updated", status_code=303)
+    return RedirectResponse("/alerts?msg=Alert+updated", status_code=303)
 
 
 # --- entities & ingestion ---------------------------------------------------
@@ -3160,7 +3190,7 @@ def _visible_screens(user) -> dict:
         "settings": boss,
         "roster": boss,                                    # add / remove entities
         "policy": boss,                                    # the four policy texts
-        "factors": user["role"] in ("lead", "superadmin"),
+        "alerts": user["role"] in ("lead", "superadmin"),
         "fetch": user["role"] in ("lead", "superadmin"),
         "insights_generate": user["role"] in ("lead", "superadmin"),
     }

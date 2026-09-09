@@ -113,7 +113,7 @@
     {%- if k == 'on' %}published {{ v }}
     {%- elif k == 'sev' %}severity {{ v }}
     {%- elif k == 'risk' %}{{ v }}
-    {%- elif k == 'factor' %}factor: {{ v }}
+    {%- elif k == 'factor' %}alert: ⚑ {{ v }}
     {%- elif k == 'org' %}linked to {{ v }}
     {%- elif k == 'src' %}trusted sources only
     {%- elif k == 'complaints' %}customer complaints

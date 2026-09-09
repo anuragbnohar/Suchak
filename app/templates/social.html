@@ -81,7 +81,7 @@
 {% if factor %}
 <div class="filter-note">
   <span>Showing:</span>
-  <span class="filter-chip">factor: ⚑ {{ factor }}</span>
+  <span class="filter-chip">alert: ⚑ {{ factor }}</span>
   <a href="/social?{% if office %}office={{ office | urlencode }}&amp;{% endif %}entity={{ entity_qs }}{{ since_qs }}">✕ clear filter</a>
 </div>
 {% endif %}
@@ -100,7 +100,7 @@
 {% if not rows %}
 <p class="empty">
   {% if collected %}{{ collected }} post{{ 's' if collected != 1 }} collected, none of them a
-  grievance{% if topic %} under this topic{% endif %}{% if src %} from {{ src }}{% endif %}{% if factor %} matching the factor “{{ factor }}”{% endif %}.
+  grievance{% if topic %} under this topic{% endif %}{% if src %} from {{ src }}{% endif %}{% if factor %} matching the alert “{{ factor }}”{% endif %}.
   {% else %}No posts collected yet. Press Fetch on the <a href="/entities">Entities</a> page.{% endif %}
 </p>
 {% else %}

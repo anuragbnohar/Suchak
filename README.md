@@ -27,7 +27,7 @@ python run.py            # http://localhost:8000
 ```
 
 On first start the app seeds a demo database (`suchak.db`) with **fictional**
-entities, users, factors, and news items, so every screen is populated
+entities, users, alerts, and news items, so every screen is populated
 immediately.
 
 ### Demo accounts
@@ -35,7 +35,7 @@ immediately.
 | Login | Role | Sees |
 |---|---|---|
 | `admin` / `admin123` | Super admin | Cross-entity overview + everything |
-| `priya` / `priya123` | Team lead | Bharat National Bank queue, dashboard, factors, fetch |
+| `priya` / `priya123` | Team lead | Bharat National Bank queue, dashboard, alerts, fetch |
 | `rahul` / `rahul123` | Team member | Bharat National Bank queue + dashboard |
 
 ### Pulling live news
@@ -163,7 +163,7 @@ X recent search is capped at 7 days by its API regardless.
   reason recorded. Set `SUCHAK_GATE_MODEL=""` to disable.
 - **Classify** — one Claude call per item returns a strict JSON verdict:
   relevance, risk areas, severity, actionability, geography, a one-line
-  summary, user-defined **Factor** matches, and organizations linked to the
+  summary, user-defined **Alert** matches, and organizations linked to the
   entity. Falls back to a keyword classifier if the API is unavailable, and
   every verdict records which classifier/model produced it.
 - **Review** — a ranked queue (severity × actionability × relevance) where
@@ -217,28 +217,28 @@ X recent search is capped at 7 days by its API regardless.
 - **Learn** — reviewed items become retrieval-based few-shot examples for
   future classification, and power "suggested action" on similar new items.
   No fine-tuning needed.
-- **Factors** — team leads define named plain-language rules ("Sales
-  malpractice: flag if…") that the classifier evaluates on every item.
-  A match shows as a solid red, white-text ⚑ chip on queue rows, social
-  cards, and the item
-  page; the Dashboard's factor panel counts news and social matches side
-  by side, and the Factors page's **Matches** column makes the factor
-  list a watch list — each count opens the filtered Queue or Social view
-  behind it (the social view gained a `factor=` filter for this).
-  Factors are judged when an item is first classified, so **Re-check
-  stored items against factors** (super admin, Factors page) walks the
+- **Alerts** (the `factors` table; renamed on screen in build .52) — team
+  leads define named plain-language rules ("Sales malpractice: raise if…")
+  that the classifier judges every item against. A match shows as a solid
+  red, white-text ⚑ chip on queue rows, social cards, and the item page;
+  the Dashboard's alert panel counts news and social matches side by side,
+  and the **Alerts** screen's *Matches* column makes the list a watch list
+  — each count opens the filtered Queue or Social view behind it (the
+  social view gained a `factor=` filter for this).
+  Alerts are judged when an item is first classified, so **Re-check
+  stored items against alerts** (super admin, Alerts screen) walks the
   live stored items in the background and re-flags each against the
-  factors active now — one model call per item (the `SUCHAK_RESCORE_MAX`
-  cap applies), no call where an entity has no active factors (stale
+  alerts active now — one model call per item (the `SUCHAK_RESCORE_MAX`
+  cap applies), no call where an entity has no active alerts (stale
   flags are simply cleared), skipping unclassified, dismissed, filtered
-  and rejected rows. Both walk buttons (Re-check and Re-score) refuse a
-  second run while one is going, report live progress ("on item 137 of
-  412"), and the Factors page renders the running / last-outcome line
-  server-side — a long walk's 20-second completion toast is not the only
-  record of what happened.
+  and rejected rows. Both walk buttons (Re-check on Alerts, Re-score on
+  Policy) refuse a second run while one is going, report live progress
+  ("on item 137 of 412"), and their screen renders the running /
+  last-outcome line server-side — a long walk's 20-second completion
+  toast is not the only record of what happened.
 - **Tunable severity criteria** — the high/medium/low definitions the
   classifier applies are plain-language text edited by the super admin on
-  the Factors page (stored in the DB, applied to new classifications). The
+  the Policy page (stored in the DB, applied to new classifications). The
   no-API-key keyword fallback keeps its own fixed trigger words.
   **Two scales, and the item decides which applies**: the institutional one
   above is written for events at the entity (a default, a run, a breach),
@@ -249,14 +249,14 @@ X recent search is capped at 7 days by its API regardless.
   unauthorized transactions medium; charges / documentation delays / credit
   bureau low). An item carrying complaint topics is scored by the grievance
   scale; everything else by the institutional one. **Re-score stored
-  complaints** on the Factors page walks the complaints already collected
+  complaints** on the Policy page walks the complaints already collected
   and re-scores each against the scale now in force — one model call per
   complaint (`SUCHAK_RESCORE_MAX` caps a run, default 1000), touching only
   the classifier's severity column: a reviewer's correction is never
   overwritten and keeps winning everywhere.
 - **Negative list** — plain-language descriptions of item types the team
   does *not* analyse (default: stock recommendations and share-price
-  commentary), edited by the super admin on the Factors page. The cheap
+  commentary), edited by the super admin on the Policy page. The cheap
   screen applies it before any expensive classification; a backstop in the
   full verdict covers gate-off mode, and the keyword fallback catches
   obvious stock-tip phrasing. Matching items are parked under the queue's
@@ -264,7 +264,7 @@ X recent search is capped at 7 days by its API regardless.
   deleted, and genuine company events are never excluded merely because
   the share price is mentioned.
 - **Source trust tiers** — every item is tiered *official* (RBI, exchanges)
-  / *trusted* (the super-admin-editable outlet list on the Factors page,
+  / *trusted* (the super-admin-editable outlet list on the Policy page,
   seeded with the major Indian financial press and wires) / *other*. Within
   the same severity, official and trusted sources rank first; trusted items
   carry a ✓ beside the outlet; the queue's source filter shows trusted
@@ -325,7 +325,7 @@ X recent search is capped at 7 days by its API regardless.
   This README stays the document for whoever installs and runs the thing.
 - **Dashboards** — per-entity risk-area breakdown, severity tiles, complaints
   tile with by-topic breakdown, an **Open actions** tile (with an overdue
-  sub-count) into the To-do page, daily volume trend, factor hits, and
+  sub-count) into the To-do page, daily volume trend, alert hits, and
   extracted organization linkages — every figure is a drill-down into the
   exact items it counts; a cross-entity overview for the super admin.
   The entity chosen on any DoS View screen follows you across its tab bar:
@@ -485,7 +485,7 @@ scratch without rebuilding the setup.
 
 Permanently deletes every entity and every collected item (including
 reviews on them) and the fetch log. Keeps user accounts (their team-entity
-link is cleared), global factors, and all settings; the database will not
+link is cleared), global alerts, and all settings; the database will not
 re-seed demo data afterwards. Typical sequence for going live:
 
 ```bash
@@ -685,6 +685,6 @@ Shared filter controls live in `templates/_filters.html`.
 An item's page follows the record-and-inspector pattern: the left column is
 the record — the story, its sources, its linkages and the trail of reviews
 on it — and the right rail is the work, showing what past rulings say and
-then the form that records the decision. Settings and Factors share a
+then the form that records the decision. Settings and Policy share a
 third pattern: a rule's name and explanation on the left at a readable
 measure, its control on the right, one row to a rule.

@@ -128,12 +128,12 @@
   </section>
 
   <section class="panel">
-    <h2>Factor matches</h2>
-    {# the one panel here that looks at social too: factors watch both
+    <h2>Alert matches</h2>
+    {# the one panel here that looks at social too: alerts watch both
        workstreams, and each count opens the list it was drawn from #}
     {% if stats.by_factor %}
     <table class="data-table">
-      <tr><th scope="col">Factor</th><th scope="col" class="num">News</th>
+      <tr><th scope="col">Alert</th><th scope="col" class="num">News</th>
           <th scope="col" class="num">Social</th></tr>
       {% for name, news_n, social_n in stats.by_factor %}
       <tr><td>⚑ {{ name }}</td>
@@ -141,9 +141,9 @@
           <td class="num">{% if social_n %}<a href="/social?entity={{ entity.id }}&factor={{ name | urlencode }}{{ since_qs }}">{{ social_n }}</a>{% else %}<span class="meta-dim">0</span>{% endif %}</td></tr>
       {% endfor %}
     </table>
-    {% else %}<p class="meta-dim">No factor matches yet.
-      Define factors on the <a href="/factors">Factors</a> page — new items are
-      checked as they arrive, and the super admin can re-check stored ones from
+    {% else %}<p class="meta-dim">No alert matches yet.
+      Define alerts on the <a href="/alerts">Alerts</a> page — new items are
+      judged as they arrive, and the super admin can re-check stored ones from
       there.</p>{% endif %}
   </section>
 

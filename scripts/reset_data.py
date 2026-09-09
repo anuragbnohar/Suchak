@@ -7,7 +7,7 @@ Deletes: every entity (demo or real), every item with its extra sources,
 reviews recorded on those items, and the fetch log. With --items-only the
 entities stay and only the collected items go.
 
-Keeps: user accounts (their team-entity link is cleared), global factors,
+Keeps: user accounts (their team-entity link is cleared), global alerts,
 and every setting (severity criteria, negative list). The database will
 NOT re-seed demo data on the next start.
 
@@ -42,16 +42,16 @@ def main() -> int:
             "extra sources": n("SELECT COUNT(*) FROM item_sources"),
             "reviews on items": n("SELECT COUNT(*) FROM items WHERE reviewed_at IS NOT NULL"),
             "review history rows": n("SELECT COUNT(*) FROM reviews"),
-            "entity-scoped factors": n("SELECT COUNT(*) FROM factors WHERE entity_id IS NOT NULL"),
+            "entity-scoped alerts": n("SELECT COUNT(*) FROM factors WHERE entity_id IS NOT NULL"),
             "fetch-log rows": n("SELECT COUNT(*) FROM fetch_log"),
         }
         if args.items_only:
             counts.pop("entities")
-            counts.pop("entity-scoped factors")
+            counts.pop("entity-scoped alerts")
         print("This will permanently delete:")
         for label, count in counts.items():
             print(f"  {label:<22} {count}")
-        kept = ["user accounts", "global factors", "settings"]
+        kept = ["user accounts", "global alerts", "settings"]
         if args.items_only:
             kept.insert(0, f"all {n('SELECT COUNT(*) FROM entities')} entities")
         print("Kept: " + ", ".join(kept) + ".")

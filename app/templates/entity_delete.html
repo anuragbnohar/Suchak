@@ -17,7 +17,7 @@
       <tr><td>Collected items</td><td class="num">{{ plan.stored_items }}</td></tr>
       <tr><td>Reviews on those items</td><td class="num">{{ plan.reviews }}</td></tr>
       <tr><td>Open follow-ups</td><td class="num">{{ plan.open_actions }}</td></tr>
-      <tr><td>Factors scoped to this entity</td><td class="num">{{ plan.factors }}</td></tr>
+      <tr><td>Alerts scoped to this entity</td><td class="num">{{ plan.factors }}</td></tr>
     </table>
     {% if plan.reviews %}
     <p class="warn-note">This includes <strong>{{ plan.reviews }}</strong> recorded
@@ -30,7 +30,7 @@
       and will need reassigning:
       {% for m in plan.members %}<strong>{{ m.display_name }}</strong> ({{ m.role }}){{ ', ' if not loop.last }}{% endfor %}.</p>
     {% endif %}
-    <p class="meta-dim small">Global factors, the severity criteria, the negative
+    <p class="meta-dim small">Global alerts, the severity criteria, the negative
       list and the trusted-source list are shared across entities and are kept.</p>
   </section>
 

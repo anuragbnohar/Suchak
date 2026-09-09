@@ -23,6 +23,8 @@
                   or (is_rd_user and path in dos_paths) %}
   {% set ov_ctx = (not rd_ctx) and path == '/overview' %}
   {% set cp_ctx = path == '/complaints' %}
+  {% set al_ctx = path == '/alerts' %}
+  {% set po_ctx = path == '/policy' %}
   {% set hp_ctx = path == '/help' %}
   {% set dos_ctx = (not rd_ctx) and (not ov_ctx) and (path == '/' or path in dos_paths
                     or path.startswith('/item/') or path.startswith('/views')) %}
@@ -41,7 +43,8 @@
       <a class="{% if rd_ctx %}nav-active{% endif %}" href="/rd">RD View</a>
       {% endif %}
       <a class="{% if cp_ctx %}nav-active{% endif %}" href="/complaints">Complaints</a>
-      <a href="/factors">Factors</a>
+      <a class="{% if al_ctx %}nav-active{% endif %}" href="/alerts">Alerts</a>
+      <a class="{% if po_ctx %}nav-active{% endif %}" href="/policy">Policy</a>
       <a href="/entities">Entities</a>
       {% if user.role == 'superadmin' %}<a href="/settings">Settings</a>{% endif %}
       <a class="nav-help {% if hp_ctx %}nav-active{% endif %}" href="/help"

@@ -33,7 +33,8 @@
     {% endif %}
     {% if sees.rd %}<a class="mini-tile" href="#rd">RD View</a>{% endif %}
     <a class="mini-tile" href="#complaints">Complaints</a>
-    <a class="mini-tile" href="#factors">Factors</a>
+    <a class="mini-tile" href="#alerts">Alerts</a>
+    <a class="mini-tile" href="#policy">Policy</a>
     <a class="mini-tile" href="#entities">Entities</a>
     {% if sees.settings %}<a class="mini-tile" href="#settings">Settings</a>{% endif %}
     <a class="mini-tile" href="#words">The words the app uses</a>
@@ -53,7 +54,7 @@
     whether it reports a customer grievance, and whether it needs an action.
     Nothing is judged against rules hard-coded by a programmer — every item is
     judged against your team's own written definitions of risk area and severity,
-    which live on the <a href="#factors">Factors</a> screen and which your team
+    which live on the <a href="#policy">Policy</a> screen and which your team
     can edit.</p>
   <p>Your rulings are the point of the system, not a formality. Every review is
     kept, and the next time something comparable arrives it is shown back to you
@@ -151,7 +152,7 @@
       to open that single day.</li>
     <li><strong>Recent high-severity items</strong> — the short list you would read
       first if you read nothing else.</li>
-    <li><strong>Factor matches</strong> — which of your named factors this entity
+    <li><strong>Alert matches</strong> — which of your named alerts this entity
       tripped, counted for news and for social posts side by side. Each figure
       opens the list of items behind it.</li>
     <li><strong>Complaints by topic</strong> — grievances for this entity, by kind.</li>
@@ -185,7 +186,7 @@
     stays open to a full review — severity, categories, notes — whatever the box
     says, and unticking never erases a review already recorded.</p>
   <p>The filters narrow the list by risk area, severity, trusted sources only,
-    a named factor, a linked organization, or complaints only. Clicking a figure on
+    a named alert, a linked organization, or complaints only. Clicking a figure on
     the Dashboard or Overview brings you here with the matching filter already set.</p>
   <p class="panel-note">Social-media grievances are not listed here. They are a
     workstream of their own with their own screen — fifty forum complaints would
@@ -209,7 +210,7 @@
       Leave all unticked if it is not a grievance; that is itself a ruling, and it
       removes the item from the Complaints screen.</li>
     <li><strong>Severity</strong> — high, medium or low, against your team's written
-      criteria on the Factors screen.</li>
+      criteria on the Policy screen.</li>
     <li><strong>Actionable?</strong> <em>Yes</em> puts it on the To-do page until
       somebody closes it. Assign an owner and, if it matters, a due date.</li>
     <li><strong>Action taken / proposed</strong> — from sought clarification through
@@ -235,7 +236,7 @@
   <ul class="help-list">
     <li><strong>The topic tabs</strong> narrow to one kind of grievance;
       <strong>the source tabs</strong> to one platform. A post that trips one of
-      your named factors carries a solid red ⚑ chip, and the Dashboard's factor
+      your named alerts carries a solid red ⚑ chip, and the Dashboard's alert
       panel counts social matches beside the news ones.</li>
     <li><strong>Set aside</strong> — posts a reviewer marked as no use for
       pattern-finding: pure venting, nothing specific named, already resolved. They
@@ -340,26 +341,40 @@
 <h2 class="mt section-head">Setting the app up</h2>
 <p class="meta-dim small section-sub">The screens that decide what is collected and how it is judged.</p>
 
-<section class="panel wide" id="factors">
-  <h2>Factors</h2>
-  <p class="help-lead">The written rules the classifier follows. Change these and the
-    next classification changes with them.</p>
+<section class="panel wide" id="alerts">
+  <h2>Alerts</h2>
+  <p class="help-lead">Named things your team wants flagged the moment they appear.</p>
+  <p>An alert is a rule in your own words — a name, and the conditions that raise it.
+    Every item collected is judged against the active ones, and a match shows as a
+    solid red ⚑ chip on the item: on queue rows, on social cards, and on the item's
+    own page. It is the one chip meant to be seen before anything else on the row.</p>
   <ul class="help-list">
-    <li><strong>Factors in force</strong> — named things to watch for, each with the
-      terms that trip it. A match is flagged with a solid red ⚑ chip on the item,
-      on queue rows and social cards — the one chip meant to be seen before
-      anything else — and the <em>Matches</em> column here counts what each
-      factor has caught — news and social separately, each figure opening the
-      list behind it.
-      {% if sees.factors %}You can add one and switch any on or off.{% else %}Team
-      leads and the super admin add and toggle them.{% endif %}
-      Factors are judged when an item first arrives, so a factor added today
-      shows nothing on older items until the super admin presses
-      <em>Re-check stored items against factors</em>, which walks everything
-      already collected — one model call per item, in the background. While a
-      walk runs, its progress shows under the button and a second press is
-      refused; the page also keeps the last run's outcome, so a missed pop-up
-      loses nothing. The complaint Re-score button behaves the same way.</li>
+    <li><strong>Alerts in force</strong> — the list, with the conditions of each, who
+      it covers, and whether it is switched on.
+      {% if sees.alerts %}You can add one and switch any on or off.{% else %}Team
+      leads and the super admin add and toggle them.{% endif %}</li>
+    <li><strong>Matches</strong> — what each alert has actually caught, news and
+      social counted separately, each figure opening the list behind it. An alert
+      reading <em>none yet</em> is either new, worded too narrowly, or genuinely
+      quiet — worth knowing either way.</li>
+    <li><strong>Re-check stored items against alerts</strong> — alerts are judged
+      when an item first arrives, so one added today shows nothing on older items
+      until the super admin presses this. It walks everything already collected,
+      one model call per item, in the background. While it runs, its progress shows
+      under the button and a second press is refused; the page keeps the last run's
+      outcome afterwards, so a missed pop-up loses nothing. The Policy screen's
+      complaint Re-score button behaves the same way.</li>
+  </ul>
+  <p class="panel-note">An alert changes nothing about how an item is judged — not
+    its severity, not its risk areas. It is a flag for your attention, and the
+    Dashboard counts what each one has caught.</p>
+</section>
+
+<section class="panel wide" id="policy">
+  <h2>Policy</h2>
+  <p class="help-lead">The written standards every item is judged against. Change
+    these and the next classification changes with them.</p>
+  <ul class="help-list">
     <li><strong>Risk area definitions</strong> — what your team means by each of the
       seven areas.</li>
     <li><strong>Severity criteria</strong> — two scales, side by side. One for
@@ -462,8 +477,10 @@
     <dt>Set aside</dt>
     <dd>A social post that is a real grievance but no use for pattern-finding.
       Readable, but kept out of Insights and Complaints.</dd>
-    <dt>Factor</dt>
-    <dd>A named thing your team wants flagged, with the terms that trip it.</dd>
+    <dt>Alert</dt>
+    <dd>A named thing your team wants flagged, with the conditions that raise it.
+      A match shows as a red ⚑ chip on the item. Called a <em>factor</em> in
+      earlier versions of this app.</dd>
     <dt>Trusted source</dt>
     <dd>An outlet on your team's own list. Its reporting ranks ahead of the rest
       within the same severity and carries a ✓.</dd>
@@ -503,7 +520,7 @@
           <th scope="row">Team lead</th>
           <td>Their own entity</td>
           <td>Everything a member can, plus run fetches, generate Insights, edit their
-            entity's aliases, add factors, and close any follow-up on their entity</td>
+            entity's aliases, add alerts, and close any follow-up on their entity</td>
         </tr>
         <tr>
           <th scope="row">Regional Director</th>

@@ -65,7 +65,7 @@ DEFAULT_EXCLUSION_RULES = (
 # Credit Risk Management (Oct 2002), Market Risk Management (Oct 2002,
 # which treats liquidity as integral to market risk management), and
 # Operational Risk Management and Operational Resilience (Apr 2024). The
-# text is editable on the Factors page, so the team can refine it against
+# text is editable on the Policy page, so the team can refine it against
 # the documents themselves; the classifier follows whatever is stored.
 RISK_DEFS_KEY = "risk_definitions"
 DEFAULT_RISK_DEFS = (
@@ -1162,7 +1162,7 @@ def recheck_factors(db, progress=None) -> dict:
                     r["summary"] or r["snippet"] or "", factors))
             except Exception as exc:
                 out["failed"] += 1
-                log.warning("Factor re-check failed for item %s (%s: %s)",
+                log.warning("Alert re-check failed for item %s (%s: %s)",
                             r["id"], type(exc).__name__, exc)
                 continue
             # only names on the list count, in the list's own order
