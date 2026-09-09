@@ -93,6 +93,11 @@ behind a reverse proxy without trusting those headers on a laptop.
 The database is a single SQLite file, so a host without persistent storage
 loses it on every restart — attach a disk and point `SUCHAK_DB` at it.
 
+Once that is done, **[HOSTING.md](HOSTING.md)** walks a Windows laptop the rest
+of the way onto a real domain over a Cloudflare tunnel: no port forwarding, no
+published IP address, HTTPS issued and renewed for you, and an email-gated
+front door in front of Drishti's own sign-in.
+
 ## What it does
 
 - **Ingest** — pluggable sources, one normalized item shape. Every fetch is
