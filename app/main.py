@@ -137,7 +137,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-09.54"
+APP_BUILD = "2026-09-09.55"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -1779,6 +1779,8 @@ def complaints(request: Request):
         by_bucket = Counter(r["place"]["bucket"] for r in place_pool)
         by_district = Counter(r["place"]["district"] for r in place_pool
                               if r["place"]["district"])
+        social_sel = [r for r in sel if r["source_type"] == "social"]
+        social_complainants, social_attributed = complainant_count(social_sel)
         social_n = sum(1 for r in src_pool if r["source_type"] == "social")
         news_n = len(src_pool) - social_n
         # A complaint whose district is known but whose state is not was
@@ -1871,8 +1873,15 @@ def complaints(request: Request):
                                      or str(e["id"]) == ent_f],
                       district_f=district_f, src_f=src_f, sev_f=sev_f,
                       total=len(sel), scope_total=len(rows),
-                      complainants=complainant_count(sel)[0],
-                      attributed=complainant_count(sel)[1],
+                      # Only social posts can name a complainant: a news
+                      # article has a publication, not an aggrieved
+                      # customer. Counting news here forced the figure to
+                      # equal the complaint total on a news-heavy record,
+                      # which read as "no duplicates" when it meant
+                      # "nothing measured".
+                      social_total=len(social_sel),
+                      complainants=social_complainants,
+                      attributed=social_attributed,
                       prev_total=prev_total,
                       by_sev=by_sev, entities_hit=len({r["entity_id"] for r in sel}),
                       topics_seen=len(topics_seen), located=located,

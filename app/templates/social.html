@@ -166,8 +166,13 @@
 
 <p class="meta-dim small view-note table-note">
   {{ collected }} post{{ 's' if collected != 1 }} collected{% if win.key %} in the period shown ({{ win.label | lower }}){% else %} in total{% endif %} ·
-  {{ total_grievances }} judged a grievance,
-  {%- if total_grievances %} from {{ complainants }} complainant{{ 's' if complainants != 1 }}
+  {# A number is only offered where one can be stood behind: with no post
+     naming its author, "from N complainants" would just be the post count
+     again, and would read as though the people had been counted. #}
+  {{ total_grievances }} judged a grievance
+  {%- if total_grievances and not attributed %} · who complained is not recorded for any of them
+    <span title="The complainant is recorded when a post arrives. Posts collected before this was added carry none, and it cannot be recovered for them by looking again at what is stored.">(posts collected before this was added carry no author)</span>
+  {%- elif total_grievances %}, from {{ complainants }} complainant{{ 's' if complainants != 1 }}
   {%- if attributed < total_grievances %} <span title="One customer posting five times is one complainant. Posts whose source names nobody count as one complainant each, so this figure can only overstate how many people are behind them — never understate.">({{ total_grievances - attributed }} post{{ 's' if (total_grievances - attributed) != 1 }} name no author, and each counts as its own)</span>{% endif %}{% endif %} ·
   {% if pending %}{{ pending }} still awaiting classification ·
   {% endif %}{{ not_grievances }} not shown here because the classifier found no complaint in them.

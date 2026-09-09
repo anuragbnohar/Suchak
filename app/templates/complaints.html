@@ -119,16 +119,30 @@
     <p class="tile-note tile-note-quiet">of {{ scope_total }} before filtering</p>
     {% endif %}
   </a>
-  {# Complaints are posts and articles; complainants are people. One
-     customer writing five times is one aggrieved customer, and the gap
-     between these two tiles is how much of the volume is repetition. #}
-  <a class="tile" href="#list" title="Distinct people behind these complaints. An item whose source names no author counts as its own complainant, so this can overstate the number of people but never understate it.">
+  {# Complaints are posts and articles; complainants are people, and the
+     gap between them is how much of the volume is one person repeating.
+     Counted over social posts alone: a news article names a publication,
+     not an aggrieved customer, so including news forced this figure to
+     equal the complaint count and made "nothing measured yet" look
+     exactly like "no duplicates". Rather than show a number it cannot
+     stand behind, the tile says so. #}
+  <a class="tile" href="{{ link(src='social') }}" title="Distinct people behind the social-media complaints. News coverage names no complainant and is left out. A post whose source names nobody counts as its own complainant, so this can overstate how many people are behind them, never understate.">
     <p class="tile-label">Complainants</p>
+    {% if not social_total %}
+    <p class="tile-value tile-value-none">—</p>
+    <p class="tile-note tile-note-quiet">no social complaints here</p>
+    {% elif not attributed %}
+    <p class="tile-value tile-value-none">—</p>
+    <p class="tile-note tile-note-quiet">not yet recorded</p>
+    {% else %}
     <p class="tile-value">{{ complainants }}</p>
-    {% if attributed < total %}
-    <p class="tile-note tile-note-quiet">{{ total - attributed }} name no author</p>
-    {% elif total and complainants < total %}
-    <p class="tile-note tile-note-quiet">{{ total - complainants }} repeat complaint{{ 's' if (total - complainants) != 1 }}</p>
+    {% if attributed < social_total %}
+    <p class="tile-note tile-note-quiet">behind {{ attributed }} of {{ social_total }} posts</p>
+    {% elif complainants < social_total %}
+    <p class="tile-note tile-note-quiet">{{ social_total - complainants }} repeat post{{ 's' if (social_total - complainants) != 1 }}</p>
+    {% else %}
+    <p class="tile-note tile-note-quiet">of {{ social_total }} social post{{ 's' if social_total != 1 }}</p>
+    {% endif %}
     {% endif %}
   </a>
   <a class="tile tile-serious {% if sev_f == 'high' %}tile-current{% endif %}" href="{{ link(sev='high') if sev_f != 'high' else link(sev=None) }}">

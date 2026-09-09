@@ -517,6 +517,8 @@ a.tile:hover .tile-value { color: var(--accent); }
   font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
 }
 .tile-note { margin: 0.15rem 0 0; font-size: 0.68rem; font-weight: 700; color: var(--serious); }
+/* a figure the app cannot stand behind yet: shown as absent, not as zero */
+.tile-value-none { color: var(--muted); }
 .tile-note-quiet { color: var(--muted); font-weight: 500; }
 .older-note { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
 .older-note:hover { color: var(--accent); }

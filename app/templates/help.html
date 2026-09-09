@@ -248,7 +248,11 @@
       both. One customer writing five times is five posts but one aggrieved
       customer, and only the second number answers "how many people". Where a
       source names nobody, that post counts as its own complainant, so the
-      figure can overstate the number of people and never understate it.</li>
+      figure can overstate the number of people and never understate it. The
+      complainant is recorded as a post arrives, so posts collected before the
+      app started doing that carry none: until some do, the screens say
+      <em>not yet recorded</em> rather than showing a number that would just be
+      the post count again.</li>
     <li><strong>The Reviewed box</strong> on each post works exactly as it does on
       the Queue: tick to mark the post looked-at, untick to send it back — it
       keeps its state across sessions, never locks the post's full review form,
@@ -318,6 +322,13 @@
     every entity you can see and both kinds of source. It opens on no individual
     complaint at all: the question is the shape.</p>
   <ul class="help-list">
+    <li><strong>Complaints and Complainants</strong> — the first counts grievances,
+      the second the people behind them, and the gap between the two is how much of
+      the volume is one customer repeating. It counts social posts only: a news
+      article names a publication, not an aggrieved customer, so including news
+      would force the two tiles to agree and hide the very thing they are there to
+      show. Until posts start arriving with a complainant recorded, the tile reads
+      <em>not yet recorded</em> rather than a number it cannot stand behind.</li>
     <li><strong>Three heat matrices</strong> — grievance type against the entity,
       against the type of entity, and against the state. All three are shaded on one
       scale, so equally dark means equally busy wherever you look. Every cell opens

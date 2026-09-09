@@ -265,6 +265,14 @@ X recent search is capped at 7 days by its API regardless.
   folded together, so the figure can only overstate how many people are
   behind a set of complaints. The gap between the two numbers is the
   measurement of how much of the volume is repetition.
+  The Complaints screen's tile counts **social posts only** — a news
+  article names a publication, not a complainant, and including news
+  forced the figure to equal the complaint count on a news-heavy record,
+  which read as "no duplicates" when it meant "nothing measured". With
+  nothing attributed the tile reads *not yet recorded* rather than a
+  number: the complainant is captured as a post arrives, so rows stored
+  before that cannot have one, and a figure equal to the post count would
+  look like a measurement instead of the absence of one.
 - **Tunable severity criteria** — the high/medium/low definitions the
   classifier applies are plain-language text edited by the super admin on
   the Policy page (stored in the DB, applied to new classifications). The
