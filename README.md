@@ -242,6 +242,29 @@ X recent search is capped at 7 days by its API regardless.
   ("on item 137 of 412"), and their screen renders the running /
   last-outcome line server-side — a long walk's 20-second completion
   toast is not the only record of what happened.
+- **Identity, so a complaint is counted once** — public sources repeat
+  themselves, and a duplicate is a false trend. Every stored item carries
+  the source's own id for the post (`items.source_uid` — a tweet id, a
+  Reddit entry id) and its link reduced to what identifies it
+  (`items.url_key` via `canonical_url()`: tracking parameters, `m.`/`www.`
+  prefixes and fragments dropped, and every form of an X status link —
+  `/someone/status/123`, `/i/web/status/123`, `twitter.com`, `?t=&s=` —
+  reduced to one). The store checks identity rather than the raw link, so
+  the same tweet can no longer arrive twice under its two valid forms (it
+  could: which link the app built depended on whether author handles had
+  been bought). A restart backfills the comparable form for rows already
+  stored, so the fix reaches history, not just new fetches.
+- **Complainants, not posts** — `items.author_key` records who complained
+  (`x:<author id>`, `reddit:u/<name>`, `ccin:<name>`), and the Social media
+  tab and Complaints screen count distinct people beside the raw volume.
+  X returns the author id, the conversation and what a post quotes at **no
+  extra charge** — it bills per post returned, not per field — so
+  `items.thread_key` and `items.quoted_key` are stored too, ready to
+  collapse threads exactly rather than by guesswork. An item whose source
+  names nobody counts as its own complainant: two unknowns are never
+  folded together, so the figure can only overstate how many people are
+  behind a set of complaints. The gap between the two numbers is the
+  measurement of how much of the volume is repetition.
 - **Tunable severity criteria** — the high/medium/low definitions the
   classifier applies are plain-language text edited by the super admin on
   the Policy page (stored in the DB, applied to new classifications). The

@@ -166,7 +166,9 @@
 
 <p class="meta-dim small view-note table-note">
   {{ collected }} post{{ 's' if collected != 1 }} collected{% if win.key %} in the period shown ({{ win.label | lower }}){% else %} in total{% endif %} ·
-  {{ total_grievances }} judged a grievance ·
+  {{ total_grievances }} judged a grievance,
+  {%- if total_grievances %} from {{ complainants }} complainant{{ 's' if complainants != 1 }}
+  {%- if attributed < total_grievances %} <span title="One customer posting five times is one complainant. Posts whose source names nobody count as one complainant each, so this figure can only overstate how many people are behind them — never understate.">({{ total_grievances - attributed }} post{{ 's' if (total_grievances - attributed) != 1 }} name no author, and each counts as its own)</span>{% endif %}{% endif %} ·
   {% if pending %}{{ pending }} still awaiting classification ·
   {% endif %}{{ not_grievances }} not shown here because the classifier found no complaint in them.
   Posts come from Reddit and consumercomplaints.in{% if x_enabled %} and from replies

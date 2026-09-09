@@ -56,6 +56,11 @@ TEXT_CLASS = "complaint-box-results__text"
 # the live page showed the site uses this rather than <time datetime=...>,
 # which is why the first version of this parser found no dates at all.
 DATE_CLASS = "author-box__date"
+# The box around the poster's name and the date. Its text is gathered
+# alongside the normal parse rather than captured: the box wraps the date
+# element, and capturing it would swallow the date -- undated complaints
+# are dropped, and this parser has lost every date once already that way.
+AUTHOR_BOX_CLASS = "author-box"
 
 LAST_DIAGNOSIS: dict = {}
 
@@ -87,6 +92,8 @@ class _Results(html.parser.HTMLParser):
         self._depth = 0
         self._buf: list[str] = []
         self._region: list[str] = []
+        self._in_author = False
+        self._author: list[str] = []
 
     @staticmethod
     def _has(attrs: dict, prefix: str) -> bool:
@@ -103,9 +110,12 @@ class _Results(html.parser.HTMLParser):
             self._cur["kind"] = labels[0].strip("()") if labels else ""
             self._cur["body"] = max(real, key=len) if real else ""
             self._cur["region"] = " ".join(self._region)[:1200]
+            # whatever the author box held besides the date
+            self._cur["author"] = " ".join("".join(self._author).split())[:80]
             self.rows.append(self._cur)
         self._cur = None
         self._region = []
+        self._in_author, self._author = False, []
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -118,10 +128,16 @@ class _Results(html.parser.HTMLParser):
                          "date": "", "date_text": ""}
             self._capture, self._depth, self._buf = "title", 1, []
             return
+        if self._cur is not None and self._has(a, AUTHOR_BOX_CLASS):
+            # entering the box: from here to the complaint body, loose text
+            # is the poster's name. The date sits inside and is captured
+            # separately below, so it never reaches this buffer.
+            self._in_author = True
         if self._cur is not None and self._has(a, DATE_CLASS):
             self._capture, self._depth, self._buf = "date", 1, []
             return
         if self._cur is not None and self._has(a, TEXT_CLASS):
+            self._in_author = False
             self._capture, self._depth, self._buf = "text", 1, []
             return
         # <time datetime="..."> is the only machine-readable date, when present.
@@ -149,6 +165,11 @@ class _Results(html.parser.HTMLParser):
     def handle_data(self, data):
         if self._capture:
             self._buf.append(data)
+        elif self._in_author and self._cur is not None:
+            self._author.append(data)
+            chunk = " ".join(data.split())
+            if chunk:
+                self._region.append(chunk)
         elif self._cur is not None:
             chunk = " ".join(data.split())
             if chunk:
@@ -305,6 +326,7 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
                     seen.add(url)
                     continue
             seen.add(url)
+            author = (row.get("author") or "").strip()
             items.append({
                 "title": row["title"],
                 "url": url,
@@ -312,6 +334,11 @@ def search(registry: Registry, entity_id: int, days: int | None = None,
                 "snippet": (row.get("body") or "")[:1500],
                 "published_at": published,
                 "source_type": "social",
+                # The site names the complainant beside the date. Where the
+                # markup does not, the post simply counts as its own
+                # complainant -- an unknown author is never guessed at, and
+                # never folded in with another unknown.
+                "author_key": f"ccin:{author.lower()}" if author else None,
             })
         if on_progress:
             on_progress(label, f"{len(items) - before} new "

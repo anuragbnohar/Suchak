@@ -4,9 +4,14 @@ Connections are opened per request/thread (SQLite connections are not
 thread-safe to share). WAL mode lets the background fetcher write while
 the web app reads.
 """
+import logging
 import os
+import re
 import sqlite3
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+log = logging.getLogger("suchak.db")
 
 DB_PATH = os.environ.get(
     "SUCHAK_DB", str(Path(__file__).resolve().parent.parent / "suchak.db")
@@ -185,6 +190,59 @@ CREATE TABLE IF NOT EXISTS fetch_log (
 """
 
 
+# Query parameters that identify a referrer, never the page. Stripping
+# them is what makes a link shared from a phone the same link as the one
+# already stored.
+_TRACKING_PARAMS = {
+    "fbclid", "gclid", "igshid", "mc_cid", "mc_eid", "ncid", "cmpid",
+    "ref_src", "ref_url", "utm_source", "utm_medium", "utm_campaign",
+    "utm_term", "utm_content", "utm_id",
+}
+_X_HOSTS = {"x.com", "twitter.com"}
+# both forms the app has built: /someone/status/123 and the
+# handle-less /i/web/status/123
+_X_STATUS = re.compile(r"^/(?:i/web|[^/]+)/status/(\d+)")
+
+
+def canonical_url(url: str) -> str:
+    """A link reduced to what identifies the thing it points at.
+
+    Two links to one post must compare equal or it is stored twice. The
+    same tweet is reachable as /someone/status/123 and /i/web/status/123 --
+    which link the app built depended on whether author handles had been
+    bought that day, so toggling that setting could store a tweet again
+    under its other name. Reducing every X status link to one form settles
+    it for stored rows too, not only for new ones.
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return raw
+    host = (parts.hostname or "").lower()
+    for prefix in ("www.", "m.", "mobile."):
+        if host.startswith(prefix):
+            host = host[len(prefix):]
+    path = parts.path or ""
+    drop = set(_TRACKING_PARAMS)
+    if host in _X_HOSTS:
+        host = "x.com"
+        # ?t=&s= ride on every "copy link" from the X app
+        drop |= {"s", "t"}
+        match = _X_STATUS.match(path)
+        if match:
+            path = f"/i/status/{match.group(1)}"
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if k.lower() not in drop and not k.lower().startswith("utm_")]
+    if len(path) > 1:
+        path = path.rstrip("/")
+    scheme = (parts.scheme or "https").lower()
+    # the fragment is dropped: it names a place inside the page, not a page
+    return urlunsplit((scheme, host, path, urlencode(kept), ""))
+
+
 def connect() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH, timeout=15)
     con.row_factory = sqlite3.Row
@@ -244,6 +302,25 @@ MIGRATIONS = [
     # of them: "every Urban Cooperative Bank". NULL alongside a NULL
     # entity_id still means every entity, so existing alerts are unchanged.
     ("factors", "entity_kind", "TEXT"),
+    # Identity, so the same complaint is recognised as the same complaint.
+    # The source's own id for the post (a tweet id, a Reddit entry id).
+    # More stable than the link: the same tweet has several valid links.
+    ("items", "source_uid", "TEXT"),
+    # The link reduced to what identifies it -- tracking parameters and
+    # mobile prefixes removed. Compared instead of `url`, which stays as
+    # fetched so the card still opens what the reader expects.
+    ("items", "url_key", "TEXT"),
+    # Who complained, as "<source>:<their id there>". Counted rather than
+    # displayed: it is what separates "47 posts" from "31 complainants",
+    # and one angry customer posting twenty times is still one customer.
+    ("items", "author_key", "TEXT"),
+    # The conversation a post belongs to, and the post it quotes, where
+    # the source says so. Stored now, used to collapse threads later.
+    ("items", "thread_key", "TEXT"),
+    ("items", "quoted_key", "TEXT"),
+    # the attached outlets are checked against a new link too, so they
+    # need the same reduced form
+    ("item_sources", "url_key", "TEXT"),
 ]
 
 
@@ -349,6 +426,27 @@ def _backfill_social_window(con: sqlite3.Connection) -> None:
         " AND (complaint_topics IS NULL OR complaint_topics IN ('', '[]'))")
 
 
+def _backfill_url_keys(con) -> None:
+    """Give every stored row the reduced form of its link.
+
+    Without this the identity check would only work for rows fetched from
+    now on, and the oldest rows -- the ones most likely to be met again
+    under a second link -- would be exactly the ones it could not
+    recognise. Runs once per row: the column is only NULL before this.
+    """
+    rows = con.execute("SELECT id, url FROM items"
+                       " WHERE url_key IS NULL AND url IS NOT NULL").fetchall()
+    if rows:
+        con.executemany("UPDATE items SET url_key = ? WHERE id = ?",
+                        [(canonical_url(r["url"]), r["id"]) for r in rows])
+        log.info("Recorded the comparable form of %d stored link(s)", len(rows))
+    src = con.execute("SELECT id, url FROM item_sources"
+                      " WHERE url_key IS NULL AND url IS NOT NULL").fetchall()
+    if src:
+        con.executemany("UPDATE item_sources SET url_key = ? WHERE id = ?",
+                        [(canonical_url(r["url"]), r["id"]) for r in src])
+
+
 def init_db() -> None:
     con = connect()
     try:
@@ -360,6 +458,7 @@ def init_db() -> None:
         _backfill_reviews(con)
         _drop_phantom_reviews(con)
         _backfill_social_window(con)
+        _backfill_url_keys(con)
         con.commit()
     finally:
         con.close()

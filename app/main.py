@@ -137,7 +137,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-09.53"
+APP_BUILD = "2026-09-09.54"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -265,6 +265,24 @@ def _present_kinds(entities) -> list[str]:
     order = {k: i for i, k in enumerate(taxonomy.ENTITY_KINDS)}
     return sorted({e["kind"] for e in entities if e["kind"]},
                   key=lambda k: (order.get(k, len(order)), k))
+
+
+def complainant_count(rows) -> tuple[int, int]:
+    """How many distinct people are behind these items, and how many of
+    those items name a person at all.
+
+    Posts are not complaints: one customer writing five times about the
+    same refund is one aggrieved customer, and counting the posts makes a
+    trend out of one person's persistence. Where a source names nobody --
+    a news article, a forum post with no byline -- the item counts as its
+    own complainant: two unknowns are never folded together merely because
+    both are unknown. So this figure can overstate the number of people
+    and never understate it, which is the safe direction for a supervisor,
+    and the second number says how much of it is actually attributed.
+    """
+    known = {r["author_key"] for r in rows if r.get("author_key")}
+    named = sum(1 for r in rows if r.get("author_key"))
+    return len(known) + (len(rows) - named), named
 
 
 def prep_item(row) -> dict:
@@ -1292,6 +1310,8 @@ def social_page(request: Request):
                       by_source=[(p, by_source.get(p, 0)) for p in
                                  taxonomy.SOCIAL_PLATFORMS + ["Other"]],
                       total_grievances=len(grievances),
+                      complainants=complainant_count(grievances)[0],
+                      attributed=complainant_count(grievances)[1],
                       pending=pending,
                       not_grievances=len(rows) - len(grievances) - pending,
                       collected=len(rows), handles=handles,
@@ -1851,6 +1871,8 @@ def complaints(request: Request):
                                      or str(e["id"]) == ent_f],
                       district_f=district_f, src_f=src_f, sev_f=sev_f,
                       total=len(sel), scope_total=len(rows),
+                      complainants=complainant_count(sel)[0],
+                      attributed=complainant_count(sel)[1],
                       prev_total=prev_total,
                       by_sev=by_sev, entities_hit=len({r["entity_id"] for r in sel}),
                       topics_seen=len(topics_seen), located=located,

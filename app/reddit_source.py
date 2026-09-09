@@ -179,6 +179,11 @@ def _to_item(entry) -> dict | None:
 
     match = _SUB_RE.search(link)
     sub = match.group(1) if match else "reddit"
+    # The feed names the poster ("/u/someone") and gives the post its own
+    # id. Both were being read past: the handle is what separates twenty
+    # posts from twenty complainants, and the id outlives a changed link.
+    author = (entry.get("author") or "").strip().lstrip("/")
+    uid = (entry.get("id") or "").strip()
     return {
         "title": title,
         "url": link,
@@ -186,6 +191,8 @@ def _to_item(entry) -> dict | None:
         "snippet": body[:1500],
         "published_at": published,
         "source_type": "social",
+        "source_uid": f"reddit:{uid}" if uid else None,
+        "author_key": f"reddit:{author.lower()}" if author else None,
     }
 
 

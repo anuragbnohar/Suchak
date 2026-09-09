@@ -119,6 +119,18 @@
     <p class="tile-note tile-note-quiet">of {{ scope_total }} before filtering</p>
     {% endif %}
   </a>
+  {# Complaints are posts and articles; complainants are people. One
+     customer writing five times is one aggrieved customer, and the gap
+     between these two tiles is how much of the volume is repetition. #}
+  <a class="tile" href="#list" title="Distinct people behind these complaints. An item whose source names no author counts as its own complainant, so this can overstate the number of people but never understate it.">
+    <p class="tile-label">Complainants</p>
+    <p class="tile-value">{{ complainants }}</p>
+    {% if attributed < total %}
+    <p class="tile-note tile-note-quiet">{{ total - attributed }} name no author</p>
+    {% elif total and complainants < total %}
+    <p class="tile-note tile-note-quiet">{{ total - complainants }} repeat complaint{{ 's' if (total - complainants) != 1 }}</p>
+    {% endif %}
+  </a>
   <a class="tile tile-serious {% if sev_f == 'high' %}tile-current{% endif %}" href="{{ link(sev='high') if sev_f != 'high' else link(sev=None) }}">
     <p class="tile-label">High severity</p>
     <p class="tile-value">{{ by_sev.get('high', 0) }}</p>

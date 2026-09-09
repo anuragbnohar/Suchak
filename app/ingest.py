@@ -39,7 +39,7 @@ import feedparser
 import httpx
 
 from .classify import classify_new_items, classify_pending  # noqa: F401
-from .db import connect, one, q, x
+from .db import canonical_url, connect, one, q, x
 from .matching import Registry, build_query, near_miss
 from .similarity import (alias_tokens, distinctive_overlap, event_similarity,
                          strong_shared,
@@ -457,7 +457,12 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
         "query": x_query(registry, entity),
         "max_results": min(tun("x_max_posts", X_MAX_POSTS), 100),
         "start_time": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "tweet.fields": "created_at,lang,author_id",
+        # author_id, the conversation and what a post quotes cost nothing:
+        # X bills for posts returned, not for the fields asked about each.
+        # They are what lets the same complainant, the same thread and an
+        # amplified complaint be recognised for what they are.
+        "tweet.fields": ("created_at,lang,author_id,conversation_id,"
+                         "referenced_tweets"),
     }
     if want_authors:
         params["expansions"] = "author_id"
@@ -490,6 +495,12 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
             continue
         author = users.get(post.get("author_id"), {})
         username = author.get("username") or ""
+        # What this post quotes or replies to, where it says so. A quote
+        # tweet whose own words carry a grievance is a real second
+        # complainant; linking it to the original is what lets one
+        # incident be counted once and its voices counted properly.
+        quoted = next((r.get("id") for r in (post.get("referenced_tweets") or [])
+                       if r.get("type") in ("quoted", "replied_to")), None)
         # A post has no headline, so the first line stands in as the title
         # and the full text becomes the snippet the classifier reads.
         title = text if len(text) <= 120 else text[:117].rstrip() + "..."
@@ -502,6 +513,15 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
             "snippet": text,
             "published_at": post.get("created_at"),
             "source_type": "social",
+            # Identity, not decoration: the post's own id settles what the
+            # link cannot -- the same tweet has more than one valid link,
+            # and which one this app built depended on a setting.
+            "source_uid": f"x:{post['id']}",
+            "author_key": (f"x:{post['author_id']}"
+                           if post.get("author_id") else None),
+            "thread_key": (f"x:{post['conversation_id']}"
+                           if post.get("conversation_id") else None),
+            "quoted_key": f"x:{quoted}" if quoted else None,
             # Targeting the bank's own grievance handle establishes
             # attribution by itself; such posts rarely spell out the bank
             # name, so the usual name check would wrongly discard them.
@@ -1049,12 +1069,24 @@ def ingest_entity(db, entity, registry: Registry | None = None,
 
         # Free disambiguation, before anything is stored or classified:
         # "State Bank of India ..." must not be filed under Bank of India.
-        # URL dedup runs before attribution so a reject stored on the last
-        # fetch is not stored again on this one.
-        if one(db, "SELECT 1 FROM items WHERE entity_id=? AND url=?", (entity["id"], link)):
+        # Identity dedup runs before attribution so a reject stored on the
+        # last fetch is not stored again on this one.
+        #
+        # Identity is the source's own id for the post where it gives one,
+        # and otherwise the link reduced to what identifies it. Comparing
+        # raw links let the same tweet in twice under its two valid forms,
+        # and let a phone's share link past as a post never seen before.
+        uid = cand.get("source_uid")
+        link_key = canonical_url(link)
+        if uid and one(db, "SELECT 1 FROM items WHERE entity_id=? AND source_uid=?",
+                       (entity["id"], uid)):
+            continue
+        if one(db, "SELECT 1 FROM items WHERE entity_id=? AND (url=? OR url_key=?)",
+               (entity["id"], link, link_key)):
             continue
         if one(db, "SELECT 1 FROM item_sources s JOIN items i ON i.id=s.item_id"
-                   " WHERE i.entity_id=? AND s.url=?", (entity["id"], link)):
+                   " WHERE i.entity_id=? AND (s.url=? OR s.url_key=?)",
+               (entity["id"], link, link_key)):
             continue
 
         if not cand.get("attribution_confident") and \
@@ -1096,14 +1128,16 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                 # unstored for volume reasons.
                 if (cand["source_type"] != "social"
                         and (not near or near[0] >= REJECT_STORE_MIN)):
-                    x(db, "INSERT INTO items (entity_id, title, url, source_name,"
+                    x(db, "INSERT INTO items (entity_id, title, url, url_key,"
+                          " source_uid, source_name,"
                           " snippet, published_at, source_type, source_tier,"
                           " status, gated_out, gate_reason, attribution,"
                           " classifier, relevance, risk_areas, severity,"
                           " actionability, summary)"
-                          " VALUES (?,?,?,?,?,?,?,?,'classified',1,?,"
+                          " VALUES (?,?,?,?,?,?,?,?,?,?,'classified',1,?,"
                           "'rejected','attribution',0,'[]','low','monitor',?)",
-                      (entity["id"], title, link, cand["source_name"],
+                      (entity["id"], title, link, canonical_url(link),
+                       cand.get("source_uid"), cand["source_name"],
                        cand["snippet"][:500], cand["published_at"],
                        cand["source_type"],
                        tier_for(cand["source_type"], cand["source_name"], link,
@@ -1168,19 +1202,23 @@ def ingest_entity(db, entity, registry: Registry | None = None,
                        and not primary["reviewed_at"]
                        and primary["status"] in ("new", "classified"))
             if promote:
-                x(db, "INSERT INTO item_sources (item_id, url, source_name,"
-                      " title, published_at, source_tier) VALUES (?,?,?,?,?,?)",
-                  (dup_id, primary["url"], primary["source_name"],
-                   primary["title"], primary["published_at"],
-                   primary["source_tier"]))
-                x(db, "UPDATE items SET title=?, url=?, source_name=?,"
-                      " source_tier=?, snippet=?, published_at=? WHERE id=?",
-                  (title, link, cand["source_name"], tier,
+                x(db, "INSERT INTO item_sources (item_id, url, url_key,"
+                      " source_name, title, published_at, source_tier)"
+                      " VALUES (?,?,?,?,?,?,?)",
+                  (dup_id, primary["url"], canonical_url(primary["url"]),
+                   primary["source_name"], primary["title"],
+                   primary["published_at"], primary["source_tier"]))
+                x(db, "UPDATE items SET title=?, url=?, url_key=?,"
+                      " source_name=?, source_tier=?, snippet=?,"
+                      " published_at=? WHERE id=?",
+                  (title, link, link_key, cand["source_name"], tier,
                    cand["snippet"][:500], published, dup_id))
             else:
-                x(db, "INSERT INTO item_sources (item_id, url, source_name,"
-                      " title, published_at, source_tier) VALUES (?,?,?,?,?,?)",
-                  (dup_id, link, cand["source_name"], title, published, tier))
+                x(db, "INSERT INTO item_sources (item_id, url, url_key,"
+                      " source_name, title, published_at, source_tier)"
+                      " VALUES (?,?,?,?,?,?,?)",
+                  (dup_id, link, link_key, cand["source_name"], title,
+                   published, tier))
             # keep this variant's wording in the pool, mapped to the same
             # primary: a third outlet's angle may resemble it more than the
             # primary's headline (transitive clustering)
@@ -1191,9 +1229,13 @@ def ingest_entity(db, entity, registry: Registry | None = None,
             new_id = x(
                 db,
                 "INSERT INTO items (entity_id, title, url, source_name, snippet,"
-                " published_at, source_type, source_tier) VALUES (?,?,?,?,?,?,?,?)",
+                " published_at, source_type, source_tier, source_uid, url_key,"
+                " author_key, thread_key, quoted_key)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (entity["id"], title, link, cand["source_name"],
-                 cand["snippet"][:500], published, cand["source_type"], tier),
+                 cand["snippet"][:500], published, cand["source_type"], tier,
+                 uid, link_key, cand.get("author_key"),
+                 cand.get("thread_key"), cand.get("quoted_key")),
             )
             recent.append({"id": new_id, "title": title,
                            "source_type": cand["source_type"]})
