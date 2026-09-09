@@ -39,17 +39,54 @@ once this is done.
 Any small Linux server will do; Drishti is not demanding. Take the smallest
 size — 1 GB of memory is ample.
 
-**DigitalOcean** is the easiest to start with. At digitalocean.com:
+**DigitalOcean** is the easiest to start with. You are buying **one Droplet**
+— their word for a small server. Nothing else on the site is needed.
 
-1. **Create → Droplet**
-2. Region: **Bangalore (BLR1)** — keeps the data in India, which is the
-   better answer if anyone ever asks where a supervisory tool lives.
-3. Image: **Ubuntu 24.04 (LTS)**
-4. Size: **Basic → Regular → $6/month** (1 GB / 1 CPU / 25 GB)
-5. Authentication: **SSH Key** if you can (below), otherwise a password.
-6. Hostname: `drishti`. Create.
+At digitalocean.com, **Create → Droplet**:
 
-You get an IP address like `164.52.x.x`. That is your server.
+| Screen | Choose |
+|---|---|
+| Region | **Bangalore (BLR1)** |
+| Image | **Ubuntu 24.04 (LTS) x64** |
+| Droplet type | **Basic** (shared CPU) |
+| CPU option | **Regular · SSD · $6/month** — 1 GB / 1 CPU / 25 GB |
+| Authentication | **SSH Key** (below) — or a password if you must |
+| Hostname | `drishti` |
+
+Then **Create Droplet**. You get an IP address like `164.52.x.x`. That is your
+server.
+
+Bangalore keeps the data in India, which is the better answer if anyone ever
+asks where a supervisory tool lives.
+
+**$6 is genuinely enough, not a corner cut.** Drishti holds about 60 MB of
+memory and does not grow as people use it — measured over a few hundred page
+loads. The 1 GB size has room to spare, and systemd restarts the app if it ever
+is killed.
+
+### Tick these while ordering
+
+- **Backups** (+$1.20/month) — worth it. This is what saves you if the server
+  itself is lost, which the update backups do not cover.
+- **Monitoring** — free. Emails you if the machine is struggling.
+
+### Decline these
+
+DigitalOcean will offer a good deal more. None of it applies here:
+
+| Offered | Why not |
+|---|---|
+| Managed Database | Drishti's database is a file on the disk. This would be ₹1,300+/month for nothing. |
+| Block storage volume | 25 GB is far more than this needs. |
+| Load Balancer, Kubernetes, App Platform | For sites across many servers. You have one. |
+| Premium / CPU-Optimized droplets | Several times the price for speed nothing here needs. |
+| Domains / DNS | You already have `rdrishti.in`, and its DNS goes to Cloudflare, not here. |
+
+**Paying from India.** New accounts usually get a free trial credit, so the
+first months may cost nothing. When it does start charging, some Indian cards
+refuse recurring international payments under the e-mandate rules — if the card
+is declined, PayPal or a different card is the usual fix. That is a bank
+setting, not a problem with the server.
 
 Alternatives, if you prefer: **AWS Lightsail** (Mumbai, $5), **Linode**
 (Mumbai), or **E2E Networks** — an Indian company with Indian data centres,
@@ -234,6 +271,25 @@ sudo drishti-rollback             # undo the last update
 sudoedit /etc/drishti/drishti.env # add a key, then restart
 ```
 
+**Adding a source key later** — YouTube, X — means editing
+`/etc/drishti/drishti.env` and restarting. The optional lines are already in
+that file, commented out with a `#`; delete the `#`, add the key, save, then
+`sudo systemctl restart drishti`.
+
+**Automatic fetching.** Drishti fetches only when somebody presses Fetch. Now
+that it is always on, `SUCHAK_FETCH_MINUTES` in that file would make it sweep
+every entity on a timer instead. Think before switching it on: it bills your
+Anthropic account with nobody watching.
+
+**Backups.** `drishti-update` keeps the last ten copies of the database in
+`/var/lib/drishti/backups/`. Those protect you from a bad update, not from
+losing the server itself — that is what the Droplet backups you ticked when
+ordering are for. You can also pull a copy down to your laptop now and then:
+
+```powershell
+scp root@YOUR-SERVER-IP:/var/lib/drishti/backups/*.db .
+```
+
 ---
 
 ## Getting new versions of the application
@@ -287,33 +343,14 @@ lands while nobody is watching is an update nobody notices has broken.
 
 It *can* be automated, if you would rather. I would not, for the reason above.
 
-**Backups.** `drishti-update` keeps the last ten copies in
-`/var/lib/drishti/backups/`. That protects you from a bad update, not from
-losing the server. For that, turn on your provider's backups (DigitalOcean:
-about $1.20/month), or pull a copy down to your laptop now and then:
-
-```powershell
-scp root@YOUR-SERVER-IP:/var/lib/drishti/backups/*.db .
-```
-
-**Adding a source key later** — YouTube, X — means editing
-`/etc/drishti/drishti.env` and restarting. The optional lines are already in
-the file, commented out with a `#`; delete the `#`, add the key, save,
-`sudo systemctl restart drishti`.
-
-**Automatic fetching.** Drishti fetches only when somebody presses Fetch. Now
-that it is always on, `SUCHAK_FETCH_MINUTES` in that file would make it sweep
-every entity on a timer instead. Think before switching it on: it bills your
-Anthropic account with nobody watching.
-
 ---
 
 ## What it costs
 
 | | |
 |---|---|
-| Server | about ₹530/month ($6) |
-| Server backups | about ₹110/month, optional |
+| Droplet (the server) | about ₹530/month ($6) |
+| Droplet backups | about ₹110/month ($1.20) — recommended |
 | Cloudflare tunnel and Access | free (Access is free to 50 people) |
 | Domain | already bought, roughly ₹800/year |
 | Anthropic | only what classification actually uses |
