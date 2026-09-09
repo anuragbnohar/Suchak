@@ -230,14 +230,62 @@ sudo systemctl status drishti     # is it running?
 sudo journalctl -u drishti -f     # what is it saying? (Ctrl+C to stop watching)
 sudo systemctl restart drishti    # restart it
 sudo drishti-update               # fetch and run the newest version
+sudo drishti-rollback             # undo the last update
 sudoedit /etc/drishti/drishti.env # add a key, then restart
 ```
 
-**Updating replaces the ZIP ritual.** `sudo drishti-update` fetches the newest
-version, backs the database up first (a new version can bring database changes,
-which run the moment it starts), restarts, and tells you if it failed to come
-back — with the command to return to the version that worked. Confirm it landed
-by checking the build number in the page footer, exactly as you do now.
+---
+
+## Getting new versions of the application
+
+This is the only part of your routine that changes. Everything up to GitHub
+stays as it is: a change is built, tested and pushed to the branch. What
+changes is how it reaches you — instead of downloading a ZIP and extracting it
+over your folder, the server fetches it itself.
+
+From PowerShell on your laptop, in one line:
+
+```powershell
+ssh root@YOUR-SERVER-IP "/usr/local/bin/drishti-update"
+```
+
+Or, if you are already signed in to the server, just `sudo drishti-update`.
+
+That is the whole thing. It:
+
+- compares what you have against what is on the branch, and stops there if
+  there is nothing new — so running it out of habit costs nothing;
+- **copies the database first**, because a new version can change the database
+  the moment it starts;
+- fetches the new version, installs anything new it needs, and restarts;
+- checks that Drishti actually came back, and if it did not, prints the exact
+  command to return to the version that was working.
+
+Confirm it landed the way you always have: **the build number in the page
+footer**. If the footer still shows the old number, your browser is showing you
+a cached page — reload with Ctrl+F5.
+
+### If a new version turns out to be wrong
+
+```powershell
+ssh root@YOUR-SERVER-IP "/usr/local/bin/drishti-rollback"
+```
+
+This puts back the version that was running before the last update, and says
+so. It is safe: every database change this application has ever made *adds* a
+column — nothing is dropped or rewritten — so an older version simply ignores
+what it does not recognise, and your reviews are untouched either way.
+
+`sudo drishti-update` brings you forward again whenever you are ready.
+
+### What does not happen by itself
+
+The server never updates on its own. A change I push sits on the branch until
+you run the command. That is deliberate: a supervisory tool should not change
+under the people using it because something was pushed, and an update that
+lands while nobody is watching is an update nobody notices has broken.
+
+It *can* be automated, if you would rather. I would not, for the reason above.
 
 **Backups.** `drishti-update` keeps the last ten copies in
 `/var/lib/drishti/backups/`. That protects you from a bad update, not from

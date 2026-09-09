@@ -137,6 +137,7 @@ WantedBy=multi-user.target
 UNIT
 
 install -m 755 "$APP_DIR/deploy/update.sh" /usr/local/bin/drishti-update
+install -m 755 "$APP_DIR/deploy/rollback.sh" /usr/local/bin/drishti-rollback
 
 systemctl daemon-reload
 systemctl enable --quiet drishti
@@ -169,6 +170,7 @@ cat <<DONE
     sudo systemctl status drishti     is it running?
     sudo journalctl -u drishti -f     what is it saying?
     sudo drishti-update               fetch the newest version
+    sudo drishti-rollback             undo the last update
     sudoedit $ENV_FILE                add a key, then restart
 
 DONE

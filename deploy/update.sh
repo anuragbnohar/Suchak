@@ -66,6 +66,9 @@ else
   echo "No database found at '${DB:-unset}' -- nothing to back up."
 fi
 
+# Recorded before the switch, so drishti-rollback knows where back is.
+echo "$was" > "$DATA_DIR/previous-version"
+
 git -C "$APP_DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
@@ -91,3 +94,4 @@ fi
 
 echo "Updated $was -> $target, and Drishti is running."
 echo "Check the build number in the page footer to confirm the browser sees it."
+echo "If this version turns out to be wrong:  sudo drishti-rollback"
