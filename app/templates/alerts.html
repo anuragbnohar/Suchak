@@ -28,7 +28,9 @@
       <tr>
         <td><strong>⚑ {{ f.name }}</strong><br><span class="meta-dim small">by {{ f.author or '—' }}</span></td>
         <td class="conditions">{{ f.conditions }}</td>
-        <td>{{ f.entity_name or 'All entities' }}</td>
+        <td>{% if f.entity_name %}{{ f.entity_name }}
+            {%- elif f.entity_kind %}<span title="Every entity of this type">Every {{ f.entity_kind }}</span>
+            {%- else %}All entities{% endif %}</td>
         {# what the alert has caught so far, each figure opening the list
            behind it — the watch list saying whether the watch pays off #}
         <td class="factor-hits">
@@ -103,13 +105,20 @@
       <label>Scope
         <select name="scope">
           {% if user.entity_id %}<option value="entity">My entity only</option>{% endif %}
-          {% if user.role == 'superadmin' %}<option value="global">All entities</option>{% endif %}
+          {% if user.role == 'superadmin' %}
+          <option value="global">All entities</option>
+          {% for k in kinds %}
+          <option value="kind:{{ k.kind }}">Every {{ k.kind }} ({{ k.n }} entit{{ 'y' if k.n == 1 else 'ies' }})</option>
+          {% endfor %}
+          {% endif %}
         </select>
       </label>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Add alert</button>
         <p class="meta-dim small">Judged on new items as they arrive; the super
-          admin's Re-check button applies the list to items already stored.</p>
+          admin's Re-check button applies the list to items already stored.
+          {% if user.role == 'superadmin' %}An alert scoped to an entity type
+          covers every entity of that type, including ones added later.{% endif %}</p>
       </div>
     </form>
   </section>

@@ -137,7 +137,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-09.52"
+APP_BUILD = "2026-09-09.53"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -2067,8 +2067,11 @@ def _alert_rows(db, user) -> list:
         rows = q(db, "SELECT f.*, e.name AS entity_name, u.display_name AS author"
                      " FROM factors f LEFT JOIN entities e ON e.id = f.entity_id"
                      " LEFT JOIN users u ON u.id = f.created_by"
-                     " WHERE f.entity_id IS NULL OR f.entity_id = ?"
-                     " ORDER BY f.entity_id IS NULL DESC, f.name", (user["entity_id"],))
+                     " WHERE (f.entity_id IS NULL AND f.entity_kind IS NULL)"
+                     "    OR f.entity_id = ?"
+                     "    OR f.entity_kind = (SELECT kind FROM entities WHERE id = ?)"
+                     " ORDER BY f.entity_id IS NULL DESC, f.name",
+                 (user["entity_id"], user["entity_id"]))
     # What each alert has actually caught, split by workstream, so the
     # list reads as a watch list rather than a rulebook. Counts are
     # scoped to what this viewer's links can open: the super admin sees
@@ -2102,15 +2105,19 @@ def _alert_rows(db, user) -> list:
             tally = news_n
         for n in names:
             tally[(it["entity_id"], n)] += 1
+    kind_of = {r["id"]: r["kind"] for r in q(db, "SELECT id, kind FROM entities")}
+
+    def counts(f, tally):
+        # each alert counts only where it actually applies, so the figure
+        # equals the list its link opens
+        return sum(v for (eid, n), v in tally.items() if n == f["name"] and (
+            eid == f["entity_id"] if f["entity_id"]
+            else kind_of.get(eid) == f["entity_kind"] if f["entity_kind"]
+            else True))
+
     for f in rows:
-        if f["entity_id"]:
-            f["news_matches"] = news_n.get((f["entity_id"], f["name"]), 0)
-            f["social_matches"] = social_n.get((f["entity_id"], f["name"]), 0)
-        else:
-            f["news_matches"] = sum(v for (_, n), v in news_n.items()
-                                    if n == f["name"])
-            f["social_matches"] = sum(v for (_, n), v in social_n.items()
-                                      if n == f["name"])
+        f["news_matches"] = counts(f, news_n)
+        f["social_matches"] = counts(f, social_n)
     return rows
 
 
@@ -2119,8 +2126,12 @@ def alerts_page(request: Request):
     db = connect()
     try:
         user = require_login(db, request)
+        # only kinds the roster actually holds: an alert aimed at a kind
+        # nobody supervises would be a rule that can never fire
+        kinds = q(db, "SELECT kind, COUNT(*) AS n FROM entities"
+                      " GROUP BY kind ORDER BY kind")
         return render(request, "alerts.html", user=user,
-                      factors=_alert_rows(db, user),
+                      factors=_alert_rows(db, user), kinds=kinds,
                       # the durable record of a walk: a 20-second pop-up
                       # is easy to miss at the end of an hour-long run, so
                       # the page itself says where the last one stands
@@ -2168,12 +2179,24 @@ async def alerts_add(request: Request):
         scope = form.get("scope", "entity")
         if not name or not conditions:
             raise HTTPException(400, "Alert name and conditions are required")
-        entity_id = None if (scope == "global" and user["role"] == "superadmin") \
-            else user["entity_id"]
-        if entity_id is None and user["role"] != "superadmin":
-            raise HTTPException(403, "Only the super admin creates global alerts")
-        x(db, "INSERT INTO factors (entity_id, name, conditions, created_by) VALUES (?,?,?,?)",
-          (entity_id, name, conditions, user["id"]))
+        # Scope, from the form: "entity" is the author's own; "global" is
+        # every entity; "kind:<name>" is every entity of that kind. The
+        # last two reach beyond the author's own team, so both are the
+        # super admin's to set -- a lead may not write a rule that fires
+        # on another team's entities.
+        entity_id, entity_kind = user["entity_id"], None
+        if scope == "global" or scope.startswith("kind:"):
+            if user["role"] != "superadmin":
+                raise HTTPException(
+                    403, "Only the super admin creates alerts beyond one entity")
+            entity_id = None
+            if scope.startswith("kind:"):
+                entity_kind = scope[5:]
+                if entity_kind not in taxonomy.ENTITY_KINDS:
+                    raise HTTPException(400, "Unknown entity type")
+        x(db, "INSERT INTO factors (entity_id, entity_kind, name, conditions,"
+              " created_by) VALUES (?,?,?,?,?)",
+          (entity_id, entity_kind, name, conditions, user["id"]))
     finally:
         db.close()
     return RedirectResponse("/alerts?msg=Alert+added", status_code=303)

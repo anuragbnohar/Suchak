@@ -219,7 +219,13 @@ X recent search is capped at 7 days by its API regardless.
   No fine-tuning needed.
 - **Alerts** (the `factors` table; renamed on screen in build .52) — team
   leads define named plain-language rules ("Sales malpractice: raise if…")
-  that the classifier judges every item against. A match shows as a solid
+  that the classifier judges every item against. Each is scoped to one
+  entity, to an **entity type** (`factors.entity_kind`, added in .53 — every
+  NBFC, every Urban Cooperative Bank, covering entities of that type added
+  later), or to every entity; the last two are the super admin's to set,
+  since they fire on other teams' entities. A kind-scoped alert is counted
+  only across the entities of that kind, so a stale flag left elsewhere
+  never inflates its figure. A match shows as a solid
   red, white-text ⚑ chip on queue rows, social cards, and the item page;
   the Dashboard's alert panel counts news and social matches side by side,
   and the **Alerts** screen's *Matches* column makes the list a watch list

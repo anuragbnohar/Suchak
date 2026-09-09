@@ -123,7 +123,10 @@ CREATE INDEX IF NOT EXISTS idx_item_sources_item ON item_sources(item_id);
 
 CREATE TABLE IF NOT EXISTS factors (
     id         INTEGER PRIMARY KEY,
-    entity_id  INTEGER REFERENCES entities(id),   -- NULL = applies to all entities
+    -- Scope, widest last: a kind applies to every entity of that kind,
+    -- and both columns NULL applies to every entity there is.
+    entity_id  INTEGER REFERENCES entities(id),
+    entity_kind TEXT,
     name       TEXT NOT NULL,
     conditions TEXT NOT NULL,
     active     INTEGER NOT NULL DEFAULT 1,
@@ -237,6 +240,10 @@ MIGRATIONS = [
     # ruling (the classifier's list shows); '[]' = ruled not a grievance.
     ("items", "review_complaint_topics", "TEXT"),
     ("reviews", "complaint_topics", "TEXT NOT NULL DEFAULT '[]'"),
+    # An alert aimed at a class of entity rather than one of them or all
+    # of them: "every Urban Cooperative Bank". NULL alongside a NULL
+    # entity_id still means every entity, so existing alerts are unchanged.
+    ("factors", "entity_kind", "TEXT"),
 ]
 
 

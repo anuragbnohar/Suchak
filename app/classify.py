@@ -325,11 +325,16 @@ def _gate(entity, title: str, source: str | None,
 
 
 def active_factors(db, entity_id: int) -> list:
+    """The alerts one entity is judged against: those aimed at it, those
+    aimed at its kind, and those aimed at everything."""
     return q(
         db,
-        "SELECT * FROM factors WHERE active = 1 AND (entity_id IS NULL OR entity_id = ?)"
+        "SELECT * FROM factors WHERE active = 1 AND ("
+        "     (entity_id IS NULL AND entity_kind IS NULL)"
+        "  OR entity_id = ?"
+        "  OR entity_kind = (SELECT kind FROM entities WHERE id = ?))"
         " ORDER BY entity_id IS NULL DESC, name",
-        (entity_id,),
+        (entity_id, entity_id),
     )
 
 
