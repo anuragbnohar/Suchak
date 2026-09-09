@@ -171,6 +171,7 @@ cat <<DONE
     sudo journalctl -u drishti -f     what is it saying?
     sudo drishti-update               fetch the newest version
     sudo drishti-rollback             undo the last update
-    sudoedit $ENV_FILE                add a key, then restart
+    sudoedit $ENV_FILE
+      -- add a key or change a setting, then restart
 
 DONE
