@@ -70,6 +70,13 @@ is killed.
   itself is lost, which the update backups do not cover.
 - **Monitoring** — free. Emails you if the machine is struggling.
 
+**IPv4 or IPv6?** Not a choice you have to make: every droplet gets a public
+IPv4 address automatically, and that is the one you will `ssh` to. IPv6 is a
+free tick-box under *Advanced Options*. Leave it **unticked** — nothing here
+uses it. The tunnel dials outward to Cloudflare, so no visitor ever connects to
+the server's address at all, and a second address reachable from the internet
+is one more thing that has to stay shut.
+
 ### Decline these
 
 DigitalOcean will offer a good deal more. None of it applies here:
