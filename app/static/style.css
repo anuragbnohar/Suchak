@@ -388,8 +388,11 @@ label.check { display: flex; margin: 0.15rem 0; }
 .area-chip { font-size: 0.74rem; background: var(--accent-soft); color: var(--accent-ink); padding: 0.05rem 0.45rem; }
 .topic-chip { font-size: 0.74rem; background: var(--warning-soft); color: #7A4712; padding: 0.05rem 0.45rem; }
 .factor-chip {
-  font-size: 0.74rem; background: var(--surface-2); color: var(--ink-2);
-  border: 1px dashed var(--line-strong); padding: 0.05rem 0.45rem;
+  /* a tripped watch factor is the one chip that must be seen before
+     anything else on the row: solid red, white text, no dressing */
+  font-size: 0.74rem; background: var(--serious); color: #fff;
+  border: 1px solid var(--serious); padding: 0.05rem 0.45rem;
+  font-weight: 600;
 }
 .ok-chip { color: var(--positive); font-weight: 700; font-size: 0.85rem; }
 .type-chip {

@@ -219,7 +219,8 @@ X recent search is capped at 7 days by its API regardless.
   No fine-tuning needed.
 - **Factors** — team leads define named plain-language rules ("Sales
   malpractice: flag if…") that the classifier evaluates on every item.
-  A match shows as a ⚑ chip on queue rows, social cards, and the item
+  A match shows as a solid red, white-text ⚑ chip on queue rows, social
+  cards, and the item
   page; the Dashboard's factor panel counts news and social matches side
   by side, and the Factors page's **Matches** column makes the factor
   list a watch list — each count opens the filtered Queue or Social view
