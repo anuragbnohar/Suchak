@@ -199,24 +199,42 @@ Visit **https://rdrishti.in**. You should get the Drishti sign-in page.
 
 ---
 
-## Step 5 — Decide who is allowed in (do not skip)
+## Step 5 — Who is allowed in
 
-As it stands, anyone in the world reaches your sign-in page, with Drishti's own
-passwords the only thing behind it. Cloudflare **Access** puts a second door in
-front and turns away anyone whose email you have not listed — before they see
-Drishti at all. Free for up to 50 people.
+Once the address answers publicly, anybody can reach the sign-in page. Drishti's
+own passwords are what stand behind it, and from build .58 a wrong guess costs
+something: eight failures on one account name from one address and that
+combination is refused for fifteen minutes, whether or not the password is
+right, and every wrong password waits a second before it answers. A person
+mistyping notices neither; a program working through a word list finds both
+ruinous. The count is per name **and** per address on purpose — otherwise
+anyone could lock a colleague out of their own account by failing on it
+deliberately. Failed attempts are summarised on **Settings**, so an attempt on
+the door is something you can see rather than something buried in a log.
+
+That is enough for a prototype behind a domain nobody advertises. **Cloudflare
+Access** is the stronger option, and worth adding if it fits: it turns people
+away by email address before Drishti is reached at all.
+
+It fits when your users number **under 50** — that is Cloudflare's free tier.
+Beyond that it is roughly **$3 per user per month**, which for a hundred
+colleagues is about ₹26,000 a month, out of all proportion to what this is. It
+also means two sign-ins for everyone: an emailed code, then Drishti's own.
+
+If it does fit:
 
 1. **Zero Trust → Access → Applications → Add an application → Self-hosted**
 2. Name `Drishti`, domain `rdrishti.in` (subdomain empty, matching Step 4).
 3. **Add a policy**: name `Team`, action **Allow**, and under *Include* choose
-   **Emails** — then list each colleague's address.
+   **Emails** — then list each colleague's address. Start with only your own,
+   to check it before anyone depends on it.
 4. Save.
 
-Visitors now get a one-time code emailed to them before Drishti's own sign-in
-appears. Somebody who guesses a Drishti password still cannot get in.
-
-For a tool carrying grievance data about regulated entities, this is ten
-minutes well spent.
+**Past fifty users, neither of these is really the answer.** A sign-in this
+application implements itself is past what it was built for at that scale; the
+right answer is authentication issued by RBI's own IT, so people use the
+credentials they already have and leaving the organisation removes their access
+without anybody remembering to do it.
 
 ---
 

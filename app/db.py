@@ -187,6 +187,18 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     merged    INTEGER DEFAULT 0,
     note      TEXT
 );
+
+-- A wrong password, remembered long enough to make the next guess cost
+-- something. On a laptop nobody could reach the sign-in, so a guess was
+-- free; on a public address that is no longer true.
+CREATE TABLE IF NOT EXISTS login_failures (
+    id       INTEGER PRIMARY KEY,
+    username TEXT NOT NULL,
+    ip       TEXT NOT NULL,
+    at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_failures
+    ON login_failures(username, ip, at);
 """
 
 

@@ -184,7 +184,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-09.57"
+APP_BUILD = "2026-09-10.58"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -420,6 +420,73 @@ def resolve_entity(db, user, requested: str | None,
 
 # --- auth -------------------------------------------------------------------
 
+# Sign-in throttling. The prototype's login counted nothing and waited for
+# nothing, which was honest enough while the only way to reach it was to be
+# sitting at the laptop. On a public address a wrong guess has to cost
+# something or there is no limit on how many can be tried.
+#
+# The counter is per name AND per address, deliberately. Per name alone
+# would let anyone on the internet lock a colleague out of their own
+# account by failing eight times on purpose; scoped this way, an attacker
+# only ever throttles themselves.
+LOGIN_WINDOW_MINUTES = 15
+LOGIN_MAX_FAILURES = 8
+# Every wrong password waits before answering. A person notices a second;
+# a program working through a word list finds it ruinous.
+LOGIN_FAILURE_PAUSE = 1.0
+
+
+def client_ip(request: Request) -> str:
+    """The visitor's address, so far as it can be known.
+
+    Behind the tunnel every request arrives from localhost, so the socket
+    address says nothing about who called. Cloudflare stamps the real one
+    on at its edge and cloudflared passes it through. On a laptop no such
+    header exists and the socket address is the honest answer.
+    """
+    stamped = (request.headers.get("cf-connecting-ip") or "").strip()
+    if stamped:
+        return stamped[:64]
+    return (request.client.host if request.client else "") or "unknown"
+
+
+def _login_failures_since(db, username: str, ip: str) -> int:
+    since = (datetime.now(timezone.utc)
+             - timedelta(minutes=LOGIN_WINDOW_MINUTES)).isoformat()
+    row = one(db, "SELECT COUNT(*) AS n FROM login_failures"
+                  " WHERE username = ? AND ip = ? AND at >= ?",
+              (username, ip, since))
+    return row["n"] if row else 0
+
+
+def _record_login_failure(db, username: str, ip: str) -> None:
+    now = datetime.now(timezone.utc)
+    x(db, "INSERT INTO login_failures (username, ip, at) VALUES (?,?,?)",
+      (username, ip, now.isoformat()))
+    # Pruned on write rather than on a timer: the table only grows when
+    # somebody is failing to sign in, so that is the moment to tidy it.
+    x(db, "DELETE FROM login_failures WHERE at < ?",
+      ((now - timedelta(days=30)).isoformat(),))
+
+
+def _clear_login_failures(db, username: str, ip: str) -> None:
+    x(db, "DELETE FROM login_failures WHERE username = ? AND ip = ?",
+      (username, ip))
+
+
+def recent_login_failures(db, hours: int = 24) -> dict:
+    """What the door has been hearing lately, for the Settings page."""
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    row = one(db, "SELECT COUNT(*) AS tries,"
+                  " COUNT(DISTINCT ip) AS places,"
+                  " COUNT(DISTINCT username) AS names"
+                  " FROM login_failures WHERE at >= ?", (since,))
+    return {"tries": row["tries"] if row else 0,
+            "places": row["places"] if row else 0,
+            "names": row["names"] if row else 0,
+            "hours": hours}
+
+
 @app.get("/login")
 def login_page(request: Request):
     return render(request, "login.html", error=None)
@@ -430,15 +497,34 @@ async def login_submit(request: Request):
     form = await request.form()
     username = (form.get("username") or "").strip().lower()
     password = form.get("password") or ""
+    ip = client_ip(request)
+    fault = None
     db = connect()
     try:
+        if _login_failures_since(db, username, ip) >= LOGIN_MAX_FAILURES:
+            # Refused before the password is even looked at. The message
+            # says the same thing whether or not the name exists, so it
+            # cannot be used to find out which accounts are real.
+            return render(request, "login.html",
+                          error="Too many failed attempts from here. Wait "
+                                f"{LOGIN_WINDOW_MINUTES} minutes and try again.")
         user = one(db, "SELECT * FROM users WHERE username = ?"
                        " AND COALESCE(disabled, 0) = 0", (username,))
         if not user or not verify_password(password, user["password_hash"]):
-            return render(request, "login.html", error="Invalid username or password.")
-        request.session["uid"] = user["id"]
+            _record_login_failure(db, username, ip)
+            fault = "Invalid username or password."
+        else:
+            _clear_login_failures(db, username, ip)
+            request.session["uid"] = user["id"]
     finally:
         db.close()
+    if fault:
+        # Waited after the connection is closed, not while holding it, and
+        # with asyncio.sleep rather than time.sleep -- the latter would
+        # stop the whole app serving for a second, which is a denial of
+        # service anyone could trigger by guessing wrongly.
+        await asyncio.sleep(LOGIN_FAILURE_PAUSE)
+        return render(request, "login.html", error=fault)
     return RedirectResponse("/", status_code=303)
 
 
@@ -3325,6 +3411,7 @@ def settings_page(request: Request):
                       entities=visible_entities(db, user),
                       demo_open=_demo_passwords_that_still_work(db),
                       public_mode=PUBLIC_MODE,
+                      login_failures=recent_login_failures(db),
                       effective=tuning.load(db), overrides=tuning.overrides(db))
     finally:
         db.close()

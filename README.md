@@ -93,6 +93,13 @@ behind a reverse proxy without trusting those headers on a laptop.
 The database is a single SQLite file, so a host without persistent storage
 loses it on every restart — attach a disk and point `SUCHAK_DB` at it.
 
+On a public address a wrong password is no longer free: eight failures on one
+account name from one address refuse that combination for fifteen minutes, and
+every wrong password waits a second before answering. The count is per name
+**and** per address deliberately — per name alone would let anyone lock a
+colleague out by failing on their account on purpose. Attempts are summarised
+on **Settings**, because a door being tried is worth seeing.
+
 Because the demo roster is not seeded into a public copy, a freshly hosted
 database has nobody who can sign in and no screen to fix that from. Make the
 first account from the command line:

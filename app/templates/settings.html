@@ -57,6 +57,25 @@
 <h2 class="mt section-head" id="people">People</h2>
 <p class="meta-dim small section-sub">Who may sign in, and what they may do.</p>
 
+{# Failed sign-ins, stated rather than left in a log nobody opens. A quiet
+   number here is the normal case: somebody mistyping their own password. #}
+{% if login_failures and login_failures.tries %}
+<p class="meta-dim small">
+  <strong>{{ login_failures.tries }}</strong> failed sign-in
+  attempt{{ 's' if login_failures.tries != 1 }} in the last
+  {{ login_failures.hours }} hours, against
+  {{ login_failures.names }} account name{{ 's' if login_failures.names != 1 }}
+  from {{ login_failures.places }}
+  address{{ 'es' if login_failures.places != 1 }}.
+  {%- if login_failures.tries > 20 %}
+  <span title="After 8 failures the same name from the same address is refused for 15 minutes, whether or not the password is right.">That is more than
+    mistyping usually accounts for. Sign-in is throttled automatically, but
+    it is worth knowing.</span>
+  {%- else %} A handful is ordinary — usually somebody mistyping their own.
+  {%- endif %}
+</p>
+{% endif %}
+
 {% if demo_open %}
 <p class="warn-note"><strong>{{ demo_open | join(', ') }}</strong>
   {{ 'still uses' if demo_open | length == 1 else 'still use' }} the demo
