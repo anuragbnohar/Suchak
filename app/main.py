@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import (forums, geography, hq_lookup, insights as insights_mod,
@@ -191,7 +192,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-10.60"
+APP_BUILD = "2026-09-10.61"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -299,6 +300,38 @@ def date_sql(win: dict, alias: str = "") -> tuple[str, list]:
     return f"({frag})", args
 
 
+@app.exception_handler(StarletteHTTPException)
+async def http_error_page(request: Request, exc: StarletteHTTPException):
+    """Refusals as a page somebody can read and leave, not raw JSON.
+
+    require_login signals "go and sign in" as a 303 carrying a Location,
+    so anything with a redirect status is passed straight through -- it is
+    a direction, not an error.
+    """
+    if exc.status_code in (301, 302, 303, 307, 308):
+        where = (exc.headers or {}).get("Location", "/login")
+        return RedirectResponse(where, status_code=exc.status_code)
+    if "text/html" not in (request.headers.get("accept") or ""):
+        return JSONResponse({"detail": exc.detail},
+                            status_code=exc.status_code,
+                            headers=dict(exc.headers or {}))
+    db = connect()
+    try:
+        user = get_user(db, request)
+        return templates.TemplateResponse(
+            request, "error.html",
+            {"user": user, "read_only": is_read_only(user),
+             "status": exc.status_code, "detail": exc.detail,
+             "heading": {400: "That could not be done",
+                         403: "Not permitted",
+                         404: "Not found",
+                         405: "Not permitted"}.get(exc.status_code,
+                                                   "Something went wrong")},
+            status_code=exc.status_code)
+    finally:
+        db.close()
+
+
 def render(request: Request, name: str, **ctx):
     ctx.setdefault("msg", request.query_params.get("msg"))
     ctx["taxonomy"] = taxonomy
@@ -392,7 +425,16 @@ def visible_entities(db, user) -> list:
         # is checked in Python because an entity may carry two offices.
         return [e for e in q(db, "SELECT * FROM entities ORDER BY name")
                 if user["rbi_office"] in entity_offices(e)]
-    return q(db, "SELECT * FROM entities WHERE id = ? ", (user["entity_id"],))
+    if user["entity_id"] is None:
+        # "Every entity" on the add-account form stores no entity at all.
+        # Read as "not scoped to one", which is what the form promises.
+        # Read the other way -- scoped to none -- it made the account
+        # useless: WHERE id = NULL matches nothing, so every page refused
+        # it with "No entities configured". No seeded account had a null
+        # entity, which is why nobody met this until an account was made
+        # by hand.
+        return q(db, "SELECT * FROM entities ORDER BY name")
+    return q(db, "SELECT * FROM entities WHERE id = ?", (user["entity_id"],))
 
 
 def resolve_entity(db, user, requested: str | None,

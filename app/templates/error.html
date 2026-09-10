@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} · Drishti{% endblock %}
+{% block content %}
+{# A refusal is still a page. Somebody who lands here needs to know what
+   happened and how to get back to work, not to read a JSON object. #}
+<div class="page-head">
+  <div>
+    <h1>{{ heading }}</h1>
+    <p class="page-sub">{{ detail }}</p>
+  </div>
+</div>
+
+<section class="panel">
+  <p>
+    {%- if status == 403 %}Your account does not have this. If you think it
+    should, a super admin can change it on <strong>Settings → People</strong>.
+    {%- elif status == 404 %}Nothing here answers to that address. It may have
+    been removed, or the link may be out of date.
+    {%- else %}Nothing has been changed. Try again, and tell whoever looks
+    after this copy of Drishti if it keeps happening.{% endif %}
+  </p>
+  <p class="btn-row">
+    <a class="btn btn-primary" href="/">Back to Drishti</a>
+    {% if not user %}<a class="btn" href="/login">Sign in</a>{% endif %}
+  </p>
+</section>
+{% endblock %}
