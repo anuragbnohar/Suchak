@@ -192,7 +192,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-10.64"
+APP_BUILD = "2026-09-10.65"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -3665,6 +3665,47 @@ async def people_guest(request: Request, uid: int):
                 400, "Making your own account a guest would leave you unable "
                      "to change it back. Ask another super admin.")
         x(db, "UPDATE users SET guest = ? WHERE id = ?", (wanted, uid))
+    finally:
+        db.close()
+    return RedirectResponse("/settings?msg=Account+updated#people",
+                            status_code=303)
+
+
+@app.post("/people/{uid}/role")
+async def people_role(request: Request, uid: int):
+    """Change what an existing account is, without deleting it.
+
+    Both fields post here, one cell at a time, so each sends only its own
+    and an absent field means "leave that alone" rather than "clear it" --
+    which matters for the entity, where empty is itself a value.
+    """
+    form = await request.form()
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        target = one(db, "SELECT * FROM users WHERE id = ?", (uid,))
+        if not target:
+            raise HTTPException(404, "No such account")
+        if "role" in form:
+            role = form.get("role")
+            if role not in ("member", "lead", "superadmin"):
+                raise HTTPException(400, "Unknown role")
+            if target["role"] == "superadmin" and role != "superadmin":
+                if uid == user["id"]:
+                    raise HTTPException(
+                        400, "Stepping your own account down would leave you "
+                             "unable to step it back up. Ask another super "
+                             "admin.")
+                if _live_superadmins(db) <= 1:
+                    raise HTTPException(
+                        400, "That is the last super admin. Promote somebody "
+                             "else first, or the settings become unreachable.")
+            x(db, "UPDATE users SET role = ? WHERE id = ?", (role, uid))
+        if "entity_id" in form:
+            raw = (form.get("entity_id") or "").strip()
+            x(db, "UPDATE users SET entity_id = ? WHERE id = ?",
+              (int(raw) if raw.isdigit() else None, uid))
     finally:
         db.close()
     return RedirectResponse("/settings?msg=Account+updated#people",

@@ -102,11 +102,35 @@
         <td><strong>{{ p.display_name }}</strong><br>
           <span class="meta-dim small">{{ p.username }}{% if p.id == user.id %} · you{% endif %}
           {%- if p.disabled %} · removed{% endif %}</span></td>
-        <td>{{ 'super admin' if p.role == 'superadmin' else p.role }}
+        <td>
+          {% if p.disabled %}{{ 'super admin' if p.role == 'superadmin' else p.role }}
+          {% else %}
+          <form method="post" action="/people/{{ p.id }}/role" class="inline-form">
+            <select name="role" aria-label="Role for {{ p.display_name }}"
+                    onchange="this.form.submit()">
+              <option value="member" {% if p.role == 'member' %}selected{% endif %}>team member</option>
+              <option value="lead" {% if p.role == 'lead' %}selected{% endif %}>team lead</option>
+              <option value="superadmin" {% if p.role == 'superadmin' %}selected{% endif %}>super admin</option>
+            </select>
+            <noscript><button type="submit" class="btn btn-small">Set</button></noscript>
+          </form>
+          {% endif %}
           {%- if p.guest %}<br><span class="mini-chip">guest</span>{% endif %}</td>
-        <td>{% if p.rbi_office %}{{ p.rbi_office }} office
-            {%- elif p.entity_name %}{{ p.entity_name }}
-            {%- else %}every entity{% endif %}</td>
+        <td>
+          {% if p.rbi_office %}{{ p.rbi_office }} office
+          {%- elif p.disabled %}{{ p.entity_name or 'every entity' }}
+          {%- else %}
+          <form method="post" action="/people/{{ p.id }}/role" class="inline-form">
+            <select name="entity_id" aria-label="Entity for {{ p.display_name }}"
+                    onchange="this.form.submit()">
+              <option value="" {% if not p.entity_id %}selected{% endif %}>every entity</option>
+              {% for e in entities %}
+              <option value="{{ e.id }}" {% if p.entity_id == e.id %}selected{% endif %}>{{ e.name }}</option>
+              {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn btn-small">Set</button></noscript>
+          </form>
+          {%- endif %}</td>
         <td>
           {% if not p.disabled %}
           <form method="post" action="/people/{{ p.id }}/password" class="inline-form">
@@ -139,6 +163,12 @@
       the session it is holding right now — but keeps the person's name on the
       reviews they recorded. Those rulings are supervisory record and are not
       rewritten. You cannot remove your own account, nor the last super admin.</p>
+    <p class="meta-dim small">Role and entity can be changed here at any time,
+      and take effect on that person's next click. <strong>Super admin</strong>
+      is what carries the Overview tab and sight of every entity — pair it with
+      <em>guest</em> below for somebody who should see the whole picture without
+      being able to spend money or reshape anything. You cannot step your own
+      account down, nor the last super admin.</p>
     <p class="meta-dim small">A <strong>guest</strong> account is for somebody
       who should take part in the review work without being able to spend money
       on fetching or reshape the installation. They review, set aside and close
