@@ -99,8 +99,9 @@
      pressing something and being refused. #}
   {% if guest %}
   <p class="view-only-note">You are signed in to a <strong>guest</strong>
-    account. You can review and read as normal. You cannot fetch, change
-    settings or policy, manage people, or add and edit entities.</p>
+    account. You can review and read as normal. You cannot fetch or re-run
+    the classifier, change settings or policy, manage people, or add and
+    edit entities.</p>
   {% endif %}
   {% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
   {% block content %}{% endblock %}

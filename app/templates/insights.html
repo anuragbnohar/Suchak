@@ -21,7 +21,9 @@
   {% endif %}
 </div>
 
-{% if can_generate %}
+{# Generating is a model call, so a guest does not get the button. The
+   insights themselves are theirs to read like anything else. #}
+{% if can_generate and not guest %}
 <div class="toolbar">
   <form method="post" action="/insights/generate" class="fetch-form">
     <input type="hidden" name="entity_id" value="{{ entity.id }}">
@@ -33,7 +35,7 @@
   <span class="meta-dim small">{{ n_grievances }} grievance{{ 's' if n_grievances != 1 }}
     available to analyse · takes about half a minute · replaces the current set</span>
 </div>
-{% elif entity is none and user.role == 'superadmin' %}
+{% elif entity is none and user.role == 'superadmin' and not guest %}
 <p class="meta-dim small">Pick one entity to generate — insights are built per entity.</p>
 {% endif %}
 

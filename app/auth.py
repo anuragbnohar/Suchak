@@ -58,6 +58,14 @@ GUEST_BLOCKED = (
     "/rd/users",     # the same, by another door
 )
 
+# Single buttons kept back on pages a guest is otherwise welcome to read.
+# Both set the model running over everything already stored, so both cost
+# money -- which is the same objection as Fetch, by a quieter door.
+GUEST_BLOCKED_ACTIONS = (
+    "/insights/generate",
+    "/alerts/recheck",
+)
+
 
 def is_guest(user) -> bool:
     """Tolerates a row from a database that predates the column."""
@@ -77,6 +85,8 @@ def guest_blocked(method: str, path: str) -> bool:
     if path == "/account/password":
         # Kept, always. A password nobody can change is not theirs.
         return False
+    if path in GUEST_BLOCKED_ACTIONS:
+        return True
     for prefix in GUEST_BLOCKED:
         if path == prefix or path.startswith(prefix + "/"):
             return True
@@ -99,9 +109,10 @@ def require_login(db, request: Request):
     if is_guest(user) and guest_blocked(request.method, request.url.path):
         raise HTTPException(
             status_code=403,
-            detail="This account can review and read, but cannot fetch, "
-                   "change settings or policy, manage people, or edit "
-                   "entities. Ask a super admin if you need more.")
+            detail="This account can review and read, but cannot fetch or "
+                   "re-run the classifier, change settings or policy, manage "
+                   "people, or edit entities. Ask a super admin if you need "
+                   "more.")
     return user
 
 

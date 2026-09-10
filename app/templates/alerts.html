@@ -64,7 +64,9 @@
         is judged against the active ones, and a match is flagged in red on the item.</p>
     </div>
     {% endif %}
-    {% if user.role == 'superadmin' and factors %}
+    {# Re-checking is a model call per stored item, so a guest does not get
+       the button -- nor the progress line for a run they cannot start. #}
+    {% if user.role == 'superadmin' and factors and not guest %}
     <form method="post" action="/alerts/recheck">
       <div class="form-actions form-actions-plain">
         <button type="submit" class="btn">Re-check stored items against alerts</button>
