@@ -45,9 +45,9 @@ install -d -o root -g "$SERVICE_USER" -m 750 "$ENV_DIR"
 
 say "Fetching the code ($BRANCH)"
 if [ -d "$APP_DIR/.git" ]; then
-  git -C "$APP_DIR" remote set-url origin "$REPO"
-  git -C "$APP_DIR" fetch --quiet origin "$BRANCH"
-  git -C "$APP_DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
+  git -c safe.directory="$APP_DIR" -C "$APP_DIR" remote set-url origin "$REPO"
+  git -c safe.directory="$APP_DIR" -C "$APP_DIR" fetch --quiet origin "$BRANCH"
+  git -c safe.directory="$APP_DIR" -C "$APP_DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 else
   git clone --quiet --branch "$BRANCH" "$REPO" "$APP_DIR"
 fi

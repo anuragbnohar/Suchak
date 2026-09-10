@@ -33,13 +33,13 @@ if [ ! -s "$PREV_FILE" ]; then
 fi
 
 prev="$(tr -d '[:space:]' < "$PREV_FILE")"
-now="$(git -C "$APP_DIR" rev-parse --short HEAD)"
+now="$(git -c safe.directory="$APP_DIR" -C "$APP_DIR" rev-parse --short HEAD)"
 
 if [ "$prev" = "$now" ]; then
   echo "Already running $now, which is the version rollback would put back."
   exit 0
 fi
-if ! git -C "$APP_DIR" cat-file -e "$prev^{commit}" 2>/dev/null; then
+if ! git -c safe.directory="$APP_DIR" -C "$APP_DIR" cat-file -e "$prev^{commit}" 2>/dev/null; then
   echo "The recorded version $prev is not in the repository any more." >&2
   exit 1
 fi
@@ -49,7 +49,7 @@ echo "Rolling back $now -> $prev"
 # reset rather than checkout: it keeps the branch name pointing at the
 # older commit, so drishti-update can still tell what to compare against
 # and will bring this forward again when asked.
-git -C "$APP_DIR" reset --quiet --hard "$prev"
+git -c safe.directory="$APP_DIR" -C "$APP_DIR" reset --quiet --hard "$prev"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
 # The older version may want different packages than the newer one did.

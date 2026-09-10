@@ -24,11 +24,11 @@ if [ ! -d "$APP_DIR/.git" ]; then
   exit 1
 fi
 
-BRANCH="${DRISHTI_BRANCH:-$(git -C "$APP_DIR" rev-parse --abbrev-ref HEAD)}"
-was="$(git -C "$APP_DIR" rev-parse --short HEAD)"
+BRANCH="${DRISHTI_BRANCH:-$(git -c safe.directory="$APP_DIR" -C "$APP_DIR" rev-parse --abbrev-ref HEAD)}"
+was="$(git -c safe.directory="$APP_DIR" -C "$APP_DIR" rev-parse --short HEAD)"
 
-git -C "$APP_DIR" fetch --quiet origin "$BRANCH"
-target="$(git -C "$APP_DIR" rev-parse --short "origin/$BRANCH")"
+git -c safe.directory="$APP_DIR" -C "$APP_DIR" fetch --quiet origin "$BRANCH"
+target="$(git -c safe.directory="$APP_DIR" -C "$APP_DIR" rev-parse --short "origin/$BRANCH")"
 
 # Decided before anything is touched. Backing up on every run would fill
 # the folder with identical copies and push out the one taken before the
@@ -69,8 +69,19 @@ fi
 # Recorded before the switch, so drishti-rollback knows where back is.
 echo "$was" > "$DATA_DIR/previous-version"
 
-git -C "$APP_DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
+git -c safe.directory="$APP_DIR" -C "$APP_DIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
+
+# Keep these commands in step with the code they came from, or a fix to
+# them can never arrive by the route people actually use. Renamed into
+# place rather than written over: bash reads a script as it runs, and
+# rewriting the file underneath it makes the rest of the run nonsense.
+for tool in update rollback; do
+  src="$APP_DIR/deploy/$tool.sh"
+  [ -f "$src" ] || continue
+  install -m 755 "$src" "/usr/local/bin/.drishti-$tool.new"
+  mv -f "/usr/local/bin/.drishti-$tool.new" "/usr/local/bin/drishti-$tool"
+done
 
 "$APP_DIR/.venv/bin/pip" install --quiet --upgrade -r "$APP_DIR/requirements.txt"
 # The service runs with the code folder read-only, so it cannot write its
@@ -87,7 +98,8 @@ if ! systemctl is-active --quiet "$SERVICE"; then
   journalctl -u "$SERVICE" -n 25 --no-pager >&2
   echo >&2
   echo "To go back to the version that was working:" >&2
-  echo "  sudo git -C $APP_DIR checkout $was && sudo systemctl restart $SERVICE" >&2
+  echo "  sudo git -c safe.directory=$APP_DIR -C $APP_DIR checkout $was \\" >&2
+  echo "    && sudo systemctl restart $SERVICE" >&2
   echo "The database as it stood before this update is in $BACKUP_DIR." >&2
   exit 1
 fi
