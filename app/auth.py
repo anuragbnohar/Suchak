@@ -53,6 +53,7 @@ READS = {"GET", "HEAD", "OPTIONS"}
 GUEST_BLOCKED = (
     "/fetch",        # spends money on the paid sources
     "/settings",     # every knob, and the People roster lives on that page
+    "/policy",       # the definitions the classifier judges by, and re-scoring
     "/people",       # adding, renaming, removing, resetting a password
     "/rd/users",     # the same, by another door
 )
@@ -99,8 +100,8 @@ def require_login(db, request: Request):
         raise HTTPException(
             status_code=403,
             detail="This account can review and read, but cannot fetch, "
-                   "change settings, manage people, or edit entities. "
-                   "Ask a super admin if you need more.")
+                   "change settings or policy, manage people, or edit "
+                   "entities. Ask a super admin if you need more.")
     return user
 
 

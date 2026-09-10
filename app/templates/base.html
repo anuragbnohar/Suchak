@@ -44,7 +44,7 @@
       {% endif %}
       <a class="{% if cp_ctx %}nav-active{% endif %}" href="/complaints">Complaints</a>
       <a class="{% if al_ctx %}nav-active{% endif %}" href="/alerts">Alerts</a>
-      <a class="{% if po_ctx %}nav-active{% endif %}" href="/policy">Policy</a>
+      {% if not guest %}<a class="{% if po_ctx %}nav-active{% endif %}" href="/policy">Policy</a>{% endif %}
       <a href="/entities">Entities</a>
       {% if user.role == 'superadmin' and not guest %}<a href="/settings">Settings</a>{% endif %}
       <a class="nav-help {% if hp_ctx %}nav-active{% endif %}" href="/help"
@@ -100,7 +100,7 @@
   {% if guest %}
   <p class="view-only-note">You are signed in to a <strong>guest</strong>
     account. You can review and read as normal. You cannot fetch, change
-    settings, manage people, or add and edit entities.</p>
+    settings or policy, manage people, or add and edit entities.</p>
   {% endif %}
   {% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
   {% block content %}{% endblock %}

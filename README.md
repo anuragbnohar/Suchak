@@ -94,8 +94,9 @@ The database is a single SQLite file, so a host without persistent storage
 loses it on every restart — attach a disk and point `SUCHAK_DB` at it.
 
 An account can be marked a **guest**: it reviews and reads exactly as its
-role allows, and four things are kept back — fetching, which spends money;
-Settings; the People roster; and adding or editing an entity. The refusal
+role allows, and five things are kept back — fetching, which spends money;
+Settings; Policy, which is what the classifier judges by; the People roster;
+and adding or editing an entity. The refusal
 lives in `require_login`, which every route already calls, so a route added
 later is covered without anybody remembering to cover it, and the kept-back
 set is a list of paths rather than a check inside each handler. It is a
