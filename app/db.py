@@ -337,6 +337,12 @@ MIGRATIONS = [
     # deletion: the reviews this person recorded are supervisory record,
     # and erasing the row would take their name off their own rulings.
     ("users", "disabled", "INTEGER NOT NULL DEFAULT 0"),
+    # An account that may look at everything it is entitled to see and
+    # change none of it -- for showing the work to somebody without
+    # handing them the Fetch button, which spends money. A column rather
+    # than a fourth role for the same reason rbi_office is a column:
+    # SQLite cannot widen the role CHECK on a database that exists.
+    ("users", "read_only", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

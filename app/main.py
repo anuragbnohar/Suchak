@@ -25,8 +25,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import (forums, geography, hq_lookup, insights as insights_mod,
                reddit_source, taxonomy, tuning, x_scrape)
 from .matching import derive_aliases, place_mentions
-from .auth import (get_user, hash_password, require_login, require_role,
-                   verify_password)
+from .auth import (get_user, hash_password, is_read_only, require_login,
+                   require_role, require_write, verify_password)
 from .classify import (classify_item,
                        DEFAULT_EXCLUSION_RULES, DEFAULT_GRIEVANCE_SEVERITY,
                        DEFAULT_RISK_DEFS, DEFAULT_SEVERITY_DEFS,
@@ -191,7 +191,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-10.59"
+APP_BUILD = "2026-09-10.60"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -308,6 +308,7 @@ def render(request: Request, name: str, **ctx):
     win = ctx.get("win") or date_window(request)
     ctx["win"] = win
     ctx["since_qs"] = f"&since={win['key']}" if win["key"] else ""
+    ctx["read_only"] = is_read_only(ctx.get("user"))
     if ctx.get("user") is not None and "todo_count" not in ctx:
         ctx["todo_count"] = _open_action_count(ctx["user"])
     return templates.TemplateResponse(request, name, ctx)
@@ -2739,6 +2740,7 @@ def entities_new(request: Request):
     try:
         user = require_login(db, request)
         require_role(user, "superadmin")
+        require_write(user)
         return templates.TemplateResponse(request, "new_entity.html", {
             "user": user, "kinds": taxonomy.ENTITY_KINDS,
             "place_index": json.dumps(geography.place_index(),
@@ -2907,6 +2909,7 @@ def entity_delete_confirm(request: Request, entity_id: int):
     try:
         user = require_login(db, request)
         require_role(user, "superadmin")
+        require_write(user)
         entity = one(db, "SELECT * FROM entities WHERE id = ?", (entity_id,))
         if not entity:
             raise HTTPException(404, "Entity not found")
@@ -3564,6 +3567,7 @@ async def people_add(request: Request):
             raise HTTPException(400, "A display name is required")
         if role not in ("member", "lead", "superadmin"):
             raise HTTPException(400, "Unknown role")
+        view_only = 1 if form.get("read_only") else 0
         fault = _password_fault(form.get("password") or "",
                                 form.get("password") or "")
         if fault:
@@ -3571,9 +3575,9 @@ async def people_add(request: Request):
         if one(db, "SELECT 1 FROM users WHERE username = ?", (username,)):
             raise HTTPException(400, "That username is taken")
         x(db, "INSERT INTO users (username, password_hash, display_name, role,"
-              " entity_id) VALUES (?,?,?,?,?)",
+              " entity_id, read_only) VALUES (?,?,?,?,?,?)",
           (username, hash_password(form.get("password")), display, role,
-           int(entity_id) if entity_id.isdigit() else None))
+           int(entity_id) if entity_id.isdigit() else None, view_only))
     finally:
         db.close()
     return RedirectResponse("/settings?msg=Account+added#people", status_code=303)
@@ -3600,6 +3604,31 @@ async def people_reset(request: Request, uid: int):
     finally:
         db.close()
     return RedirectResponse("/settings?msg=Password+set#people", status_code=303)
+
+
+@app.post("/people/{uid}/view-only")
+async def people_view_only(request: Request, uid: int):
+    """Turn view-only on or off for somebody who already has an account.
+
+    Takes effect on their very next click: the check happens on each
+    request rather than at sign-in, so nobody keeps the run of the place
+    until they happen to sign out.
+    """
+    form = await request.form()
+    wanted = 1 if form.get("read_only") else 0
+    db = connect()
+    try:
+        user = require_login(db, request)
+        require_role(user, "superadmin")
+        if uid == user["id"] and wanted:
+            raise HTTPException(
+                400, "Making your own account view-only would leave you "
+                     "unable to change it back. Ask another super admin.")
+        x(db, "UPDATE users SET read_only = ? WHERE id = ?", (wanted, uid))
+    finally:
+        db.close()
+    return RedirectResponse("/settings?msg=Account+updated#people",
+                            status_code=303)
 
 
 @app.post("/people/{uid}/remove")

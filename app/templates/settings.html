@@ -102,7 +102,8 @@
         <td><strong>{{ p.display_name }}</strong><br>
           <span class="meta-dim small">{{ p.username }}{% if p.id == user.id %} · you{% endif %}
           {%- if p.disabled %} · removed{% endif %}</span></td>
-        <td>{{ 'super admin' if p.role == 'superadmin' else p.role }}</td>
+        <td>{{ 'super admin' if p.role == 'superadmin' else p.role }}
+          {%- if p.read_only %}<br><span class="mini-chip">view only</span>{% endif %}</td>
         <td>{% if p.rbi_office %}{{ p.rbi_office }} office
             {%- elif p.entity_name %}{{ p.entity_name }}
             {%- else %}every entity{% endif %}</td>
@@ -121,6 +122,11 @@
             <button type="submit" class="btn btn-small">Restore</button>
           </form>
           {% elif p.id != user.id %}
+          <form method="post" action="/people/{{ p.id }}/view-only" class="inline-form">
+            {% if not p.read_only %}<input type="hidden" name="read_only" value="1">{% endif %}
+            <button type="submit" class="btn btn-small btn-quiet">{{
+              'Allow changes' if p.read_only else 'Make view only' }}</button>
+          </form>
           <form method="post" action="/people/{{ p.id }}/remove">
             <button type="submit" class="btn btn-small btn-quiet">Remove</button>
           </form>
@@ -133,6 +139,11 @@
       the session it is holding right now — but keeps the person's name on the
       reviews they recorded. Those rulings are supervisory record and are not
       rewritten. You cannot remove your own account, nor the last super admin.</p>
+    <p class="meta-dim small">A <strong>view-only</strong> account is for showing
+      the work to somebody without handing them the Fetch button, which spends
+      money. It takes effect on their next click, not their next sign-in. You
+      cannot make your own account view-only — you would not be able to change
+      it back.</p>
   </section>
 
   <section class="panel">
@@ -161,6 +172,11 @@
           <option value="">Every entity</option>
           {% for e in entities %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}
         </select>
+      </label>
+      <label class="check-line">
+        <input type="checkbox" name="read_only" value="1">
+        View only — can read everything their role allows, and change none
+        of it. No reviews, no settings, and no fetching.
       </label>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Add account</button>

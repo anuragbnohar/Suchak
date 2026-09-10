@@ -1317,3 +1317,22 @@ tr.is-read .sev::before { opacity: 0.45; }
   .help-dl { grid-template-columns: 1fr; gap: 0; }
   .help-dl dd { padding-top: 0; border-top: none; }
 }
+
+/* A view-only account. The refusal itself lives in require_login -- this
+   only stops the person being shown controls that would turn them away.
+   Attribute-matched on method="post" so that filter and date pickers,
+   which are GET forms, keep working: a reader still needs to search.
+   .self-service exempts changing your own password, which a read-only
+   account must always be able to do. */
+.read-only form[method="post"]:not(.self-service) { display: none; }
+
+.view-only-note {
+  margin: 0 0 1rem;
+  padding: .55rem .8rem;
+  border: 1px solid #b8860b33;
+  border-left: 3px solid #b8860b;
+  border-radius: 4px;
+  background: #fdf6e3;
+  color: #5c4600;
+  font-size: .85rem;
+}

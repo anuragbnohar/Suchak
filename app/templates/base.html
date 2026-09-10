@@ -12,7 +12,7 @@
    new URL, so the fresh styling is fetched with the first page. #}
 <link rel="stylesheet" href="/static/style.css?v={{ app_build }}">
 </head>
-<body>
+<body{% if read_only %} class="read-only"{% endif %}>
 <header class="topbar">
   {% if user %}
   {% set path = request.url.path %}
@@ -95,6 +95,13 @@
 </div>
 {% endif %}
 <main class="page">
+  {# Said once, plainly, rather than leaving somebody to discover it by
+     pressing something and being refused. #}
+  {% if read_only %}
+  <p class="view-only-note">You are signed in to a <strong>view-only</strong>
+    account. You can read everything here, and change none of it — no
+    reviews, no settings, and no fetching.</p>
+  {% endif %}
   {% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
   {% block content %}{% endblock %}
 </main>

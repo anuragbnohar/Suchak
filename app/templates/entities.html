@@ -4,8 +4,8 @@
 <div class="page-head">
   <div>
     <h1>Regulated entities</h1>
-    <p class="page-sub">Aliases drive news matching — open an entity's Edit
-      panel to see and tune them.</p>
+    <p class="page-sub">Aliases drive news matching{% if not read_only %} —
+      open an entity's Edit panel to see and tune them{% endif %}.</p>
   </div>
   {% if user.role in ('lead','superadmin') %}
   <div>
@@ -97,7 +97,7 @@
             </form>
             {% endif %}
             {% if user.role == 'superadmin' %}
-            <a class="btn btn-small btn-quiet" href="/entities/{{ r.entity.id }}/delete">Remove</a>
+            {% if not read_only %}<a class="btn btn-small btn-quiet" href="/entities/{{ r.entity.id }}/delete">Remove</a>{% endif %}
             {% endif %}
           </div>
         </td>
@@ -106,7 +106,11 @@
       {# Mirrors /entities/{id}/aliases exactly: leads may edit their own
          entity, the superadmin any. The old inline form offered these boxes
          to members too, whose save the route then refused with a 403. #}
-      {% if user.role == 'superadmin' or (user.role == 'lead' and user.entity_id == r.entity.id) %}
+      {# The row holds nothing but a form, which a view-only account cannot
+         use -- so the row goes with it, rather than leaving an empty band
+         between every entity. #}
+      {% if not read_only and (user.role == 'superadmin'
+             or (user.role == 'lead' and user.entity_id == r.entity.id)) %}
       <tr class="entity-edit-row">
         <td colspan="7">
           <details class="todo-more">
@@ -187,7 +191,7 @@
       {%- endif %}.</p>
   </section>
 
-  {% if user.role == 'superadmin' %}
+  {% if user.role == 'superadmin' and not read_only %}
   <p class="btn-row wide"><a class="btn btn-primary" href="/entities/new">Add an entity</a>
     <span class="meta-dim small">— name and headquarters; the RBI office fills itself.</span></p>
   {% endif %}
