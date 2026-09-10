@@ -1352,3 +1352,48 @@ tr.is-read .sev::before { opacity: 0.45; }
   text-align: right;
 }
 .people-table td.row-actions > form { display: inline-block; margin-left: .35rem; }
+
+/* ══ Repeat posters ════════════════════════════════════════════════════
+   One customer writing six times is one aggrieved customer, and six cards
+   of it would read as six complaints. The card is the person; their other
+   posts fold underneath. The fold must read as "there is more inside this
+   one", never as a second complaint sitting in the list. */
+
+.repeat-note { margin: 0 0 0.6rem; }
+/* Quiet by design: it says how many, not that something is wrong. The
+   loud chips on this row are for severity and tripped alerts. */
+.repeat-chip {
+  display: inline-flex; align-items: center; white-space: nowrap;
+  line-height: 1.5; font-size: 0.72rem; font-weight: 600;
+  background: var(--surface-2); color: var(--muted);
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 0.05rem 0.55rem;
+}
+.social-card-group { border-color: var(--line-strong); }
+/* .disclose is an inline-block meant for the end of a row of chips; this
+   one is a block of its own under the card's text. */
+.repeat-fold { display: block; margin-top: 0.6rem; }
+.repeat-bulk { margin-bottom: 0.55rem; }
+.repeat-list {
+  list-style: none; margin: 0; padding: 0 0 0 0.8rem;
+  display: flex; flex-direction: column; gap: 0.4rem;
+  border-left: 2px solid var(--line);
+}
+.repeat-row {
+  background: var(--surface-2); border-radius: var(--r-xs);
+  padding: 0.5rem 0.7rem;
+}
+.repeat-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.45rem; margin: 0; }
+/* A topic carried by the folded posts, not by the card it sits on: the
+   topic chip's shape so it reads as a topic, outlined rather than filled
+   so it never claims to describe the post above it. */
+.mini-later {
+  background: transparent; color: var(--muted);
+  border: 1px dashed var(--line-strong);
+}
+.repeat-row .social-text { font-size: 0.85rem; }
+.repeat-row .item-meta { margin-top: 0.3rem; }
+/* The poster's other complaints on the item page: a list of posts, not of
+   sources, so the text leads and the state trails it. */
+.also-by li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.6rem; }
+.also-by .src-meta { display: inline-flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }

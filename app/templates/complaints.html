@@ -289,7 +289,7 @@
     <span class="tab-count">{{ total }}</span></h2>
   {% if listed %}
   <ul class="item-list">
-    {% for it in listed %}
+    {% for g in listed %}{% set it = g.lead %}
     <li class="item-row sev-{{ it.severity_shown }}">
       <a class="item-link" href="/item/{{ it.id }}">
         <div class="item-top">
@@ -301,6 +301,10 @@
           <span class="item-tags">
             <span class="entity-chip">{{ it.entity_name }}</span>
             {% for t in it.complaint_topics %}<span class="topic-chip">✉ {{ t }}</span>{% endfor %}
+            {# The same person again. One row, so a persistent customer does
+               not read as a rising trend; opening it shows every one. #}
+            {% if g.repeats %}<span class="repeat-chip"
+                  title="This person posted {{ g.size }} times about this entity. Counted as one complainant here — open it to read all of them. The Social media tab can show every post.">+{{ g.repeats }} more from this person</span>{% endif %}
           </span>
           <span class="item-trail">
             <span class="meta-dim">{{ it.source_name }}</span>
@@ -312,9 +316,15 @@
     </li>
     {% endfor %}
   </ul>
-  {% if listed_more %}
-  <p class="panel-note">The {{ listed | length }} most serious are listed; {{ listed_more }} more match this
-    selection. Narrow by entity, category or place to see them.</p>
+  {% if listed_more or listed_repeats %}
+  <p class="panel-note">The {{ listed_shown }} most serious
+    {{ 'is' if listed_shown == 1 else 'are' }} listed{% if listed_repeats %},
+    as {{ listed | length }} entries — {{ listed_repeats }} of
+    {{ 'them is a repeat post, shown on its' if listed_repeats == 1 else 'them are repeat posts, shown on their' }}
+    author's row rather than taking a place of
+    {{ 'its' if listed_repeats == 1 else 'their' }} own{% endif %}{% if listed_more %};
+    {{ listed_more }} more match this selection. Narrow by entity, category or
+    place to see them{% endif %}.</p>
   {% endif %}
   {% else %}
   <p class="meta-dim">Nothing matches the current filters.</p>

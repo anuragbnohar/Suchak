@@ -54,8 +54,12 @@ importing anything from `app`. Run the lot before every push; there are
 seventy-odd and they take a few minutes.
 
 Prefer a test that reads the truth from the source over one that repeats a
-list by hand — `t_guest.py` enumerates the POST routes out of `main.py`, so a
-route added later has to face it.
+list by hand. `t_guest.py` reads every `@app.post` out of `main.py` and fails
+on any route not recorded in its `DECIDED` map, so a handler written next year
+is a decision about what a guest may do whether or not its author thought so.
+(This file previously claimed that check existed when it did not, and a new
+route did slip past unchecked before it was built. Do not describe a safety
+net here without opening the test and reading it.)
 
 Screenshots catch what assertions do not: staggered rows, controls pushed off
 a panel, a heading that tells somebody to open something that is not there.
@@ -116,6 +120,18 @@ columns.
   runs before the migrations and carries the value over; the reader that uses
   it tolerates the column being absent, so a rollback past it degrades rather
   than crashes. Follow that shape if a rename is ever needed again.
+- **A shared conversation is not a shared person.** Repeat complaints fold by
+  author, never by `thread_key`: on X the conversation id belongs to the root
+  of the conversation, so a bank's own post that fifty customers reply to
+  gives all fifty replies one thread key. `app/grouping.py` uses the thread
+  only to describe a group that is already one person's. The same rule as
+  Phase 1's counting — an item naming nobody is folded with nothing, so the
+  figure overstates the number of people rather than understating it.
+- **Fold after the sort, never before.** The lead of a group is whichever of
+  its posts the screen's own ordering put first, which is the only reason a
+  card can be trusted to carry the most serious thing that person said. Cap
+  the list after folding too, or one persistent customer takes six of the
+  sixty places.
 - Fetching is manual. A timer would bill the account with nobody watching.
 - `pkill` in this sandbox returns 144 and kills the rest of a compound
   command; run it on its own.

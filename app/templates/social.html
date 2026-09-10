@@ -104,22 +104,66 @@
   {% else %}No posts collected yet. Press Fetch on the <a href="/entities">Entities</a> page.{% endif %}
 </p>
 {% else %}
+{% set base = '/social?' ~ (('office=' ~ (office | urlencode) ~ '&') if office else '') ~ 'entity=' ~ entity_qs ~ (('&topic=' ~ (topic | urlencode)) if topic else '') ~ (('&src=' ~ (src | urlencode)) if src else '') ~ (('&factor=' ~ (factor | urlencode)) if factor else '') ~ ('&view=aside' if view_aside else '') ~ ('&view=learned' if view_learned else '') ~ since_qs %}
+{# Where a form sends the reviewer back to: the same list, folded the same
+   way they were reading it. #}
+{% set back = base ~ ('' if folded else '&repeats=all') %}
+{# The list is of people, not posts: one customer writing six times is one
+   aggrieved customer, and six rows of it would read as six complaints.
+   The note says how much folding is happening and hands back the raw list
+   on one press, because a figure nobody can check is not worth printing. #}
+{% if repeats_n %}
+<p class="meta-dim small repeat-note">
+  {% if folded %}
+  {{ repeats_n }} post{{ 's' if repeats_n != 1 }} {{ 'are' if repeats_n != 1 else 'is' }}
+  a repeat from someone already listed, folded into their card.
+  <a href="{{ base }}&amp;repeats=all">Show every post</a>
+  {% else %}
+  Showing every post, including {{ repeats_n }} repeat{{ 's' if repeats_n != 1 }}
+  from someone already listed.
+  <a href="{{ base }}">Group repeat posters</a>
+  {% endif %}
+</p>
+{% elif folded and listed_attributed %}
+<p class="meta-dim small repeat-note">Nobody on this list posted more than once
+  about the same entity — this volume is that many separate people.</p>
+{% elif folded and rows %}
+<p class="meta-dim small repeat-note">Repeat posts cannot be folded here: none of
+  these records who wrote it.
+  <span title="The complainant is recorded as a post arrives, so posts collected before that was added carry none, and it cannot be recovered for them by looking again at what is stored. Fetch again and this list will start folding.">(collected before that was captured)</span></p>
+{% endif %}
 <ul class="social-list">
-  {% for it in rows %}
-  <li class="social-card sev-{{ it.severity_shown }}">
+  {% for g in groups %}{% set it = g.lead %}
+  <li class="social-card sev-{{ it.severity_shown }}{% if g.repeats %} social-card-group{% endif %}">
     <p class="social-head">
       <span class="sev-chip sev-chip-{{ it.severity_shown }}">{{ it.severity_shown }}</span>
       {% if not entity %}<span class="entity-chip">{{ it.entity_name }}</span>{% endif %}
       <a class="social-author" href="{{ it.url }}" target="_blank" rel="noopener">{{ it.source_name }}</a>
       <span class="meta-dim small">{{ it.published_at | timeago }}</span>
+      {% if g.repeats %}
+      <span class="repeat-chip"
+            title="The same person, posting more than once about this entity. Counted here as one complainant; every post is still stored, still classified and still reviewable — open the fold to see them.">
+        {% if g.one_thread %}a thread of {{ g.size }} posts{% else %}{{ g.size }} posts from this person{% endif %}</span>
+      {% endif %}
+      {% if quoted.get(it.id) %}
+      <a class="mini-chip" href="/item/{{ quoted[it.id].id }}"
+         title="This post quotes another post listed on this screen. Quoting is usually somebody else piling on, so the two are counted as two complainants, not folded together.">quotes a post listed here</a>
+      {% endif %}
     </p>
     <p class="social-text">{{ it.snippet or it.title }}</p>
     <div class="item-meta">
       {% for t in it.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
+      {# A topic only the folded posts raise. The card shows the lead post's
+         own topics — putting the others' on it would attribute them to a
+         post that never carried them — so what would otherwise drop out of
+         sight is named beside them instead, in the muted form that says
+         "not this post". #}
+      {% if g.extra_topics %}<span class="mini-chip mini-later"
+            title="Raised by this person's other posts, not by the one shown here. Open the fold to read them.">also
+        {%- for t in g.extra_topics %} {{ t }}{{ ',' if not loop.last }}{% endfor %}</span>{% endif %}
       {% for a in it.risk_areas_shown %}<span class="mini-chip">{{ a }}</span>{% endfor %}
       {% for f in it.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
       <a class="btn btn-small item-review-btn" href="/item/{{ it.id }}">Review post</a>
-      {% set back = '/social?' ~ (('office=' ~ (office | urlencode) ~ '&') if office else '') ~ 'entity=' ~ entity_qs ~ (('&topic=' ~ (topic | urlencode)) if topic else '') ~ (('&src=' ~ (src | urlencode)) if src else '') ~ (('&factor=' ~ (factor | urlencode)) if factor else '') ~ ('&view=aside' if view_aside else '') ~ ('&view=learned' if view_learned else '') ~ since_qs %}
       {% if it.set_aside %}
       <form method="post" action="/item/{{ it.id }}/set-aside" class="inline-form">
         <input type="hidden" name="back" value="{{ back }}">
@@ -159,6 +203,56 @@
       </form>
       {% endif %}
     </div>
+    {% if g.repeats %}
+    <details class="repeat-fold disclose">
+      <summary class="summary-btn"
+               title="This person's other posts about this entity, oldest first, so the sequence reads as it happened.">{{ g.repeats }} more from this person{% if g.first_at and g.last_at and g.first_at != g.last_at %},
+        {{ g.first_at | timeago }} → {{ g.last_at | timeago }}{% endif %}</summary>
+      <div class="disclose-body">
+        {% if not view_aside and not view_learned %}
+        <form method="post" action="/social/set-aside-many" class="inline-form repeat-bulk">
+          <input type="hidden" name="back" value="{{ back }}">
+          <input type="hidden" name="reason" value="duplicate">
+          <input type="hidden" name="ids" value="{% for o in g.others %}{{ o.id }}{{ ',' if not loop.last }}{% endfor %}">
+          <button type="submit" class="btn btn-small btn-quiet"
+                  title="Marks these {{ g.repeats }} as duplicates so Insights counts this customer once. The post above stays counted, every one of these stays on screen under the Set aside tab, and any of them can be restored.">Set
+            {{ 'the other ' ~ g.repeats if g.repeats > 1 else 'the other one' }} aside as duplicates</button>
+        </form>
+        {% endif %}
+        <ul class="repeat-list">
+          {% for o in g.others %}
+          <li class="repeat-row sev-{{ o.severity_shown }}">
+            <p class="repeat-head">
+              <span class="sev-chip sev-chip-{{ o.severity_shown }}">{{ o.severity_shown }}</span>
+              <a class="social-author" href="{{ o.url }}" target="_blank" rel="noopener">{{ o.published_at | timeago }}</a>
+              {% for t in o.complaint_topics %}<span class="mini-chip mini-warm">{{ t }}</span>{% endfor %}
+              {% for f in o.factor_matches %}<span class="factor-chip">⚑ {{ f }}</span>{% endfor %}
+              {% if o.set_aside %}<span class="mini-chip">set aside: {{ o.set_aside }}</span>{% endif %}
+              {% if quoted.get(o.id) %}<a class="mini-chip" href="/item/{{ quoted[o.id].id }}">quotes a post listed here</a>{% endif %}
+            </p>
+            <p class="social-text">{{ o.snippet or o.title }}</p>
+            <div class="item-meta">
+              <a class="btn btn-small item-review-btn" href="/item/{{ o.id }}">Review post</a>
+              {% if o.status in ('new', 'classified', 'reviewed') and not o.gated_out
+                    and (o.attribution or '') != 'rejected' %}
+              <form method="post" action="/item/{{ o.id }}/reviewed" class="row-reviewed">
+                <input type="hidden" name="back" value="{{ back }}">
+                <label class="small">
+                  <input type="checkbox" name="reviewed" value="1"
+                         {% if o.status == 'reviewed' %}checked{% endif %}
+                         onchange="this.form.submit()">
+                  Reviewed
+                </label>
+                <noscript><button type="submit" class="btn btn-small">Save</button></noscript>
+              </form>
+              {% endif %}
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </details>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>

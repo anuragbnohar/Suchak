@@ -331,6 +331,33 @@ a ZIP, taking a database backup first because a new version can migrate it.
   folded together, so the figure can only overstate how many people are
   behind a set of complaints. The gap between the two numbers is the
   measurement of how much of the volume is repetition.
+- **One entry per person** — the record of who complained is there to be
+  used, and this is the use. On the Social media tab and in the Complaints
+  screen's list, a customer's repeat posts about one entity fold into a
+  single entry (`app/grouping.py`), marked *6 posts from this person* or
+  *a thread of 6 posts*, the rest a click away in the order they were
+  posted. Nothing is discarded and no count changes: every post keeps its
+  row, its classification and its review, every figure on the page is
+  taken before the folding, and **Show every post** hands back the plain
+  list.
+  Two rules keep it from hiding what a supervisor needs to see. Only a
+  **named** poster is folded, so an item naming nobody stands alone and
+  the entry count can overstate how many people are behind a set of
+  complaints, never understate it. And the **thread is not a merge key**:
+  on X the conversation id belongs to the root of the conversation, so a
+  bank care handle's own post that fifty customers reply to gives all
+  fifty replies one thread key — folding by it would collapse fifty
+  complainants into one entry and hide the very volume the screen exists
+  to show. The thread only *describes* a group that is already one
+  person's. A quote of another listed post is cross-referenced and never
+  folded, for the same reason: it is usually somebody else piling on.
+  The lead post of a group is the one the screen's own sort put first,
+  which is what guarantees a card carries the most serious thing the
+  person said and never buries a high-severity post inside a milder one.
+  **Set the others aside as duplicates**, inside the fold, is the ruling
+  that follows from seeing it: the ordinary set-aside applied to a list,
+  keeping the first post counted, leaving every repeat readable under the
+  Set aside tab, and reversible one at a time.
   The Complaints screen's tile counts **social posts only** — a news
   article names a publication, not a complainant, and including news
   forced the figure to equal the complaint count on a news-heavy record,

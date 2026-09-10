@@ -107,6 +107,33 @@
       </section>
       {% endif %}
 
+      {% if also_by %}
+      <section class="detail-block">
+        <h2>The same person, {{ also_by | length + 1 }} times</h2>
+        <p class="small meta-dim">{{ item.source_name }} posted
+          {{ also_by | length + 1 }} times about {{ entity.name }}. The Social
+          media tab counts them as one complainant and lists them as one entry;
+          they are shown here in the order they were posted, so a ruling on this
+          post is made knowing the rest. Each keeps its own severity, topics and
+          review. This is every post of theirs the app holds, which can be more
+          than that tab shows — a post the classifier found no grievance in is
+          counted but not listed there.</p>
+        <ul class="source-list also-by">
+          {% for o in also_by %}
+          <li>
+            <a href="/item/{{ o.id }}">{{ o.snippet or o.title }}</a>
+            <span class="src-meta">
+              <span class="sev-chip sev-chip-{{ o.severity_shown }}">{{ o.severity_shown }}</span>
+              {{ o.published_at | timeago }}
+              {%- if o.set_aside %} · set aside: {{ o.set_aside }}{% endif %}
+              {%- if o.status == 'reviewed' %} · reviewed{% endif -%}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+
       <section class="detail-block">
         <h2>Sources</h2>
         <ul class="source-list">

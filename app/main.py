@@ -23,7 +23,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (forums, geography, hq_lookup, insights as insights_mod,
+from . import (forums, geography, grouping, hq_lookup, insights as insights_mod,
                reddit_source, taxonomy, tuning, x_scrape)
 from .matching import derive_aliases, place_mentions
 from .auth import (get_user, hash_password, is_guest, require_login,
@@ -192,7 +192,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-10.66"
+APP_BUILD = "2026-09-10.67"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -862,6 +862,26 @@ def item_detail(request: Request, item_id: int):
         entity = one(db, "SELECT * FROM entities WHERE id = ?", (row["entity_id"],))
         sources = q(db, "SELECT * FROM item_sources WHERE item_id = ? ORDER BY id", (item_id,))
 
+        # The rest of this person's run of posts about this entity. The
+        # Social media tab folds them into one entry; opening any single
+        # one of them should say so too, or a reviewer rules on a post
+        # without knowing it is the fourth of six.
+        also_by = []
+        if row["source_type"] == "social" and row["author_key"]:
+            # Screened-out posts are left out: the gate's ruling is that
+            # they were not about this entity at all, and counting them
+            # under "posted six times about HDFC Bank" would contradict it.
+            # Everything else the person wrote is here, which can be more
+            # than the Social media tab lists -- a post of theirs the
+            # classifier found no grievance in never reaches that screen --
+            # so the note below says so rather than leaving two numbers to
+            # disagree in silence.
+            also_by = [prep_item(r) for r in q(
+                db, "SELECT * FROM items WHERE author_key = ? AND entity_id = ?"
+                    " AND source_type = 'social' AND gated_out = 0 AND id != ?"
+                    " ORDER BY published_at IS NULL, published_at, id",
+                (row["author_key"], row["entity_id"], item_id))]
+
         similar = [
             (r, score) for r, score in
             similar_reviewed(db, row["entity_id"], f"{row['title']} {row['snippet'] or ''}", top_k=4)
@@ -875,6 +895,7 @@ def item_detail(request: Request, item_id: int):
                       owners=_assignable_users(db, user, row["entity_id"]),
                       history=_review_history(db, item_id),
                       similar=similar_prepped, suggestion=suggestion,
+                      also_by=also_by,
                       set_aside_reasons=taxonomy.SOCIAL_SET_ASIDE,
                       set_aside_labels=taxonomy.SET_ASIDE_LABELS)
     finally:
@@ -947,6 +968,56 @@ async def item_set_aside(request: Request, item_id: int):
     finally:
         db.close()
     back = form.get("back") or f"/item/{item_id}"
+    join = "&" if "?" in back else "?"
+    return RedirectResponse(f"{back}{join}msg={quote(msg)}", status_code=303)
+
+
+@app.post("/social/set-aside-many")
+async def social_set_aside_many(request: Request):
+    """Set a person's repeat posts aside in one press.
+
+    The folded group on the Social media tab makes one customer's six
+    posts visible as six; this is the ruling that follows from seeing it.
+    It is the ordinary set-aside applied to a list, so it keeps every
+    guarantee of the single one: the posts stay on the screen under their
+    own tab, keep their severity and topics, and any of them can be
+    restored. The lead post is never included -- the complaint is still a
+    complaint, and one of them must go on counting.
+    """
+    form = await request.form()
+    raw = (form.get("ids") or "").strip()
+    ids = []
+    for part in raw.split(",")[:200]:
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    reason = (form.get("reason") or "duplicate").strip()
+    if reason not in taxonomy.SET_ASIDE_LABELS:
+        raise HTTPException(400, "Unknown reason")
+    db = connect()
+    try:
+        user = require_login(db, request)
+        done = 0
+        for item_id in ids:
+            row = one(db, "SELECT * FROM items WHERE id = ?", (item_id,))
+            # A post that has gone -- or was never this team's, or is not
+            # social -- is skipped rather than failing the whole press:
+            # the reviewer's other rulings should not be lost to one of
+            # them being stale.
+            if not row or row["source_type"] != "social":
+                continue
+            if user["role"] != "superadmin" and row["entity_id"] != user["entity_id"]:
+                continue
+            x(db, "UPDATE items SET set_aside = ?, set_aside_by = ? WHERE id = ?",
+              (reason, user["username"], item_id))
+            done += 1
+        label = taxonomy.SET_ASIDE_LABELS[reason].split(" — ")[0].lower()
+        msg = (f"{done} post{'s' if done != 1 else ''} set aside as {label}"
+               " — Insights will not count them."
+               if done else "Nothing was set aside.")
+    finally:
+        db.close()
+    back = form.get("back") or "/social"
     join = "&" if "?" in back else "?"
     return RedirectResponse(f"{back}{join}msg={quote(msg)}", status_code=303)
 
@@ -1515,11 +1586,34 @@ def social_page(request: Request):
         shown.reverse()
         shown.sort(key=lambda r: taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3))
 
+        # One customer writing six times is one aggrieved customer, and six
+        # rows of it read as six complaints. The repeats fold into the first
+        # of them -- after the sort, so a group sits where its most serious
+        # post would have sat and nothing severe hides inside a milder card.
+        # Nothing is dropped: "Show every post" hands back the raw list, and
+        # every count on this page is taken before the folding.
+        fold = request.query_params.get("repeats", "") != "all"
+        groups = grouping.group_complaints(shown, fold=fold)
+        # Counted on the folded shape whichever way the list is being
+        # shown, so the note reads the same in both and says what pressing
+        # the other one would do.
+        repeats_n = grouping.repeat_total(grouping.group_complaints(shown))
+        quoted = grouping.quoted_within(shown)
+        # How many of the listed posts name anybody. Without this the
+        # screen would report "nobody posted twice" on a list where
+        # nothing could have been folded in the first place -- the same
+        # mistake as printing a complainant count that is really the post
+        # count under another name.
+        listed_attributed = sum(1 for r in shown if r["author_key"])
+
         handles = [e for e in entities if e["x_handle"]]
         return render(request, "social.html", user=user, entity=entity,
                       entity_qs="all" if entity is None else entity["id"],
                       office=request.query_params.get("office") or None,
-                      entities=entities, rows=shown, topic=topic, src=src,
+                      entities=entities, rows=shown, groups=groups,
+                      folded=fold, repeats_n=repeats_n, quoted=quoted,
+                      listed_attributed=listed_attributed,
+                      topic=topic, src=src,
                       factor=factor_f, win=win,
                       view_aside=view_aside, view_learned=view_learned,
                       learned_count=len(learned),
@@ -2069,7 +2163,15 @@ def complaints(request: Request):
         shown = sorted(sel, key=lambda r: r["published_at"] or r["created_at"] or "",
                        reverse=True)
         shown.sort(key=lambda r: taxonomy.SEVERITY_RANK.get(r["severity_shown"], 3))
-        listed = shown[:60]
+        # One customer's six posts would otherwise take six of the sixty
+        # places in this list and read as six complaints. Folded first,
+        # then capped, so the cap counts people rather than persistence --
+        # and a person's posts cannot be split across the cut. News names
+        # a publication, not a complainant, and so never folds.
+        listed = grouping.group_complaints(shown)[:60]
+        listed_shown = sum(g["size"] for g in listed)
+        listed_repeats = grouping.repeat_total(listed)
+        listed_more = max(0, len(sel) - listed_shown)
 
         by_kind = [{"kind": k, "href": link(kind=k, entity=None),
                     "on": k == kind_f,
@@ -2112,7 +2214,8 @@ def complaints(request: Request):
                       places=places,
                       districts=by_district.most_common(14),
                       district_total=len(by_district),
-                      listed=listed, listed_more=max(0, len(sel) - len(listed)),
+                      listed=listed, listed_more=listed_more,
+                      listed_shown=listed_shown, listed_repeats=listed_repeats,
                       loc_choices=_place_choices(place_pool)
                       + ([loc_f] if loc_f and loc_f not in
                          _place_choices(place_pool) else []))
