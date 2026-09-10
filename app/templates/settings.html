@@ -86,10 +86,14 @@
   is left open.</p>
 {% endif %}
 
+{# The roster carries five columns of controls now, so it takes the whole
+   row rather than sharing it with the add form and bursting out of a half
+   panel. #}
 <div class="factors-grid">
-  <section class="panel">
+  <section class="panel wide">
     <h2>Accounts</h2>
-    <table class="data-table">
+    <div class="table-scroll">
+    <table class="data-table people-table">
       <tr>
         <th scope="col">Person</th>
         <th scope="col">Role</th>
@@ -101,12 +105,14 @@
       <tr {% if p.disabled %}class="row-quiet"{% endif %}>
         <td><strong>{{ p.display_name }}</strong><br>
           <span class="meta-dim small">{{ p.username }}{% if p.id == user.id %} · you{% endif %}
-          {%- if p.disabled %} · removed{% endif %}</span></td>
+          {%- if p.disabled %} · removed{% endif %}
+          {%- if p.guest %} · guest{% endif %}</span></td>
         <td>
           {% if p.disabled %}{{ 'super admin' if p.role == 'superadmin' else p.role }}
           {% else %}
           <form method="post" action="/people/{{ p.id }}/role" class="inline-form">
-            <select name="role" aria-label="Role for {{ p.display_name }}"
+            <select name="role" class="roster-select"
+                    aria-label="Role for {{ p.display_name }}"
                     onchange="this.form.submit()">
               <option value="member" {% if p.role == 'member' %}selected{% endif %}>team member</option>
               <option value="lead" {% if p.role == 'lead' %}selected{% endif %}>team lead</option>
@@ -114,14 +120,14 @@
             </select>
             <noscript><button type="submit" class="btn btn-small">Set</button></noscript>
           </form>
-          {% endif %}
-          {%- if p.guest %}<br><span class="mini-chip">guest</span>{% endif %}</td>
+          {% endif %}</td>
         <td>
           {% if p.rbi_office %}{{ p.rbi_office }} office
           {%- elif p.disabled %}{{ p.entity_name or 'every entity' }}
           {%- else %}
           <form method="post" action="/people/{{ p.id }}/role" class="inline-form">
-            <select name="entity_id" aria-label="Entity for {{ p.display_name }}"
+            <select name="entity_id" class="roster-select"
+                    aria-label="Entity for {{ p.display_name }}"
                     onchange="this.form.submit()">
               <option value="" {% if not p.entity_id %}selected{% endif %}>every entity</option>
               {% for e in entities %}
@@ -159,6 +165,7 @@
       </tr>
       {% endfor %}
     </table>
+    </div>
     <p class="meta-dim small">Removing an account stops it signing in — including
       the session it is holding right now — but keeps the person's name on the
       reviews they recorded. Those rulings are supervisory record and are not
@@ -180,7 +187,7 @@
       guest — you would not be able to change it back.</p>
   </section>
 
-  <section class="panel">
+  <section class="panel wide">
     <h2>Add an account</h2>
     <form method="post" action="/people" class="stack-form">
       <label>Username

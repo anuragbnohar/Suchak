@@ -1332,3 +1332,23 @@ tr.is-read .sev::before { opacity: 0.45; }
   color: #5c4600;
   font-size: .85rem;
 }
+
+/* The People roster. Its cells hold controls rather than text, and the
+   generic .inline-form sizes are meant for a form on its own line: an
+   11rem select and a 14rem input side by side in five columns burst the
+   panel. Sized to their content here instead, and the table scrolls
+   rather than overflowing if it still runs long. */
+.roster-select { min-width: 0; width: auto; max-width: 11rem; }
+.people-table td { vertical-align: middle; }
+.people-table .inline-form { flex-wrap: nowrap; }
+.people-table .inline-form input { min-width: 9rem; }
+/* .row-actions is display:flex globally, which on a <td> takes that cell
+   out of the table's own layout: the row separator stops short of it and
+   its buttons sit a few pixels above the controls beside them. Here the
+   cell stays a cell and the buttons are laid out inside it. */
+.people-table td.row-actions {
+  display: table-cell;
+  white-space: nowrap;
+  text-align: right;
+}
+.people-table td.row-actions > form { display: inline-block; margin-left: .35rem; }
