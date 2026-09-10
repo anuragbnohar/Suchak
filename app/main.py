@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import secrets
+import sqlite3
 from urllib.parse import quote
 from collections import Counter
 from contextlib import asynccontextmanager
@@ -108,6 +109,12 @@ async def _periodic_fetch() -> None:
 # copy on the open internet where any of these still opens the door is
 # not a copy with weak passwords -- it is a copy with no passwords.
 DEMO_LOGINS = {"admin": "admin123", "priya": "priya123", "rahul": "rahul123"}
+# What each demo account is for, printed beside it on the sign-in screen.
+DEMO_ROLES = {
+    "admin": "Super admin — all entities",
+    "priya": "Team lead — HDFC Bank",
+    "rahul": "Team member — HDFC Bank",
+}
 
 
 def _demo_passwords_that_still_work(db) -> list[str]:
@@ -184,7 +191,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-10.58"
+APP_BUILD = "2026-09-10.59"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -436,6 +443,41 @@ LOGIN_MAX_FAILURES = 8
 LOGIN_FAILURE_PAUSE = 1.0
 
 
+def _demo_panel() -> list[dict]:
+    """The demo logins worth printing on the sign-in screen: the ones that
+    still genuinely open the door, and no others.
+
+    Printing a credential somebody has since changed is worse than printing
+    nothing. It is untrue, and it still hands a stranger the account names
+    that exist -- which was harmless on a laptop nobody could reach and is
+    not harmless on a public address.
+
+    On a public copy the answer is always none, and it is returned without
+    looking: startup has already refused to run while any demo password
+    worked, and verifying three password hashes is real work on a page
+    anyone may load as often as they like.
+
+    Opens its own connection, and gives up quietly if the database cannot
+    answer. A decorative panel must never be the reason a sign-in screen
+    fails to render -- a database in trouble is the moment somebody most
+    needs to get in and look.
+    """
+    if PUBLIC_MODE:
+        return []
+    try:
+        db = connect()
+        try:
+            names = _demo_passwords_that_still_work(db)
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return []
+    return [{"username": name,
+             "password": DEMO_LOGINS[name],
+             "role": DEMO_ROLES.get(name, "")}
+            for name in names]
+
+
 def client_ip(request: Request) -> str:
     """The visitor's address, so far as it can be known.
 
@@ -489,7 +531,7 @@ def recent_login_failures(db, hours: int = 24) -> dict:
 
 @app.get("/login")
 def login_page(request: Request):
-    return render(request, "login.html", error=None)
+    return render(request, "login.html", error=None, demo=_demo_panel())
 
 
 @app.post("/login")
@@ -499,13 +541,14 @@ async def login_submit(request: Request):
     password = form.get("password") or ""
     ip = client_ip(request)
     fault = None
+    demo = _demo_panel()
     db = connect()
     try:
         if _login_failures_since(db, username, ip) >= LOGIN_MAX_FAILURES:
             # Refused before the password is even looked at. The message
             # says the same thing whether or not the name exists, so it
             # cannot be used to find out which accounts are real.
-            return render(request, "login.html",
+            return render(request, "login.html", demo=demo,
                           error="Too many failed attempts from here. Wait "
                                 f"{LOGIN_WINDOW_MINUTES} minutes and try again.")
         user = one(db, "SELECT * FROM users WHERE username = ?"
@@ -524,7 +567,7 @@ async def login_submit(request: Request):
         # stop the whole app serving for a second, which is a denial of
         # service anyone could trigger by guessing wrongly.
         await asyncio.sleep(LOGIN_FAILURE_PAUSE)
-        return render(request, "login.html", error=fault)
+        return render(request, "login.html", demo=demo, error=fault)
     return RedirectResponse("/", status_code=303)
 
 

@@ -93,6 +93,11 @@ behind a reverse proxy without trusting those headers on a laptop.
 The database is a single SQLite file, so a host without persistent storage
 loses it on every restart — attach a disk and point `SUCHAK_DB` at it.
 
+The sign-in screen names a demo login only while that login genuinely
+works — so a changed password stops being advertised, and a public copy
+shows nothing at all. Printing a credential somebody has since changed is
+untrue, and it still tells a stranger which account names exist.
+
 On a public address a wrong password is no longer free: eight failures on one
 account name from one address refuse that combination for fifteen minutes, and
 every wrong password waits a second before answering. The count is per name

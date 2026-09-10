@@ -26,14 +26,20 @@
         </label>
         <button type="submit" class="btn btn-primary">Sign in</button>
       </form>
+      {# Only the demo logins that still work are named here, and on a
+         public copy that is none of them. A credential printed after it
+         has been changed is untrue, and naming the accounts is a favour
+         to a stranger that a sign-in screen has no reason to do. #}
+      {% if demo %}
       <div class="demo-creds">
         <p class="demo-title">Demo accounts</p>
         <table>
-          <tr><td><code>admin / admin123</code></td><td>Super admin — all entities</td></tr>
-          <tr><td><code>priya / priya123</code></td><td>Team lead — HDFC Bank</td></tr>
-          <tr><td><code>rahul / rahul123</code></td><td>Team member — HDFC Bank</td></tr>
+          {% for d in demo %}
+          <tr><td><code>{{ d.username }} / {{ d.password }}</code></td><td>{{ d.role }}</td></tr>
+          {% endfor %}
         </table>
       </div>
+      {% endif %}
     </section>
   </div>
 </div>
