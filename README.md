@@ -93,14 +93,14 @@ behind a reverse proxy without trusting those headers on a laptop.
 The database is a single SQLite file, so a host without persistent storage
 loses it on every restart — attach a disk and point `SUCHAK_DB` at it.
 
-An account can be marked **view only**: it reads everything its role
-allows and changes nothing — no reviews, no settings, and no Fetch, which
-is the one that spends money. The refusal lives in `require_login`, which
-every route that changes anything already calls, so a route added later is
-covered without anybody remembering to cover it. Changing your own
-password is the single exception, because a password nobody can change is
-not really theirs. It is a column rather than a fourth role: SQLite cannot
-widen the `role` CHECK on a database that already exists.
+An account can be marked a **guest**: it reviews and reads exactly as its
+role allows, and four things are kept back — fetching, which spends money;
+Settings; the People roster; and adding or editing an entity. The refusal
+lives in `require_login`, which every route already calls, so a route added
+later is covered without anybody remembering to cover it, and the kept-back
+set is a list of paths rather than a check inside each handler. It is a
+column rather than a fourth role: SQLite cannot widen the `role` CHECK on a
+database that already exists.
 
 The sign-in screen names a demo login only while that login genuinely
 works — so a changed password stops being advertised, and a public copy

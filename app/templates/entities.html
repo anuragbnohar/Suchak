@@ -4,11 +4,12 @@
 <div class="page-head">
   <div>
     <h1>Regulated entities</h1>
-    <p class="page-sub">Aliases drive news matching{% if not read_only %} —
+    <p class="page-sub">Aliases drive news matching{% if not guest %} —
       open an entity's Edit panel to see and tune them{% endif %}.</p>
   </div>
   {% if user.role in ('lead','superadmin') %}
   <div>
+    {% if not guest %}
     <form method="post" action="/fetch" class="fetch-form fetch-form-all">
       <select name="days" class="lookback-select" aria-label="Lookback window">
         {% for d in lookback_choices %}
@@ -25,6 +26,7 @@
       covers the last year. Re-fetching is incremental, so it only
       classifies what it has not seen.
     </p>
+    {% endif %}
   </div>
   {% endif %}
 </div>
@@ -59,7 +61,8 @@
         {% if user.role in ('lead','superadmin') %}
         <td>
           <div class="row-actions">
-            {% if user.role == 'superadmin' or user.entity_id == r.entity.id %}
+            {% if not guest and (user.role == 'superadmin'
+                   or user.entity_id == r.entity.id) %}
             <form method="post" action="/fetch" class="fetch-form control-group">
               <input type="hidden" name="entity_id" value="{{ r.entity.id }}">
               <input type="hidden" name="channel" value="news">
@@ -97,7 +100,7 @@
             </form>
             {% endif %}
             {% if user.role == 'superadmin' %}
-            {% if not read_only %}<a class="btn btn-small btn-quiet" href="/entities/{{ r.entity.id }}/delete">Remove</a>{% endif %}
+            {% if not guest %}<a class="btn btn-small btn-quiet" href="/entities/{{ r.entity.id }}/delete">Remove</a>{% endif %}
             {% endif %}
           </div>
         </td>
@@ -106,10 +109,10 @@
       {# Mirrors /entities/{id}/aliases exactly: leads may edit their own
          entity, the superadmin any. The old inline form offered these boxes
          to members too, whose save the route then refused with a 403. #}
-      {# The row holds nothing but a form, which a view-only account cannot
+      {# The row holds nothing but the alias editor, which a guest cannot
          use -- so the row goes with it, rather than leaving an empty band
          between every entity. #}
-      {% if not read_only and (user.role == 'superadmin'
+      {% if not guest and (user.role == 'superadmin'
              or (user.role == 'lead' and user.entity_id == r.entity.id)) %}
       <tr class="entity-edit-row">
         <td colspan="7">
@@ -191,7 +194,7 @@
       {%- endif %}.</p>
   </section>
 
-  {% if user.role == 'superadmin' and not read_only %}
+  {% if user.role == 'superadmin' and not guest %}
   <p class="btn-row wide"><a class="btn btn-primary" href="/entities/new">Add an entity</a>
     <span class="meta-dim small">— name and headquarters; the RBI office fills itself.</span></p>
   {% endif %}

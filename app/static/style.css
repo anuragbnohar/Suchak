@@ -1318,14 +1318,10 @@ tr.is-read .sev::before { opacity: 0.45; }
   .help-dl dd { padding-top: 0; border-top: none; }
 }
 
-/* A view-only account. The refusal itself lives in require_login -- this
-   only stops the person being shown controls that would turn them away.
-   Attribute-matched on method="post" so that filter and date pickers,
-   which are GET forms, keep working: a reader still needs to search.
-   .self-service exempts changing your own password, which a read-only
-   account must always be able to do. */
-.read-only form[method="post"]:not(.self-service) { display: none; }
-
+/* A guest account's notice. Nothing is hidden wholesale any more: a guest
+   reviews and sets aside like anybody else, so only the four kept-back
+   controls are gated, and those are gated in the templates that own
+   them. */
 .view-only-note {
   margin: 0 0 1rem;
   padding: .55rem .8rem;

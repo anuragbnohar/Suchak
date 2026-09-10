@@ -103,7 +103,7 @@
           <span class="meta-dim small">{{ p.username }}{% if p.id == user.id %} · you{% endif %}
           {%- if p.disabled %} · removed{% endif %}</span></td>
         <td>{{ 'super admin' if p.role == 'superadmin' else p.role }}
-          {%- if p.read_only %}<br><span class="mini-chip">view only</span>{% endif %}</td>
+          {%- if p.guest %}<br><span class="mini-chip">guest</span>{% endif %}</td>
         <td>{% if p.rbi_office %}{{ p.rbi_office }} office
             {%- elif p.entity_name %}{{ p.entity_name }}
             {%- else %}every entity{% endif %}</td>
@@ -122,10 +122,10 @@
             <button type="submit" class="btn btn-small">Restore</button>
           </form>
           {% elif p.id != user.id %}
-          <form method="post" action="/people/{{ p.id }}/view-only" class="inline-form">
-            {% if not p.read_only %}<input type="hidden" name="read_only" value="1">{% endif %}
+          <form method="post" action="/people/{{ p.id }}/guest" class="inline-form">
+            {% if not p.guest %}<input type="hidden" name="guest" value="1">{% endif %}
             <button type="submit" class="btn btn-small btn-quiet">{{
-              'Allow changes' if p.read_only else 'Make view only' }}</button>
+              'Make full user' if p.guest else 'Make guest' }}</button>
           </form>
           <form method="post" action="/people/{{ p.id }}/remove">
             <button type="submit" class="btn btn-small btn-quiet">Remove</button>
@@ -139,11 +139,13 @@
       the session it is holding right now — but keeps the person's name on the
       reviews they recorded. Those rulings are supervisory record and are not
       rewritten. You cannot remove your own account, nor the last super admin.</p>
-    <p class="meta-dim small">A <strong>view-only</strong> account is for showing
-      the work to somebody without handing them the Fetch button, which spends
-      money. It takes effect on their next click, not their next sign-in. You
-      cannot make your own account view-only — you would not be able to change
-      it back.</p>
+    <p class="meta-dim small">A <strong>guest</strong> account is for somebody
+      who should take part in the review work without being able to spend money
+      on fetching or reshape the installation. They review, set aside and close
+      to-dos exactly as their role allows; they cannot fetch, open Settings,
+      manage people, or add, edit or remove an entity. It takes effect on their
+      next click, not their next sign-in, and you cannot make your own account a
+      guest — you would not be able to change it back.</p>
   </section>
 
   <section class="panel">
@@ -174,9 +176,9 @@
         </select>
       </label>
       <label class="check-line">
-        <input type="checkbox" name="read_only" value="1">
-        View only — can read everything their role allows, and change none
-        of it. No reviews, no settings, and no fetching.
+        <input type="checkbox" name="guest" value="1">
+        Guest — reviews and reads as normal, but cannot fetch, change
+        settings, manage people, or add and edit entities.
       </label>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Add account</button>

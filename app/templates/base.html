@@ -12,7 +12,7 @@
    new URL, so the fresh styling is fetched with the first page. #}
 <link rel="stylesheet" href="/static/style.css?v={{ app_build }}">
 </head>
-<body{% if read_only %} class="read-only"{% endif %}>
+<body>
 <header class="topbar">
   {% if user %}
   {% set path = request.url.path %}
@@ -46,7 +46,7 @@
       <a class="{% if al_ctx %}nav-active{% endif %}" href="/alerts">Alerts</a>
       <a class="{% if po_ctx %}nav-active{% endif %}" href="/policy">Policy</a>
       <a href="/entities">Entities</a>
-      {% if user.role == 'superadmin' %}<a href="/settings">Settings</a>{% endif %}
+      {% if user.role == 'superadmin' and not guest %}<a href="/settings">Settings</a>{% endif %}
       <a class="nav-help {% if hp_ctx %}nav-active{% endif %}" href="/help"
          title="How to use each screen">Help</a>
     </nav>
@@ -97,10 +97,10 @@
 <main class="page">
   {# Said once, plainly, rather than leaving somebody to discover it by
      pressing something and being refused. #}
-  {% if read_only %}
-  <p class="view-only-note">You are signed in to a <strong>view-only</strong>
-    account. You can read everything here, and change none of it — no
-    reviews, no settings, and no fetching.</p>
+  {% if guest %}
+  <p class="view-only-note">You are signed in to a <strong>guest</strong>
+    account. You can review and read as normal. You cannot fetch, change
+    settings, manage people, or add and edit entities.</p>
   {% endif %}
   {% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
   {% block content %}{% endblock %}

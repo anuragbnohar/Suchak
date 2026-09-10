@@ -337,12 +337,12 @@ MIGRATIONS = [
     # deletion: the reviews this person recorded are supervisory record,
     # and erasing the row would take their name off their own rulings.
     ("users", "disabled", "INTEGER NOT NULL DEFAULT 0"),
-    # An account that may look at everything it is entitled to see and
-    # change none of it -- for showing the work to somebody without
-    # handing them the Fetch button, which spends money. A column rather
-    # than a fourth role for the same reason rbi_office is a column:
-    # SQLite cannot widen the role CHECK on a database that exists.
-    ("users", "read_only", "INTEGER NOT NULL DEFAULT 0"),
+    # A guest: reviews and reads like anybody else, but cannot fetch,
+    # cannot touch settings or people, and cannot add or edit an entity.
+    # A column rather than a fourth role for the same reason rbi_office
+    # is one: SQLite cannot widen the role CHECK on a database that
+    # already exists.
+    ("users", "guest", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -448,6 +448,19 @@ def _backfill_social_window(con: sqlite3.Connection) -> None:
         " AND (complaint_topics IS NULL OR complaint_topics IN ('', '[]'))")
 
 
+def _rename_read_only(con: sqlite3.Connection) -> None:
+    """The flag shipped one build ago as read_only, and no longer means
+    that: a guest reviews and sets aside like anybody else. Renamed rather
+    than left lying, and carried over so nobody has to be marked twice.
+
+    Runs before the migrations, so the add-column step finds `guest`
+    already there and leaves it alone.
+    """
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(users)")}
+    if "read_only" in cols and "guest" not in cols:
+        con.execute("ALTER TABLE users RENAME COLUMN read_only TO guest")
+
+
 def _backfill_url_keys(con) -> None:
     """Give every stored row the reduced form of its link.
 
@@ -473,6 +486,7 @@ def init_db() -> None:
     con = connect()
     try:
         con.executescript(SCHEMA)
+        _rename_read_only(con)
         _migrate(con)
         for stmt in POST_MIGRATION_INDEXES:
             con.execute(stmt)

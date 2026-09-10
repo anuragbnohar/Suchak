@@ -39,49 +39,69 @@ def get_user(db, request: Request):
                (uid,))
 
 
-# What a read-only account may still do to itself. Somebody who can never
-# change their own password can never be given one that is theirs alone.
-SELF_SERVICE = {"/account/password"}
 READS = {"GET", "HEAD", "OPTIONS"}
 
+# What a guest account cannot reach. Everything else it does exactly as
+# its role allows -- reviewing, setting aside, marking done, raising an
+# alert. The four kept back are the ones that spend money or reshape the
+# installation itself.
+#
+# Prefix-matched, so /people covers every /people/... route and /settings
+# covers /settings/risk and its kin. Listed as paths rather than checked
+# inside each handler, because the handler somebody adds next year will
+# not remember to check.
+GUEST_BLOCKED = (
+    "/fetch",        # spends money on the paid sources
+    "/settings",     # every knob, and the People roster lives on that page
+    "/people",       # adding, renaming, removing, resetting a password
+    "/rd/users",     # the same, by another door
+)
 
-def is_read_only(user) -> bool:
+
+def is_guest(user) -> bool:
     """Tolerates a row from a database that predates the column."""
     try:
-        return bool(user["read_only"])
+        return bool(user["guest"])
     except (IndexError, KeyError, TypeError):
         return False
 
 
-def require_login(db, request: Request):
-    """The signed-in user, and the one place a read-only account is stopped.
+def guest_blocked(method: str, path: str) -> bool:
+    """Whether a guest account may do this.
 
-    Every route that changes anything calls this -- /login is the single
-    exception, and it changes nothing but the session. So the refusal
-    belongs here rather than in thirty-two separate handlers, where the
-    thirty-third would be the one somebody forgot.
+    Entities are the awkward one: the list is worth reading and everything
+    under it changes something, so /entities is a read and /entities/...
+    is not.
+    """
+    if path == "/account/password":
+        # Kept, always. A password nobody can change is not theirs.
+        return False
+    for prefix in GUEST_BLOCKED:
+        if path == prefix or path.startswith(prefix + "/"):
+            return True
+    if path == "/entities":
+        return method not in READS
+    return path.startswith("/entities/")
+
+
+def require_login(db, request: Request):
+    """The signed-in user, and the one place a guest account is stopped.
+
+    Every route calls this -- /login is the single exception, and it
+    changes nothing but the session. So the refusal belongs here rather
+    than in thirty-two separate handlers, where the thirty-third would be
+    the one somebody forgot.
     """
     user = get_user(db, request)
     if user is None:
         raise HTTPException(status_code=303, headers={"Location": "/login"})
-    if (is_read_only(user)
-            and request.method not in READS
-            and request.url.path not in SELF_SERVICE):
+    if is_guest(user) and guest_blocked(request.method, request.url.path):
         raise HTTPException(
             status_code=403,
-            detail="This account can look at Drishti but not change it, "
-                   "and cannot fetch. Ask a super admin if you need more.")
+            detail="This account can review and read, but cannot fetch, "
+                   "change settings, manage people, or edit entities. "
+                   "Ask a super admin if you need more.")
     return user
-
-
-def require_write(user):
-    """For the few screens that are reached by GET but exist only to change
-    something -- an add form, a delete confirmation. Every other GET is a
-    read and a view-only account is welcome to it."""
-    if is_read_only(user):
-        raise HTTPException(
-            status_code=403,
-            detail="This account can look at Drishti but not change it.")
 
 
 def require_role(user, *roles: str):
