@@ -148,7 +148,11 @@
     <li><strong>The tiles</strong> — total items, the three severities, complaints,
       awaiting review, and open actions with an overdue sub-count. Each opens the
       items behind it.</li>
-    <li><strong>Items by risk area</strong> — where this entity's exposure sits.</li>
+    <li><strong>Items by risk area</strong> — where this entity's exposure sits.
+      Items a reviewer ruled irrelevant are not counted here or in the severity
+      and complaint figures: a human's "not ours" outranks the machine's guess.
+      They stay on the queue's Dismissed tab, and the Items total still
+      includes them.</li>
     <li><strong>Daily volume</strong> — the shape of the last few weeks. Click a bar
       to open that single day.</li>
     <li><strong>Recent high-severity items</strong> — the short list you would read

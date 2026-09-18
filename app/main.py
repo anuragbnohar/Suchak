@@ -194,7 +194,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-18.70"
+APP_BUILD = "2026-09-18.71"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -643,6 +643,7 @@ def queue(request: Request):
         entity, entities = resolve_entity(db, user, request.query_params.get("entity"),
                                           office=request.query_params.get("office") or None)
         status = request.query_params.get("status", "open")
+        standing = request.query_params.get("standing", "") == "1"
         risk = request.query_params.get("risk", "")
         sev = request.query_params.get("sev", "")
         if sev not in taxonomy.SEVERITIES:
@@ -690,6 +691,11 @@ def queue(request: Request):
             # "everything the team works with": screened-out noise has its
             # own tab and is excluded, so dashboard counts match this view
             where.append("i.gated_out = 0")
+            if standing:
+                # dashboard drill-downs carry this: the charts do not count
+                # items a reviewer ruled irrelevant, so the list a chart
+                # opens must not show them. The Dismissed tab still does.
+                where.append("i.status != 'dismissed'")
         if risk:
             # The reviewer's risk areas outrank the classifier's here just
             # as they do on screen -- but only when the review actually set
@@ -786,6 +792,7 @@ def queue(request: Request):
             ("risk", risk), ("sev", sev),
             ("on", on_day), ("factor", factor), ("org", org), ("src", src),
             ("complaints", "1" if complaints else ""), ("topic", topic),
+            ("standing", "1" if standing else ""),
             ("since", win["key"])) if v}
         filter_qs = "".join(f"&{k}={quote(str(v))}" for k, v in extras.items())
         # The period is a lens over every screen, not one of this screen's
@@ -1646,6 +1653,15 @@ def social_page(request: Request):
 TREND_DAYS = 30
 
 
+def standing_items(items):
+    """The record minus what a reviewer threw out. An item ruled
+    irrelevant (status 'dismissed') still counts as collection activity,
+    but it is not exposure: no risk, severity, complaint or linkage
+    figure may be coloured by an item a human said is not this
+    entity's problem. Reviewer wins on the charts too."""
+    return [it for it in items if it["status"] != "dismissed"]
+
+
 def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
     win = win or {"key": "", "start": "", "end": ""}
     win_sql, win_args = date_sql(win)
@@ -1658,7 +1674,8 @@ def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
     by_risk, by_sev, by_factor, by_day = Counter(), Counter(), Counter(), Counter()
     by_topic, complaints_total = Counter(), 0
     linkages = Counter()
-    for it in rows:
+    standing = standing_items(rows)
+    for it in standing:
         for a in it["risk_areas_shown"]:
             by_risk[a] += 1
         by_sev[it["severity_shown"]] += 1
@@ -1670,6 +1687,8 @@ def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
             by_factor[f] += 1
         for rel in it["relationships"]:
             linkages[(rel.get("type", "other"), rel.get("name", "?"))] += 1
+    # tempo counts arrivals, so the whole record, dismissals included
+    for it in rows:
         day = (it["published_at"] or "")[:10]
         if day:
             by_day[day] += 1
@@ -1720,11 +1739,13 @@ def _entity_stats(db, entity_id: int, win: dict | None = None) -> dict:
     high_recent = [prep_item(r) for r in q(
         db, "SELECT * FROM items WHERE entity_id=?"
             " AND COALESCE(review_severity, severity)='high'"
+            " AND status != 'dismissed'"
             f" AND gated_out = 0 AND source_type != 'social'{win_and}"
             " ORDER BY published_at DESC LIMIT 6", (entity_id, *win_args))]
 
     return {
         "total": len(rows),
+        "dismissed_out": len(rows) - len(standing),
         "by_risk": [(a, by_risk.get(a, 0)) for a in taxonomy.RISK_AREAS],
         "max_risk": max(by_risk.values(), default=0),
         "by_sev": {s: by_sev.get(s, 0) for s in taxonomy.SEVERITIES},
@@ -2255,7 +2276,8 @@ def _category_rows(db, entities, key_fn, categories, win=None):
     every figure on a dashboard is a drill-down.
 
     Items still awaiting classification are excluded. They carry no verdict,
-    and counting them would file every one of them under 'low'.
+    and counting them would file every one of them under 'low'. Items a
+    reviewer ruled irrelevant are excluded too -- reviewer wins.
     """
     by_cat = {c: {"total": 0, "high": 0, "open": 0, "last": None,
                   "per_entity": Counter(), "open_per_entity": Counter()}
@@ -2267,7 +2289,8 @@ def _category_rows(db, entities, key_fn, categories, win=None):
     for e in entities:
         rows = [prep_item(r) for r in q(
             db, "SELECT * FROM items WHERE entity_id = ? AND gated_out = 0"
-                f" AND status != 'new' AND source_type != 'social'{win_and}",
+                " AND status NOT IN ('new', 'dismissed')"
+                f" AND source_type != 'social'{win_and}",
             (e["id"], *win_args))]
         for it in rows:
             awaiting = it["status"] == "classified"
@@ -2323,7 +2346,8 @@ def overview(request: Request):
                 db, "SELECT * FROM items WHERE entity_id=?"
                     f" AND gated_out = 0 AND source_type != 'social'{win_and}",
                 (e["id"], *win_args))]
-            by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
+            standing = standing_items(items)
+            by_risk = Counter(a for it in standing for a in it["risk_areas_shown"])
             top_risk = by_risk.most_common(1)
             open_count = one(db, "SELECT COUNT(*) n FROM items WHERE entity_id=? AND"
                                  " status IN ('new','classified') AND gated_out = 0"
@@ -2339,7 +2363,8 @@ def overview(request: Request):
             # "low" -- which is what reading severity off an unclassified
             # row does -- would quietly understate a backlog, so they get a
             # band of their own in the mix.
-            by_sev = Counter(it["severity_shown"] for it in items if it["classified"])
+            by_sev = Counter(it["severity_shown"]
+                             for it in standing if it["classified"])
             pending = sum(1 for it in items if not it["classified"])
             rows.append({
                 "entity": e,
@@ -3247,7 +3272,8 @@ def rd_view(request: Request):
             # so it keeps everything that still needs an office.
             if not items and selected != UNASSIGNED:
                 continue
-            by_risk = Counter(a for it in items for a in it["risk_areas_shown"])
+            by_risk = Counter(a for it in standing_items(items)
+                              for a in it["risk_areas_shown"])
             for it in items:
                 _mark(it)
             # The tiles count what the page is actually showing, so they

@@ -108,7 +108,10 @@ columns.
   for the model. The Reviewed tick on the queue and social cards leaves it
   NULL, so a ticked item is never held up as an example of anything.
 - **Reviewer wins.** `COALESCE(review_x, x)` everywhere; a human ruling
-  outranks the model's.
+  outranks the model's. On the charts too: an item ruled irrelevant
+  (status `dismissed`) is not exposure, so `standing_items` keeps it out
+  of every risk/severity/complaint figure, and chart drill-downs carry
+  `&standing=1` so the list a number opens holds exactly that number.
 - **Never state a number you cannot stand behind.** Say "not recorded"
   rather than repeating the row count under a different name.
 - **Only print what is true.** The sign-in screen names a demo login only

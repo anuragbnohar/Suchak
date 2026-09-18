@@ -25,25 +25,28 @@
 </div>
 
 {% set base = "/queue?entity=" ~ entity.id ~ "&status=all" ~ since_qs %}
+{# exposure figures skip items a reviewer ruled irrelevant, so their
+   drill-downs must open exactly that list #}
+{% set counted = base ~ "&standing=1" %}
 <div class="tile-row">
   <a class="tile" href="{{ base }}">
     <p class="tile-label">Items</p>
     <p class="tile-value">{{ stats.total }}</p>
     {% if stats.older %}<p class="tile-note tile-note-quiet">+{{ stats.older }} outside this period</p>{% endif %}
   </a>
-  <a class="tile tile-serious" href="{{ base }}&sev=high">
+  <a class="tile tile-serious" href="{{ counted }}&sev=high">
     <p class="tile-label">High severity</p>
     <p class="tile-value">{{ stats.by_sev.high }}</p>
   </a>
-  <a class="tile tile-warning" href="{{ base }}&sev=medium">
+  <a class="tile tile-warning" href="{{ counted }}&sev=medium">
     <p class="tile-label">Medium severity</p>
     <p class="tile-value">{{ stats.by_sev.medium }}</p>
   </a>
-  <a class="tile" href="{{ base }}&sev=low">
+  <a class="tile" href="{{ counted }}&sev=low">
     <p class="tile-label">Low severity</p>
     <p class="tile-value">{{ stats.by_sev.low }}</p>
   </a>
-  <a class="tile tile-complaint" href="{{ base }}&complaints=1"
+  <a class="tile tile-complaint" href="{{ counted }}&complaints=1"
      title="Customer-grievance items from news and social posts, grouped by topic">
     <p class="tile-label">Complaints</p>
     <p class="tile-value">{{ stats.complaints_total }}</p>
@@ -69,7 +72,7 @@
     <div class="hbar-chart">
       {% for area, count in stats.by_risk %}
       {% if count %}
-      <a class="hbar-row" href="{{ base }}&risk={{ area | urlencode }}"
+      <a class="hbar-row" href="{{ counted }}&risk={{ area | urlencode }}"
          title="Show the {{ count }} item(s) categorised {{ area }}">
         <span class="hbar-label">{{ area }}</span>
         <span class="hbar-track">
@@ -87,6 +90,11 @@
       {% endfor %}
     </div>
     {% else %}<p class="meta-dim">No categorized items yet.</p>{% endif %}
+    {% if stats.dismissed_out %}
+    <p class="meta-dim small">{{ stats.dismissed_out }} item{{ 's' if stats.dismissed_out != 1 }}
+      a reviewer ruled irrelevant {{ 'are' if stats.dismissed_out != 1 else 'is' }} not counted
+      in this page's risk, severity or complaint figures.</p>
+    {% endif %}
   </section>
 
   <section class="panel">
@@ -137,7 +145,7 @@
           <th scope="col" class="num">Social</th></tr>
       {% for name, news_n, social_n in stats.by_factor %}
       <tr><td>⚑ {{ name }}</td>
-          <td class="num">{% if news_n %}<a href="{{ base }}&factor={{ name | urlencode }}">{{ news_n }}</a>{% else %}<span class="meta-dim">0</span>{% endif %}</td>
+          <td class="num">{% if news_n %}<a href="{{ counted }}&factor={{ name | urlencode }}">{{ news_n }}</a>{% else %}<span class="meta-dim">0</span>{% endif %}</td>
           <td class="num">{% if social_n %}<a href="/social?entity={{ entity.id }}&factor={{ name | urlencode }}{{ since_qs }}">{{ social_n }}</a>{% else %}<span class="meta-dim">0</span>{% endif %}</td></tr>
       {% endfor %}
     </table>
@@ -153,7 +161,7 @@
     <table class="data-table">
       <tr><th scope="col">Topic</th><th scope="col" class="num">Items</th></tr>
       {% for name, count in stats.by_topic %}
-      <tr><td><a href="{{ base }}&topic={{ name | urlencode }}">✉ {{ name }}</a></td>
+      <tr><td><a href="{{ counted }}&topic={{ name | urlencode }}">✉ {{ name }}</a></td>
           <td class="num">{{ count }}</td></tr>
       {% endfor %}
     </table>
@@ -167,7 +175,7 @@
     <table class="data-table">
       <tr><th scope="col">Organization</th><th scope="col">Link</th><th scope="col" class="num">Items</th></tr>
       {% for l in stats.linkages %}
-      <tr><td><a href="{{ base }}&org={{ l.name | urlencode }}">{{ l.name }}</a></td>
+      <tr><td><a href="{{ counted }}&org={{ l.name | urlencode }}">{{ l.name }}</a></td>
           <td class="meta-dim">{{ l.type | replace('_',' ') }}</td><td class="num">{{ l.count }}</td></tr>
       {% endfor %}
     </table>
