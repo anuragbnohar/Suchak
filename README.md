@@ -63,9 +63,12 @@ Re-fetching is incremental, so a wider window only classifies — and only
 bills for — what is not already stored. `SUCHAK_LOOKBACK_DAYS` still sets the
 standing default for every entity.
 
-Broadcast feeds (RBI, exchanges) keep their own window: one fetch serves
-every entity, so widening them on one entity's behalf would re-scan the lot.
-X recent search is capped at 7 days by its API regardless.
+The same window applies to the broadcast feeds (RBI, exchanges): a 90-day
+fetch keeps whatever those feeds still list from the last 90 days, which is
+how a press release the standing window missed is picked up late. Each feed
+only reaches back as far as it reaches — a release that has fallen off the
+feed cannot be re-fetched from it. X recent search is capped at 7 days by
+its API regardless.
 
 ## Putting it on an address other people can reach
 

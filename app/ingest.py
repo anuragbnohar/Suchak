@@ -73,8 +73,8 @@ MAX_ENTRIES_PER_FEED = int(os.environ.get("SUCHAK_MAX_ENTRIES", "100"))
 # How far back each feed asks for news, on every fetch. Fetching is
 # incremental -- already-stored URLs are skipped and re-reported stories
 # merge into the item they duplicate -- so a rolling window costs only
-# what is genuinely new. Raise it for a one-off backfill. 0 = whatever
-# the source considers current.
+# what is genuinely new. For a one-off backfill pick a wider window
+# beside the Fetch button. 0 = whatever the source considers current.
 LOOKBACK_DAYS = int(os.environ.get("SUCHAK_LOOKBACK_DAYS", "7"))
 # Windows offered next to each Fetch button. A single fetch can widen its own
 # window without changing the default for anything else -- useful for a small
@@ -531,8 +531,9 @@ def fetch_x(registry: Registry, entity, days: int | None = None) -> list[dict]:
     return items
 
 
-def _within_lookback(published_iso: str | None) -> bool:
-    if not published_iso or not LOOKBACK_DAYS:
+def _within_lookback(published_iso: str | None, days: int | None = None) -> bool:
+    window = LOOKBACK_DAYS if days is None else days
+    if not published_iso or not window:
         return True
     try:
         dt = datetime.fromisoformat(published_iso.replace("Z", "+00:00"))
@@ -540,10 +541,11 @@ def _within_lookback(published_iso: str | None) -> bool:
             dt = dt.replace(tzinfo=timezone.utc)
     except ValueError:
         return True
-    return dt >= datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
+    return dt >= datetime.now(timezone.utc) - timedelta(days=window)
 
 
-def _rss_broadcast(url: str, source_name: str, source_type: str) -> list[dict]:
+def _rss_broadcast(url: str, source_name: str, source_type: str,
+                   days: int | None = None) -> list[dict]:
     resp = httpx.get(url, timeout=25, follow_redirects=True,
                      headers={"User-Agent": _BROWSER_UA})
     resp.raise_for_status()
@@ -555,7 +557,7 @@ def _rss_broadcast(url: str, source_name: str, source_type: str) -> list[dict]:
         if not title or not link:
             continue
         published = _entry_published(entry)
-        if not _within_lookback(published):
+        if not _within_lookback(published, days):
             continue
         items.append({
             "title": title,
@@ -568,20 +570,21 @@ def _rss_broadcast(url: str, source_name: str, source_type: str) -> list[dict]:
     return items
 
 
-def fetch_rbi() -> list[dict]:
+def fetch_rbi(days: int | None = None) -> list[dict]:
     """RBI press releases: penalties, enforcement, directions. The feed
     covers everything RBI publishes; routing keeps only items that name a
     tracked entity."""
     if not RBI_PRESS_RSS:
         return []
-    return _rss_broadcast(RBI_PRESS_RSS, "Reserve Bank of India", "regulatory")
+    return _rss_broadcast(RBI_PRESS_RSS, "Reserve Bank of India", "regulatory",
+                          days=days)
 
 
-def fetch_nse() -> list[dict]:
+def fetch_nse(days: int | None = None) -> list[dict]:
     """NSE corporate announcements RSS (all listed companies)."""
     if not NSE_ANN_RSS:
         return []
-    return _rss_broadcast(NSE_ANN_RSS, "NSE", "filing")
+    return _rss_broadcast(NSE_ANN_RSS, "NSE", "filing", days=days)
 
 
 def _parse_bse_dt(value: str | None) -> str | None:
@@ -596,7 +599,7 @@ def _parse_bse_dt(value: str | None) -> str | None:
     return dt.replace(tzinfo=ist).astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
-def fetch_bse() -> list[dict]:
+def fetch_bse(days: int | None = None) -> list[dict]:
     """BSE corporate announcements.
 
     BSE publishes no documented feed; this is the JSON endpoint the BSE
@@ -606,7 +609,9 @@ def fetch_bse() -> list[dict]:
     if not BSE_ANN_API:
         return []
     now = datetime.now(timezone.utc)
-    since = now - timedelta(days=min(LOOKBACK_DAYS or 2, 30))
+    window = LOOKBACK_DAYS if days is None else days
+    # BSE's endpoint serves at most a month back, whatever is asked.
+    since = now - timedelta(days=min(window or 2, 30))
     params = {
         "strCat": "-1",
         "strPrevDate": since.strftime("%Y%m%d"),
@@ -891,10 +896,14 @@ BROADCAST_SOURCES = {
 }
 
 
-def fetch_broadcast_sources(db, registry: Registry) -> dict[int, list[dict]]:
+def fetch_broadcast_sources(db, registry: Registry,
+                            days: int | None = None) -> dict[int, list[dict]]:
     """Fetch each broadcast feed once and route items to the entities they
     mention. Returns {entity_id: [candidates]}; logs per-feed status to
-    fetch_log with a NULL entity."""
+    fetch_log with a NULL entity. The window picked beside the Fetch button
+    applies here too -- a wider fetch reaches as far back as each feed still
+    lists, which is how an older press release is picked up late."""
+    window = effective_days(days)
     routed: dict[int, list[dict]] = {}
     enabled = {"rbi": RBI_PRESS_RSS, "nse": NSE_ANN_RSS, "bse": BSE_ANN_API}
     for name, fetch in BROADCAST_SOURCES.items():
@@ -902,7 +911,7 @@ def fetch_broadcast_sources(db, registry: Registry) -> dict[int, list[dict]]:
             continue
         note, found, kept = None, 0, 0
         try:
-            items = fetch()
+            items = fetch(days=window)
             found = len(items)
             for item in items:
                 eids = registry.resolve(f"{item['title']} {item['snippet']}")
@@ -1311,7 +1320,7 @@ def run_cycle(entity_id: int | None = None, days: int | None = None,
                 routed = {}
                 totals["routed"] = 0
             else:
-                routed = fetch_broadcast_sources(db, registry)
+                routed = fetch_broadcast_sources(db, registry, days=days)
                 totals["routed"] = sum(len(v) for v in routed.values())
             for n, entity in enumerate(entities):
                 if n and FETCH_DELAY_SECONDS:
