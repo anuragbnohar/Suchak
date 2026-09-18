@@ -194,7 +194,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-18.71"
+APP_BUILD = "2026-09-18.72"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new
@@ -384,6 +384,23 @@ def prep_item(row) -> dict:
                 d[field] = json.loads(d[field] or "[]")
             except (TypeError, ValueError):
                 d[field] = []
+    # A label stored twice -- older rows, written before classify.py
+    # learned not to repeat itself -- must not make one article count as
+    # two on any chart, so every list folds to first occurrences on its
+    # way to the screen.
+    for field in ("risk_areas", "factor_matches", "complaint_topics",
+                  "review_risk_areas"):
+        if isinstance(d.get(field), list):
+            d[field] = list(dict.fromkeys(d[field]))
+    if isinstance(d.get("relationships"), list):
+        seen, rels = set(), []
+        for rel in d["relationships"]:
+            key = ((rel.get("type"), rel.get("name")) if isinstance(rel, dict)
+                   else str(rel))
+            if key not in seen:
+                seen.add(key)
+                rels.append(rel)
+        d["relationships"] = rels
     d["actionability_label"] = taxonomy.ACTIONABILITY_LABELS.get(
         d.get("actionability") or "", d.get("actionability") or "")
     d["source_type_label"] = taxonomy.SOURCE_TYPE_LABELS.get(d.get("source_type") or "news")
@@ -398,6 +415,8 @@ def prep_item(row) -> dict:
                                         if raw_rct is not None else None)
     except (TypeError, ValueError):
         d["review_complaint_topics"] = None
+    if isinstance(d["review_complaint_topics"], list):
+        d["review_complaint_topics"] = list(dict.fromkeys(d["review_complaint_topics"]))
     if d["review_complaint_topics"] is not None:
         d["complaint_topics"] = d["review_complaint_topics"]
     # a reviewer's correction wins over the classifier's verdict, for the
@@ -1048,9 +1067,11 @@ async def item_review(request: Request, item_id: int):
         severity = form.get("severity")
         if severity not in taxonomy.SEVERITIES:
             severity = None
-        risk_areas = [a for a in form.getlist("risk_areas") if a in taxonomy.RISK_AREAS]
-        topics = [t for t in form.getlist("complaint_topics")
-                  if t in taxonomy.COMPLAINT_TOPICS]
+        risk_areas = list(dict.fromkeys(
+            a for a in form.getlist("risk_areas") if a in taxonomy.RISK_AREAS))
+        topics = list(dict.fromkeys(
+            t for t in form.getlist("complaint_topics")
+            if t in taxonomy.COMPLAINT_TOPICS))
         action = form.get("action") or None
         if action not in taxonomy.ACTIONS:
             action = None

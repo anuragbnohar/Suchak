@@ -142,6 +142,11 @@ columns.
   fetched from rbi.org.in once, ever. The July 2026 Arvind Sahakari
   penalty, unreachable by any window in September, is the case that
   taught this.
+- **The model may repeat a label.** A JSON-schema enum does not forbid
+  `["Governance Risk", "Governance Risk"]`, and a label stored twice made
+  one article count as two on the risk chart. `classify._uniq` folds
+  every list at storage; `prep_item` folds again on the way to the
+  screen, which is what heals rows stored before the fix.
 - Fetching is manual. A timer would bill the account with nobody watching.
 - `pkill` in this sandbox returns 144 and kills the rest of a compound
   command; run it on its own.

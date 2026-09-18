@@ -698,6 +698,26 @@ _HIGH_SEVERITY = [
 ]
 
 
+def _uniq(seq):
+    """First occurrences only. The model may say a label twice --
+    nothing in a JSON schema stops it -- and a label stored twice made
+    one article count as two on the risk chart."""
+    return list(dict.fromkeys(seq or []))
+
+
+def _uniq_rels(rels):
+    """Relationships, folded the same way, by (type, name)."""
+    seen, out = set(), []
+    for rel in rels or []:
+        key = ((rel.get("type"), rel.get("name")) if isinstance(rel, dict)
+               else str(rel))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(rel)
+    return out
+
+
 def _heuristic_classify(entity, title, snippet, registry=None):
     text = f"{title} {snippet or ''}".lower()
     registry = registry or Registry([entity])
@@ -949,14 +969,14 @@ def classify_item(db, item) -> str:
         " relationships=?, classifier=?, model=?, classified_at=? WHERE id=?",
         (
             float(verdict.get("relevance_score") or 0),
-            json.dumps(verdict.get("risk_areas") or []),
+            json.dumps(_uniq(verdict.get("risk_areas"))),
             verdict.get("severity") or "low",
             verdict.get("actionability") or "monitor",
             verdict.get("geography"),
             verdict.get("summary") or item["title"],
-            json.dumps(verdict.get("factor_matches") or []),
-            json.dumps(verdict.get("complaint_topics") or []),
-            json.dumps(verdict.get("relationships") or []),
+            json.dumps(_uniq(verdict.get("factor_matches"))),
+            json.dumps(_uniq(verdict.get("complaint_topics"))),
+            json.dumps(_uniq_rels(verdict.get("relationships"))),
             classifier,
             model,
             datetime.now(timezone.utc).isoformat(timespec="seconds"),
