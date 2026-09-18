@@ -12,7 +12,7 @@
    new URL, so the fresh styling is fetched with the first page. #}
 <link rel="stylesheet" href="/static/style.css?v={{ app_build }}">
 </head>
-<body>
+<body class="{% block bodyclass %}{% endblock %}">
 <header class="topbar">
   {% if user %}
   {% set path = request.url.path %}

@@ -825,31 +825,55 @@ a.trend-col:hover { text-decoration: none; }
   .entity-new-grid, .field-pair { grid-template-columns: 1fr; }
 }
 
-/* ══ Sign in ═══════════════════════════════════════════════════════════ */
+/* ══ Sign in ═══════════════════════════════════════════════════════════
+   Styled after the Drishti design sheet: the whole page is the deck's
+   deep navy, the wordmark is large and serif, and the faint eye sits at
+   the right edge as a watermark. Only the form itself is a light card. */
 
-.login-wrap { display: flex; justify-content: center; padding-top: 6vh; }
+.login-page { background: #142433; }
+/* the sheet has no bar above the wordmark, and the bar would only
+   repeat it -- the footer stays, the build stamp is the update ritual */
+.login-page .topbar { display: none; }
+.login-page .app-footer { border-top-color: #24384A; }
+.login-page .app-footer .meta-dim { color: #7A93A5; }
+.login-page .flash { background: #1E3347; border-color: #2C4257; color: #DCE6EF; }
+.login-wrap {
+  position: relative; overflow: hidden;
+  display: flex; justify-content: center; align-items: center;
+  min-height: calc(100vh - 7rem); padding: 2rem 1.5rem;
+}
+/* The watermark: the same eye as the design sheet, one shade above the
+   background. Large enough that its almond outline shows past the form
+   card sitting on it, so the overlap reads as composed, not accidental. */
+.login-eye {
+  position: absolute; right: -13rem; top: 50%;
+  width: 58rem; height: 58rem; transform: translateY(-50%);
+  color: #1B2E3D; pointer-events: none;
+}
 .login-card {
-  /* the identity side takes a little less than the form beside it: it
-     carries two lines now, and the form's demo table must not be squeezed
-     into wrapping a bank name onto its own row */
-  display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(23rem, 1fr);
+  position: relative;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(23rem, 26rem);
+  gap: 3.5rem; align-items: center;
+  width: 100%; max-width: 62rem;
+}
+/* The identity side sits straight on the navy, exactly as on the sheet:
+   the name, the script, what this is -- and nothing else. */
+.login-intro { color: #DCE6EF; }
+.login-brand {
+  font-family: Cambria, Georgia, 'Times New Roman', serif;
+  font-size: 4rem; font-weight: 700; line-height: 1.05;
+  margin: 0; color: #fff;
+}
+.login-devanagari { margin: 0.5rem 0 0; font-size: 1.5rem; color: #7A93A5; }
+.login-sub {
+  font-family: Cambria, Georgia, 'Times New Roman', serif;
+  color: #C9D9DC; margin: 1.1rem 0 0; font-size: 1.35rem; font-weight: 400;
+}
+.login-panel {
   background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--r); overflow: hidden;
-  width: 100%; max-width: 52rem; box-shadow: var(--shadow-md);
+  border-radius: var(--r); box-shadow: var(--shadow-md);
+  padding: 2rem 2rem 2.25rem;
 }
-/* The identity side: the name and what this is, and nothing else. Two
-   lines against the full height of the form beside them, so they are
-   centred -- pinned to the top they would read as a panel whose contents
-   failed to arrive. */
-.login-intro {
-  background: var(--masthead); color: #DCE6EF;
-  padding: 2.5rem 2rem;
-  display: flex; flex-direction: column; justify-content: center;
-}
-.login-brand { font-size: 1.6rem; font-weight: 700; margin: 0; color: #fff; }
-.login-intro .devanagari { color: #9FB6C9; }
-.login-sub { color: #9FB6C9; margin: 0.35rem 0 0; font-size: 0.9rem; }
-.login-panel { padding: 2rem 2rem 2.25rem; }
 .login-panel > h2 { margin-bottom: 1.1rem; }
 .login-form { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.5rem; }
 .demo-creds { border-top: 1px solid var(--line); padding-top: 1rem; font-size: 0.82rem; }
@@ -858,8 +882,10 @@ a.trend-col:hover { text-decoration: none; }
 .demo-creds td { padding: 0.2rem 0.75rem 0.2rem 0; color: var(--muted); vertical-align: top; }
 .demo-creds td:first-child { white-space: nowrap; }
 @media (max-width: 760px) {
-  .login-card { grid-template-columns: 1fr; max-width: 28rem; }
-  .login-intro { padding: 1.5rem; }
+  .login-card { grid-template-columns: 1fr; gap: 2rem; max-width: 28rem; }
+  .login-brand { font-size: 2.6rem; }
+  .login-sub { font-size: 1.1rem; }
+  .login-eye { width: 26rem; height: 26rem; right: -10rem; opacity: 0.7; }
 }
 code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-xs); padding: 0.05rem 0.3rem; }
 

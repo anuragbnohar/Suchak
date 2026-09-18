@@ -1,17 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Sign in · Drishti{% endblock %}
+{% block bodyclass %}login-page{% endblock %}
 {% block content %}
-{# Identity on one side, the form on the other. A sign-in screen is the
-   first thing an officer sees of the application, and a small box adrift
-   in an empty page says nothing about what they are signing in to. The
-   identity side carries the name and what this is, and nothing else: a
-   sign-in screen is not the place to explain the product to someone who
-   already has an account on it. #}
+{# The sign-in screen wears the platform's own face -- the deep navy,
+   the serif wordmark and the faint eye of the Drishti design sheet --
+   with the form on a plain light card beside it. The identity side
+   carries the name and what this is, and nothing else: a sign-in screen
+   is not the place to explain the product to someone who already has an
+   account on it. #}
 <div class="login-wrap">
+  <svg class="login-eye" viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+       fill="none" stroke="currentColor" stroke-width="1.4"
+       stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+    <circle cx="12" cy="12" r="4.6"/>
+    <circle cx="12" cy="12" r="1.9" fill="currentColor" stroke="none"/>
+  </svg>
   <div class="login-card">
     <section class="login-intro">
-      <h1 class="login-brand">Drishti <span class="devanagari">दृष्टि</span></h1>
-      <p class="login-sub">Public Intelligence Platform</p>
+      <h1 class="login-brand">Drishti</h1>
+      <p class="login-devanagari devanagari">दृष्टि</p>
+      <p class="login-sub">A Public Intelligence Platform</p>
     </section>
 
     <section class="login-panel">
