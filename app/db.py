@@ -188,6 +188,18 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     note      TEXT
 );
 
+-- RBI press-release pages already read during an archive walk, so a
+-- page is fetched from rbi.org.in once, ever: a repeat of the same wide
+-- fetch, or a bank added later, is answered from here for free. Only
+-- pages that parsed are kept -- a failure is retried next time.
+CREATE TABLE IF NOT EXISTS rbi_pages (
+    prid         INTEGER PRIMARY KEY,
+    title        TEXT NOT NULL,
+    snippet      TEXT,
+    published_at TEXT,
+    fetched_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- A wrong password, remembered long enough to make the next guess cost
 -- something. On a laptop nobody could reach the sign-in, so a guess was
 -- free; on a public address that is no longer true.

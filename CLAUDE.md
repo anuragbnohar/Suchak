@@ -132,6 +132,13 @@ columns.
   card can be trusted to carry the most serious thing that person said. Cap
   the list after folding too, or one persistent customer takes six of the
   sixty places.
+- **A feed is not the archive.** RBI's RSS lists only the most recent
+  releases, so no lookback choice can reach past its tail. Anything older
+  is read from the release pages themselves (`rbi_archive_walk`), which
+  are numbered in date order — and cached in `rbi_pages`, so a page is
+  fetched from rbi.org.in once, ever. The July 2026 Arvind Sahakari
+  penalty, unreachable by any window in September, is the case that
+  taught this.
 - Fetching is manual. A timer would bill the account with nobody watching.
 - `pkill` in this sandbox returns 144 and kills the rest of a compound
   command; run it on its own.

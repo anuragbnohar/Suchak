@@ -544,19 +544,33 @@ def _within_lookback(published_iso: str | None, days: int | None = None) -> bool
     return dt >= datetime.now(timezone.utc) - timedelta(days=window)
 
 
+# What each broadcast feed itself still listed on its last read: item
+# count and the oldest date. The fetch note states it, so "routed 0" can
+# be told apart from "the feed no longer reaches that far back".
+FEED_SPAN: dict = {}
+
+
 def _rss_broadcast(url: str, source_name: str, source_type: str,
-                   days: int | None = None) -> list[dict]:
+                   days: int | None = None,
+                   span_key: str | None = None) -> list[dict]:
     resp = httpx.get(url, timeout=25, follow_redirects=True,
                      headers={"User-Agent": _BROWSER_UA})
     resp.raise_for_status()
     feed = feedparser.parse(resp.content)
-    items = []
+    items, listed, oldest = [], 0, None
+    if span_key:
+        FEED_SPAN[span_key] = {"listed": 0, "oldest": None}
     for entry in feed.entries[:BROADCAST_MAX]:
         title = _strip_html(entry.get("title", ""))
         link = entry.get("link", "")
         if not title or not link:
             continue
+        listed += 1
         published = _entry_published(entry)
+        if published and (oldest is None or published < oldest):
+            oldest = published
+        if span_key:
+            FEED_SPAN[span_key] = {"listed": listed, "oldest": oldest}
         if not _within_lookback(published, days):
             continue
         items.append({
@@ -577,14 +591,215 @@ def fetch_rbi(days: int | None = None) -> list[dict]:
     if not RBI_PRESS_RSS:
         return []
     return _rss_broadcast(RBI_PRESS_RSS, "Reserve Bank of India", "regulatory",
-                          days=days)
+                          days=days, span_key="rbi")
 
 
 def fetch_nse(days: int | None = None) -> list[dict]:
     """NSE corporate announcements RSS (all listed companies)."""
     if not NSE_ANN_RSS:
         return []
-    return _rss_broadcast(NSE_ANN_RSS, "NSE", "filing", days=days)
+    return _rss_broadcast(NSE_ANN_RSS, "NSE", "filing", days=days,
+                          span_key="nse")
+
+
+# --- RBI archive walk --------------------------------------------------
+# The RSS feed lists only RBI's most recent releases, so a window wider
+# than the feed's reach cannot be answered from the feed alone. Every
+# release also lives at a fixed address -- BS_PressReleaseDisplay.aspx
+# ?prid=N -- and the numbers run in date order, so the releases the feed
+# no longer lists are reached by walking the numbers backwards from where
+# the feed ends, reading each page's own headline and date, until the
+# window's start. A page is read from rbi.org.in once, ever: it is kept
+# in rbi_pages, so repeating a wide fetch -- or adding a bank later --
+# re-reads nothing. The archive pages could not be reached from the build
+# sandbox, so the parsing is deliberately paranoid and every walk states
+# in its note how far it actually read.
+RBI_ARCHIVE_URL = os.environ.get(
+    "SUCHAK_RBI_ARCHIVE",
+    "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=")
+RBI_LISTING_URL = os.environ.get(
+    "SUCHAK_RBI_LISTING",
+    "https://www.rbi.org.in/Scripts/BS_PressreleaseDisplay.aspx")
+# Pages fetched from rbi.org.in in one walk -- roughly a month of releases.
+# The note says where the walk paused; pressing Fetch again continues from
+# there, because the stretch already read is answered from the cache.
+RBI_WALK_MAX = max(0, min(int(os.environ.get("SUCHAK_RBI_WALK_MAX", "600")), 2000))
+RBI_WALK_DELAY = float(os.environ.get("SUCHAK_RBI_WALK_DELAY", "0.25"))
+
+_MONTHS = ("January February March April May June July August September "
+           "October November December").split()
+_MON_RX = "|".join(m[:3] for m in _MONTHS)
+_DATE_MDY = re.compile(rf"\b({_MON_RX})[a-z]*\.?\s+(\d{{1,2}}),?\s*(20\d\d)", re.I)
+_DATE_DMY = re.compile(rf"\b(\d{{1,2}})\s+({_MON_RX})[a-z]*\.?\s*,?\s*(20\d\d)", re.I)
+# Every release ends "Press Release: 2026-2027/751"; a page without that
+# line is not a release, whatever else it looks like.
+_PR_MARK = re.compile(r"Press\s+Release\s*:?\s*\d{4}\s*-\s*\d{2,4}\s*/\s*\d+", re.I)
+_PRID_RX = re.compile(r"[?&]prid=(\d+)", re.I)
+
+
+def _rbi_date(text: str) -> str | None:
+    """First plausible date near the top of a release's text, as ISO."""
+    head = text[:6000]
+    m = _DATE_MDY.search(head)
+    if m:
+        mon, day, year = m.group(1), m.group(2), m.group(3)
+    else:
+        m = _DATE_DMY.search(head)
+        if not m:
+            return None
+        day, mon, year = m.group(1), m.group(2), m.group(3)
+    month = next((i + 1 for i, name in enumerate(_MONTHS)
+                  if name.lower().startswith(mon.lower()[:3])), None)
+    try:
+        return datetime(int(year), month, int(day),
+                        tzinfo=timezone.utc).isoformat(timespec="seconds")
+    except (TypeError, ValueError):
+        return None
+
+
+def _rbi_headline(page: str) -> str:
+    """The release's own headline, tried the ways RBI has marked it."""
+    for pat in (r"<h2[^>]*>(.*?)</h2>", r"<h1[^>]*>(.*?)</h1>",
+                r'<td[^>]*class="[^"]*tableheader[^"]*"[^>]*>(.*?)</td>'):
+        for m in re.finditer(pat, page, re.I | re.S):
+            got = re.sub(r"\s+", " ", _strip_html(m.group(1))).strip()
+            if len(got) >= 15 and not got.lower().startswith("press release"):
+                return got
+    m = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)',
+                  page, re.I)
+    if m:  # og:title, unless it is the site-wide boilerplate
+        got = re.sub(r"\s+", " ", _strip_html(m.group(1))).strip()
+        if len(got) >= 15 and "official website" not in got.lower():
+            return got
+    # longest bold line near the top -- the oldest pages mark the headline
+    # with nothing but <b>
+    best = ""
+    for m in re.finditer(r"<b[^>]*>(.*?)</b>", page[:20000], re.I | re.S):
+        got = re.sub(r"\s+", " ", _strip_html(m.group(1))).strip()
+        if len(got) > len(best):
+            best = got
+    return best if len(best) >= 15 else ""
+
+
+def _read_rbi_page(prid: int) -> dict | None:
+    """One release page, or None when it is missing or not a release."""
+    resp = httpx.get(f"{RBI_ARCHIVE_URL}{prid}", timeout=20,
+                     follow_redirects=True,
+                     headers={"User-Agent": _BROWSER_UA})
+    if resp.status_code >= 400:
+        return None
+    body = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", resp.text)
+    text = re.sub(r"\s+", " ", _strip_html(body))
+    if not _PR_MARK.search(text):
+        return None
+    title = _rbi_headline(body)
+    if not title:
+        return None
+    at = text.find(title[:60])
+    snippet = (text[at + len(title):at + len(title) + 400].strip()
+               if at >= 0 else text[:400])
+    return {"title": title[:300], "snippet": snippet,
+            "published_at": _rbi_date(text)}
+
+
+def _rbi_head_prid() -> int | None:
+    """Newest release number, read off the listing page -- the fallback
+    for a dead or empty feed."""
+    try:
+        resp = httpx.get(RBI_LISTING_URL, timeout=20, follow_redirects=True,
+                         headers={"User-Agent": _BROWSER_UA})
+        resp.raise_for_status()
+    except httpx.HTTPError:
+        return None
+    prids = [int(m.group(1)) for m in _PRID_RX.finditer(resp.text)]
+    return max(prids) if prids else None
+
+
+def rbi_archive_walk(db, days: int | None,
+                     feed_items: list[dict]) -> tuple[list[dict], str]:
+    """Releases older than the feed's reach but inside this fetch's
+    window, read from rbi.org.in page by page. Returns (items, note-part).
+    The caller routes the items exactly like the feed's own."""
+    if not RBI_ARCHIVE_URL or not RBI_WALK_MAX or not days:
+        return [], ""
+    # floored to midnight: a release page states only its day, which
+    # parses as 00:00, so a start carrying the clock's time-of-day would
+    # always drop the window's oldest day of releases
+    start_iso = (datetime.now(timezone.utc) - timedelta(days=days)) \
+        .replace(hour=0, minute=0, second=0, microsecond=0) \
+        .isoformat(timespec="seconds")
+    feed_prids, feed_oldest = [], None
+    for it in feed_items:
+        m = _PRID_RX.search(it.get("url") or "")
+        if m:
+            feed_prids.append(int(m.group(1)))
+        d = it.get("published_at")
+        if d and (feed_oldest is None or d < feed_oldest):
+            feed_oldest = d
+    if feed_oldest and feed_oldest <= start_iso:
+        return [], ""           # the feed already covers the whole window
+    if feed_prids:
+        prid = min(feed_prids) - 1
+    else:
+        prid = _rbi_head_prid()
+        if prid is None:
+            return [], ("; archive walk could not start: the feed named no "
+                        "release pages and the listing page gave none either")
+    items, fetched, misses, older = [], 0, 0, 0
+    last_date = feed_oldest
+    while prid > 0 and fetched < RBI_WALK_MAX:
+        cached = one(db, "SELECT * FROM rbi_pages WHERE prid = ?", (prid,))
+        if cached:
+            page = {"title": cached["title"], "snippet": cached["snippet"],
+                    "published_at": cached["published_at"]}
+        else:
+            fetched += 1
+            try:
+                page = _read_rbi_page(prid)
+            except httpx.HTTPError:
+                page = None
+            if RBI_WALK_DELAY:
+                time.sleep(RBI_WALK_DELAY)
+            if page is not None:
+                # only successes are kept: a miss is retried next walk
+                x(db, "INSERT OR REPLACE INTO rbi_pages"
+                      " (prid, title, snippet, published_at) VALUES (?,?,?,?)",
+                  (prid, page["title"], page["snippet"], page["published_at"]))
+        if page is None:
+            misses += 1
+            if misses >= 8:
+                return items, (f"; archive walk stopped at page {prid}: "
+                               "eight pages in a row would not read -- if "
+                               "this persists the site's layout has changed")
+            prid -= 1
+            continue
+        misses = 0
+        if page["published_at"]:
+            last_date = page["published_at"]
+            if page["published_at"] < start_iso:
+                older += 1
+                # two in a row: releases published the same day can sit
+                # slightly out of order, one older page proves nothing
+                if older >= 2:
+                    return items, (f"; archive read back to "
+                                   f"{page['published_at'][:10]}")
+                prid -= 1
+                continue
+            older = 0
+        items.append({"title": page["title"],
+                      "url": f"{RBI_ARCHIVE_URL}{prid}",
+                      "source_name": "Reserve Bank of India",
+                      # an undated page borrows its dated neighbour's day
+                      # rather than wearing today's
+                      "snippet": page["snippet"] or "",
+                      "published_at": page["published_at"] or last_date,
+                      "source_type": "regulatory"})
+        prid -= 1
+    tail = f" back to {last_date[:10]}" if last_date else ""
+    if fetched >= RBI_WALK_MAX:
+        return items, (f"; archive walk read {fetched} pages{tail} and "
+                       "paused -- press Fetch again to reach further back")
+    return items, f"; archive read{tail}"
 
 
 def _parse_bse_dt(value: str | None) -> str | None:
@@ -628,6 +843,10 @@ def fetch_bse(days: int | None = None) -> list[dict]:
     resp.raise_for_status()
     rows = (resp.json() or {}).get("Table") or []
 
+    dates = [d for d in (_parse_bse_dt(r.get("NEWS_DT") or r.get("DT_TM"))
+                         for r in rows[:BROADCAST_MAX]) if d]
+    FEED_SPAN["bse"] = {"listed": len(rows[:BROADCAST_MAX]),
+                        "oldest": min(dates) if dates else None}
     items = []
     for row in rows[:BROADCAST_MAX]:
         subject = _strip_html(row.get("NEWSSUB") or row.get("HEADLINE") or "")
@@ -912,6 +1131,13 @@ def fetch_broadcast_sources(db, registry: Registry,
         note, found, kept = None, 0, 0
         try:
             items = fetch(days=window)
+            extra = ""
+            if name == "rbi":
+                # the feed only lists RBI's most recent releases; anything
+                # older but still inside this window is read off the
+                # archive pages themselves
+                walked, extra = rbi_archive_walk(db, window, items)
+                items = items + walked
             found = len(items)
             for item in items:
                 eids = registry.resolve(f"{item['title']} {item['snippet']}")
@@ -923,7 +1149,13 @@ def fetch_broadcast_sources(db, registry: Registry,
                         # check in ingest_entity would just repeat it
                         "attribution_confident": True,
                     })
-            note = f"routed {kept} item(s) to tracked entities"
+            span = FEED_SPAN.get(name)
+            reach = ""
+            if span:
+                oldest = (f" back to {span['oldest'][:10]}" if span["oldest"]
+                          else "")
+                reach = f" — the feed lists {span['listed']} item(s){oldest}"
+            note = f"routed {kept} item(s) to tracked entities{reach}{extra}"
         except Exception as exc:
             note = f"fetch failed: {type(exc).__name__}: {exc}"
             log.warning("Broadcast source %s: %s", name, note)

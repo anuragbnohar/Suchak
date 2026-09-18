@@ -64,11 +64,14 @@ bills for — what is not already stored. `SUCHAK_LOOKBACK_DAYS` still sets the
 standing default for every entity.
 
 The same window applies to the broadcast feeds (RBI, exchanges): a 90-day
-fetch keeps whatever those feeds still list from the last 90 days, which is
-how a press release the standing window missed is picked up late. Each feed
-only reaches back as far as it reaches — a release that has fallen off the
-feed cannot be re-fetched from it. X recent search is capped at 7 days by
-its API regardless.
+fetch keeps whatever those feeds still list from the last 90 days. RBI's
+feed only lists its most recent releases, so for RBI a wider window goes
+further: the release pages themselves are read, newest to oldest, until the
+window's start — each page once, ever, after which it is answered from a
+local cache. One press covers roughly a month of releases; the fetch note
+says how far it read, and pressing Fetch again continues from there. The
+exchange feeds reach only as far as they reach (BSE serves at most a month).
+X recent search is capped at 7 days by its API regardless.
 
 ## Putting it on an address other people can reach
 
