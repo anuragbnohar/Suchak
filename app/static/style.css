@@ -881,6 +881,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--surface-2)
   border-left: 3px solid var(--accent); box-shadow: var(--shadow-lg);
 }
 .toast-ok { border-left-color: var(--positive); }
+.toast-run { border-left-color: var(--muted, #888); opacity: 0.9; font-variant-numeric: tabular-nums; }
 .toast-fail { border-left-color: var(--serious); color: var(--serious); }
 .toast a { color: inherit; text-decoration: underline; }
 .toast-close { background: none; border: none; color: inherit; font-size: 1rem; cursor: pointer; float: right; margin-left: 0.5rem; }

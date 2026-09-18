@@ -625,6 +625,9 @@ RBI_LISTING_URL = os.environ.get(
 # there, because the stretch already read is answered from the cache.
 RBI_WALK_MAX = max(0, min(int(os.environ.get("SUCHAK_RBI_WALK_MAX", "600")), 2000))
 RBI_WALK_DELAY = float(os.environ.get("SUCHAK_RBI_WALK_DELAY", "0.25"))
+# However slow rbi.org.in is feeling, one press never walks longer than
+# this; it pauses with a note instead, and the next press continues.
+RBI_WALK_SECONDS = float(os.environ.get("SUCHAK_RBI_WALK_SECONDS", "300"))
 
 _MONTHS = ("January February March April May June July August September "
            "October November December").split()
@@ -683,7 +686,7 @@ def _rbi_headline(page: str) -> str:
 
 def _read_rbi_page(prid: int) -> dict | None:
     """One release page, or None when it is missing or not a release."""
-    resp = httpx.get(f"{RBI_ARCHIVE_URL}{prid}", timeout=20,
+    resp = httpx.get(f"{RBI_ARCHIVE_URL}{prid}", timeout=12,
                      follow_redirects=True,
                      headers={"User-Agent": _BROWSER_UA})
     if resp.status_code >= 400:
@@ -715,8 +718,8 @@ def _rbi_head_prid() -> int | None:
     return max(prids) if prids else None
 
 
-def rbi_archive_walk(db, days: int | None,
-                     feed_items: list[dict]) -> tuple[list[dict], str]:
+def rbi_archive_walk(db, days: int | None, feed_items: list[dict],
+                     progress=None) -> tuple[list[dict], str]:
     """Releases older than the feed's reach but inside this fetch's
     window, read from rbi.org.in page by page. Returns (items, note-part).
     The caller routes the items exactly like the feed's own."""
@@ -747,13 +750,23 @@ def rbi_archive_walk(db, days: int | None,
                         "release pages and the listing page gave none either")
     items, fetched, misses, older = [], 0, 0, 0
     last_date = feed_oldest
+    t0 = time.monotonic()
     while prid > 0 and fetched < RBI_WALK_MAX:
+        if RBI_WALK_SECONDS and time.monotonic() - t0 > RBI_WALK_SECONDS:
+            at = f" at {last_date[:10]}" if last_date else ""
+            return items, (f"; archive walk paused after "
+                           f"{int(RBI_WALK_SECONDS // 60)} minute(s){at} — "
+                           "press Fetch again to continue")
         cached = one(db, "SELECT * FROM rbi_pages WHERE prid = ?", (prid,))
         if cached:
             page = {"title": cached["title"], "snippet": cached["snippet"],
                     "published_at": cached["published_at"]}
         else:
             fetched += 1
+            if progress and fetched % 10 == 0:
+                at = f", at {last_date[:10]}" if last_date else ""
+                progress(f"reading RBI's archive — page {fetched} of up to "
+                         f"{RBI_WALK_MAX}{at}")
             try:
                 page = _read_rbi_page(prid)
             except httpx.HTTPError:
@@ -769,7 +782,7 @@ def rbi_archive_walk(db, days: int | None,
             misses += 1
             if misses >= 8:
                 return items, (f"; archive walk stopped at page {prid}: "
-                               "eight pages in a row would not read -- if "
+                               "eight pages in a row would not read — if "
                                "this persists the site's layout has changed")
             prid -= 1
             continue
@@ -798,7 +811,7 @@ def rbi_archive_walk(db, days: int | None,
     tail = f" back to {last_date[:10]}" if last_date else ""
     if fetched >= RBI_WALK_MAX:
         return items, (f"; archive walk read {fetched} pages{tail} and "
-                       "paused -- press Fetch again to reach further back")
+                       "paused — press Fetch again to reach further back")
     return items, f"; archive read{tail}"
 
 
@@ -1116,7 +1129,8 @@ BROADCAST_SOURCES = {
 
 
 def fetch_broadcast_sources(db, registry: Registry,
-                            days: int | None = None) -> dict[int, list[dict]]:
+                            days: int | None = None,
+                            progress=None) -> dict[int, list[dict]]:
     """Fetch each broadcast feed once and route items to the entities they
     mention. Returns {entity_id: [candidates]}; logs per-feed status to
     fetch_log with a NULL entity. The window picked beside the Fetch button
@@ -1130,13 +1144,16 @@ def fetch_broadcast_sources(db, registry: Registry,
             continue
         note, found, kept = None, 0, 0
         try:
+            if progress:
+                progress(f"reading the {name.upper()} feed")
             items = fetch(days=window)
             extra = ""
             if name == "rbi":
                 # the feed only lists RBI's most recent releases; anything
                 # older but still inside this window is read off the
                 # archive pages themselves
-                walked, extra = rbi_archive_walk(db, window, items)
+                walked, extra = rbi_archive_walk(db, window, items,
+                                                 progress=progress)
                 items = items + walked
             found = len(items)
             for item in items:
@@ -1523,15 +1540,15 @@ def _log_fetch(db, entity_id: int, result: dict,
 
 
 def run_cycle(entity_id: int | None = None, days: int | None = None,
-              channel: str = "all") -> dict:
+              channel: str = "all", progress=None) -> dict:
     """Fetch (all or one entity) then classify anything new. Opens its own
     DB connection — safe to call from a background thread.
 
-    `days` widens the per-entity feeds for this run only. Broadcast feeds
-    (RBI, exchanges) keep their own window: one fetch serves every entity,
-    so widening them for one entity's sake would re-scan the lot.
-    `channel` limits the run to news or social sources; broadcast feeds
-    are press coverage, so a social-only run skips them entirely.
+    `days` widens this run's window, the broadcast feeds included: a wide
+    window makes the RBI fetch walk the archive pages the feed no longer
+    lists. `channel` limits the run to news or social sources; broadcast
+    feeds are press coverage, so a social-only run skips them entirely.
+    `progress` is told, in plain words, what the run is doing right now.
     """
     if channel not in CHANNELS:
         channel = "all"
@@ -1552,11 +1569,14 @@ def run_cycle(entity_id: int | None = None, days: int | None = None,
                 routed = {}
                 totals["routed"] = 0
             else:
-                routed = fetch_broadcast_sources(db, registry, days=days)
+                routed = fetch_broadcast_sources(db, registry, days=days,
+                                                 progress=progress)
                 totals["routed"] = sum(len(v) for v in routed.values())
             for n, entity in enumerate(entities):
                 if n and FETCH_DELAY_SECONDS:
                     time.sleep(FETCH_DELAY_SECONDS)
+                if progress:
+                    progress(f"searching sources for {entity['name']}")
                 r = ingest_entity(db, entity, registry,
                                   extra_candidates=routed.get(entity["id"], []),
                                   days=days, channel=channel)
@@ -1565,6 +1585,8 @@ def run_cycle(entity_id: int | None = None, days: int | None = None,
                     totals[k] += r[k]
             # Oldest first, so a story's first report is on the queue
             # before its later angles are read and fold into it.
+            if progress:
+                progress("sources read — classifying what is new")
             done = classify_pending(db)
             totals["classified"] = done["classified"]
             totals["folded"] = done["folded"]

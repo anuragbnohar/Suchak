@@ -71,7 +71,9 @@ def _fetch_job(job_id: str, entity_id: int | None, days: int | None,
     if job is None:
         return
     try:
-        result = run_cycle(entity_id, days, channel)
+        # the poller shows a running job's note as a live progress line
+        result = run_cycle(entity_id, days, channel,
+                           progress=lambda text: job.update(note=text))
         if result.get("skipped"):
             job.update(state="failed",
                        note="another fetch was already running — try again "
@@ -192,7 +194,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # debugging rounds -- the fix on GitHub, the report from an old copy on
 # disk -- so the running build identifies itself where a screenshot
 # always includes it. Bump on every user-visible change.
-APP_BUILD = "2026-09-18.69"
+APP_BUILD = "2026-09-18.70"
 
 # Templates load once, at startup, like the Python code. With live
 # reloading, extracting an update ZIP over a RUNNING app served new

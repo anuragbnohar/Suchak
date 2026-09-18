@@ -146,13 +146,34 @@
     setTimeout(function () { el.remove(); }, 20000);
   }
 
+  function running(id, text) {
+    const box = document.getElementById("toasts");
+    let el = document.getElementById("job-" + id);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "job-" + id;
+      el.className = "toast toast-run";
+      box.appendChild(el);
+    }
+    el.textContent = text;
+  }
+  function done(id) {
+    const el = document.getElementById("job-" + id);
+    if (el) el.remove();
+  }
+
   async function poll() {
     const keep = [];
     for (const id of jobs) {
       try {
         const r = await fetch("/fetch/status?job=" + id);
         const d = await r.json();
-        if (d.state === "running") { keep.push(id); continue; }
+        if (d.state === "running") {
+          // a silent five-minute fetch reads as stuck; say what it is doing
+          running(id, d.label + " — " + (d.note || "working…"));
+          keep.push(id); continue;
+        }
+        done(id);
         if (d.state === "done") toast(d.label + " completed — " + d.note, true);
         else if (d.state === "failed") toast(d.label + " failed — " + d.note, false);
         // "unknown" (server restarted): let go silently
